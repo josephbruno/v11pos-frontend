@@ -1,0 +1,344 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /**
+   * Tailwind CSS theme
+   * tailwind.config.ts expects the following color variables to be expressed as HSL values.
+   * A different format will require also updating the theme in tailwind.config.ts.
+  */
+  :root {
+    /* Professional Dark Theme - Light mode (for contrast/admin areas) */
+    --background: 0 0% 98%;
+    --foreground: 0 0% 18%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 18%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 18%;
+
+    --primary: 0 0% 18%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 26%;
+
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 46%;
+
+    --accent: 142 76% 36%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 0 0% 18%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 0 0% 18%;
+    --sidebar-primary: 142 76% 36%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 96%;
+    --sidebar-accent-foreground: 0 0% 18%;
+    --sidebar-border: 0 0% 90%;
+    --sidebar-ring: 142 76% 36%;
+
+    /* POS System specific colors - Light mode (aliased to standard theme) */
+    --pos-primary: var(--primary);
+    --pos-secondary: var(--secondary);
+    --pos-accent: var(--accent);
+    --pos-background: var(--background);
+    --pos-surface: var(--card);
+    --pos-text: var(--foreground);
+    --pos-text-muted: var(--muted-foreground);
+    --pos-success: 142 76% 36%;
+    --pos-warning: 43 96% 56%;
+    --pos-error: var(--destructive);
+  }
+
+  .dark {
+    /* Professional Dark Theme - Main dark mode */
+    --background: 0 0% 18%;
+    --foreground: 0 0% 98%;
+
+    --card: 0 0% 22%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 0 0% 22%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 0 0% 26%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 0 0% 26%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 0 0% 26%;
+    --muted-foreground: 0 0% 70%;
+
+    --accent: 142 76% 36%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 26%;
+    --input: 0 0% 26%;
+    --ring: 142 76% 36%;
+
+    --sidebar-background: 0 0% 18%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 142 76% 36%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 26%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 26%;
+    --sidebar-ring: 142 76% 36%;
+
+    /* POS System specific colors in dark mode (aliased to standard theme) */
+    --pos-primary: var(--primary);
+    --pos-secondary: var(--secondary);
+    --pos-accent: var(--accent);
+    --pos-background: var(--background);
+    --pos-surface: var(--card);
+    --pos-text: var(--foreground);
+    --pos-text-muted: var(--muted-foreground);
+    --pos-success: 142 76% 36%;
+    --pos-warning: 43 96% 56%;
+    --pos-error: var(--destructive);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    transition:
+      background-color 0.3s ease,
+      color 0.3s ease;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50;
+  }
+
+  /* Smooth focus transitions */
+  input,
+  textarea,
+  select,
+  button {
+    transition: all 0.2s ease;
+  }
+
+  /* Hide scrollbar for mobile */
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer utilities {
+  /* Animation utilities */
+  .animate-in {
+    animation: animate-in 0.5s ease-out;
+  }
+
+  .animate-out {
+    animation: animate-out 0.5s ease-in;
+  }
+
+  .slide-in-from-right-full {
+    animation: slide-in-from-right-full 0.3s ease-out;
+  }
+
+  .slide-in-from-left-full {
+    animation: slide-in-from-left-full 0.3s ease-out;
+  }
+
+  .slide-in-from-top {
+    animation: slide-in-from-top 0.3s ease-out;
+  }
+
+  .slide-in-from-bottom {
+    animation: slide-in-from-bottom 0.3s ease-out;
+  }
+
+  /* Backdrop blur utilities */
+  .backdrop-blur-sm {
+    backdrop-filter: blur(4px);
+  }
+
+  .backdrop-blur {
+    backdrop-filter: blur(8px);
+  }
+
+  /* Gradient utilities */
+  .bg-gradient-pos {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--pos-primary)),
+      hsl(var(--pos-accent))
+    );
+  }
+
+  /* Dialog overlay animations */
+  [data-radix-dialog-overlay] {
+    animation: dialog-overlay-in 0.25s ease-out;
+  }
+
+  [data-radix-dialog-overlay][data-state="closed"] {
+    animation: dialog-overlay-out 0.2s ease-in;
+  }
+
+  /* Dialog content animations */
+  [data-radix-dialog-content] {
+    animation: dialog-content-in 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  [data-radix-dialog-content][data-state="closed"] {
+    animation: dialog-content-out 0.25s ease-in;
+  }
+
+  /* Alert dialog overlay animations */
+  [data-radix-alertdialog-overlay] {
+    animation: dialog-overlay-in 0.25s ease-out;
+  }
+
+  [data-radix-alertdialog-overlay][data-state="closed"] {
+    animation: dialog-overlay-out 0.2s ease-in;
+  }
+
+  /* Alert dialog content animations */
+  [data-radix-alertdialog-content] {
+    animation: dialog-content-in 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  [data-radix-alertdialog-content][data-state="closed"] {
+    animation: dialog-content-out 0.25s ease-in;
+  }
+}
+
+/* Keyframe animations */
+@keyframes animate-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes animate-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+}
+
+@keyframes slide-in-from-right-full {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-in-from-left-full {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-in-from-top {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in-from-bottom {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes dialog-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-content-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes dialog-content-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.96);
+  }
+}
