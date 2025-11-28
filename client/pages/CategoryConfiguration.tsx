@@ -39,6 +39,8 @@ import {
 } from "@/hooks/useCategories";
 import { getImageCropConfig, validateImageFile } from "@/lib/imageCropConfig";
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
 interface Category {
   id: string;
   name: string;
@@ -195,7 +197,7 @@ export default function CategoryConfiguration() {
               {imagePreview ? (
                 <img
                   src={imagePreview.startsWith('http') || imagePreview.startsWith('/uploads') 
-                    ? `http://localhost:8000${imagePreview}` 
+                    ? `${BACKEND_URL}${imagePreview}` 
                     : imagePreview}
                   alt="Preview"
                   className="w-full h-full object-cover"
@@ -423,7 +425,7 @@ export default function CategoryConfiguration() {
                 <div className="aspect-video bg-muted rounded-md flex items-center justify-center overflow-hidden">
                   {category.image ? (
                     <img 
-                      src={`http://localhost:8000/uploads/${category.image}`}
+                      src={`${BACKEND_URL}/uploads/${category.image}`}
                       alt={category.name}
                       className="w-full h-full object-cover"
                     />

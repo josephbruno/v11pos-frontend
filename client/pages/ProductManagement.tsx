@@ -77,6 +77,8 @@ import {
 } from "@/hooks/useModifiers";
 import { getImageCropConfig, validateImageFile } from "@/lib/imageCropConfig";
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
 interface Product {
   id: string;
   name: string;
@@ -807,7 +809,7 @@ export default function ProductManagement() {
           <div className="flex items-start gap-4">
             <div className="w-32 h-32 border-2 border-dashed rounded-md flex items-center justify-center overflow-hidden bg-muted">
               {categoryImagePreview ? (
-                <img src={categoryImagePreview.startsWith('/uploads') ? `http://localhost:8000${categoryImagePreview}` : categoryImagePreview} alt="Preview" className="w-full h-full object-cover" />
+                <img src={categoryImagePreview.startsWith('/uploads') ? `${BACKEND_URL}${categoryImagePreview}` : categoryImagePreview} alt="Preview" className="w-full h-full object-cover" />
               ) : (
                 <ImageIcon className="h-12 w-12 text-muted-foreground" />
               )}
@@ -1138,7 +1140,7 @@ export default function ProductManagement() {
                     <div className="aspect-video bg-pos-secondary rounded-md flex items-center justify-center overflow-hidden">
                       {product.image ? (
                         <img 
-                          src={`http://localhost:8000${product.image}`}
+                          src={`${BACKEND_URL}${product.image}`}
                           alt={product.name}
                           className="w-full h-full object-cover"
                           onError={(e) => {
@@ -1358,7 +1360,7 @@ export default function ProductManagement() {
                       <div className="aspect-video bg-muted rounded-md flex items-center justify-center overflow-hidden">
                         {category.image ? (
                           <img
-                            src={category.image.startsWith('http') ? category.image : `http://localhost:8000${category.image}`}
+                            src={category.image.startsWith('http') ? category.image : `${BACKEND_URL}${category.image}`}
                             alt={category.name}
                             className="w-full h-full object-cover"
                           />
