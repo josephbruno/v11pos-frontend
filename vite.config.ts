@@ -11,49 +11,38 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     outDir: "dist/spa",
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 1600,
     rollupOptions: {
       output: {
-        manualChunks: (id) => {
-          // Vendor chunks - order matters!
-          if (id.includes('node_modules')) {
-            // Core React must be separate and loaded first
-            if (id.includes('react/') || id.includes('react-dom/')) {
-              return 'react-core';
-            }
-            // React Router
-            if (id.includes('react-router')) {
-              return 'react-router';
-            }
-            // Radix UI (React components)
-            if (id.includes('@radix-ui')) {
-              return 'ui-vendor';
-            }
-            // React Query
-            if (id.includes('@tanstack/react-query')) {
-              return 'query-vendor';
-            }
-            // Framer Motion (React animation)
-            if (id.includes('framer-motion')) {
-              return 'animation-vendor';
-            }
-            // Charts (depends on React)
-            if (id.includes('recharts')) {
-              return 'charts';
-            }
-            // Utility libraries (no React dependency)
-            if (id.includes('lucide-react') || id.includes('date-fns') || id.includes('clsx') || id.includes('tailwind-merge')) {
-              return 'utils';
-            }
-            // Everything else
-            return 'vendor';
-          }
-          
-          // Split pages into separate chunks
-          if (id.includes('/client/pages/')) {
-            const pageName = id.split('/client/pages/')[1].split('.')[0];
-            return `page-${pageName.toLowerCase()}`;
-          }
+        manualChunks: {
+          // Group all React-related libraries together to avoid context issues
+          'react-vendor': [
+            'react', 
+            'react-dom', 
+            'react/jsx-runtime',
+            'react-router-dom'
+          ],
+          // UI components
+          'ui-vendor': [
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-dropdown-menu',
+            '@radix-ui/react-select',
+            '@radix-ui/react-tabs',
+            '@radix-ui/react-switch',
+            '@radix-ui/react-label',
+            '@radix-ui/react-alert-dialog',
+            '@radix-ui/react-toast',
+            '@radix-ui/react-slot',
+            '@radix-ui/react-checkbox',
+            '@radix-ui/react-separator',
+            '@radix-ui/react-popover',
+          ],
+          // State management
+          'query-vendor': ['@tanstack/react-query'],
+          // Animation
+          'animation-vendor': ['framer-motion'],
+          // Charts
+          'charts': ['recharts'],
         },
       },
     },
