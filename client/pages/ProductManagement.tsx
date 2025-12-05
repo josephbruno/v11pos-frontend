@@ -59,7 +59,7 @@ import {
   dollarsToCents,
   centsToDollars,
 } from "@/hooks/useProducts";
-import { 
+import {
   useCategories,
   useCreateCategory,
   useUpdateCategory,
@@ -75,6 +75,7 @@ import {
   useCreateModifierOption,
   useDeleteModifierOption,
 } from "@/hooks/useModifiers";
+import { useQueryClient } from "@tanstack/react-query";
 import { getImageCropConfig, validateImageFile } from "@/lib/imageCropConfig";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -122,7 +123,7 @@ export default function ProductManagement() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  
+
   // Image state at parent level to persist across dialog re-renders
   const [imagePreview, setImagePreview] = useState<string>("");
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -166,17 +167,21 @@ export default function ProductManagement() {
     active: true,
     page_size: 100, // Get all categories for dropdown
   });
-  
+
   // API Hooks - Fetch categories for category tab with pagination
   const { data: categoryListResponse, isLoading: categoryListLoading } = useCategories({
     page: categoryPage,
     page_size: 12,
   });
-  
+
   // Category mutations
   const createCategoryMutation = useCreateCategory();
   const updateCategoryMutation = useUpdateCategory();
   const deleteCategoryMutation = useDeleteCategory();
+
+  // Query client for manual cache invalidation
+  const queryClient = useQueryClient();
+
   const apiCategories = categoriesData?.data || [];
 
   // API Hooks - Fetch modifiers for modifier tab with pagination
@@ -184,6 +189,18 @@ export default function ProductManagement() {
     page: modifierPage,
     page_size: 12,
   });
+
+  // Debug: Log modifier data
+  useEffect(() => {
+    if (modifierListResponse) {
+      console.log('modifierListResponse:', modifierListResponse);
+      console.log('modifierListResponse.data:', modifierListResponse.data);
+      if (modifierListResponse.data && modifierListResponse.data.length > 0) {
+        console.log('First modifier:', modifierListResponse.data[0]);
+      }
+    }
+  }, [modifierListResponse]);
+
 
   // Modifier mutations
   const createModifierMutation = useCreateModifier();
@@ -203,8 +220,8 @@ export default function ProductManagement() {
     page_size: 12,
     search: debouncedSearch || undefined,
     category_id: selectedCategory !== "all" ? selectedCategory : undefined,
-    available: selectedStatus === "available" ? true : 
-               selectedStatus === "unavailable" ? false : undefined,
+    available: selectedStatus === "available" ? true :
+      selectedStatus === "unavailable" ? false : undefined,
   };
 
   // API Hooks - Fetch products
@@ -243,7 +260,7 @@ export default function ProductManagement() {
     available: product.available,
     featured: product.featured,
     cost: centsToDollars(product.cost || 0),
-    margin: product.cost && product.price ? 
+    margin: product.cost && product.price ?
       ((product.price - product.cost) / product.price) * 100 : 0,
     tags: product.tags || [],
     modifiers: [],
@@ -369,11 +386,11 @@ export default function ProductManagement() {
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      
+
       if (file) {
         // Validate file using config
         const validation = validateImageFile(file, 'product');
-        
+
         if (!validation.valid) {
           setErrors({ ...errors, image: validation.error || 'Invalid image file' });
           return;
@@ -469,9 +486,8 @@ export default function ProductManagement() {
               setFormData({ ...formData, name: e.target.value });
               if (errors.name) setErrors({ ...errors, name: '' });
             }}
-            className={`bg-background border-border text-foreground ${
-              errors.name ? 'border-destructive' : ''
-            }`}
+            className={`bg-background border-border text-foreground ${errors.name ? 'border-destructive' : ''
+              }`}
             placeholder="Enter product name"
           />
           {errors.name && (
@@ -491,9 +507,8 @@ export default function ProductManagement() {
                 setFormData({ ...formData, slug: e.target.value });
                 if (errors.slug) setErrors({ ...errors, slug: '' });
               }}
-              className={`bg-background border-border text-foreground ${
-                errors.slug ? 'border-destructive' : ''
-              }`}
+              className={`bg-background border-border text-foreground ${errors.slug ? 'border-destructive' : ''
+                }`}
               placeholder="product-slug"
             />
             {errors.slug && (
@@ -528,10 +543,9 @@ export default function ProductManagement() {
               if (errors.category) setErrors({ ...errors, category: '' });
             }}
           >
-            <SelectTrigger className={`bg-pos-surface border-pos-secondary text-pos-text ${
-              errors.category ? 'border-destructive' : ''
-            }`}>
-              <SelectValue />
+            <SelectTrigger className={`bg-pos-surface border-pos-secondary text-pos-text ${errors.category ? 'border-destructive' : ''
+              }`}>
+              <SelectValue placeholder="Select a category" />
             </SelectTrigger>
             <SelectContent className="bg-pos-surface border-pos-secondary">
               {displayCategories.map((cat) => (
@@ -580,9 +594,8 @@ export default function ProductManagement() {
                 });
                 if (errors.price) setErrors({ ...errors, price: '' });
               }}
-              className={`bg-pos-surface border-pos-secondary text-pos-text ${
-                errors.price ? 'border-destructive' : ''
-              }`}
+              className={`bg-pos-surface border-pos-secondary text-pos-text ${errors.price ? 'border-destructive' : ''
+                }`}
               placeholder="0.00"
             />
             {errors.price && (
@@ -606,9 +619,8 @@ export default function ProductManagement() {
                 });
                 if (errors.cost) setErrors({ ...errors, cost: '' });
               }}
-              className={`bg-pos-surface border-pos-secondary text-pos-text ${
-                errors.cost ? 'border-destructive' : ''
-              }`}
+              className={`bg-pos-surface border-pos-secondary text-pos-text ${errors.cost ? 'border-destructive' : ''
+                }`}
               placeholder="0.00"
             />
             {errors.cost && (
@@ -642,9 +654,8 @@ export default function ProductManagement() {
                 });
                 if (errors.stock) setErrors({ ...errors, stock: '' });
               }}
-              className={`bg-pos-surface border-pos-secondary text-pos-text ${
-                errors.stock ? 'border-destructive' : ''
-              }`}
+              className={`bg-pos-surface border-pos-secondary text-pos-text ${errors.stock ? 'border-destructive' : ''
+                }`}
               placeholder="0"
             />
             {errors.stock && (
@@ -667,9 +678,8 @@ export default function ProductManagement() {
                 });
                 if (errors.minStock) setErrors({ ...errors, minStock: '' });
               }}
-              className={`bg-pos-surface border-pos-secondary text-pos-text ${
-                errors.minStock ? 'border-destructive' : ''
-              }`}
+              className={`bg-pos-surface border-pos-secondary text-pos-text ${errors.minStock ? 'border-destructive' : ''
+                }`}
               placeholder="5"
             />
             {errors.minStock && (
@@ -881,52 +891,52 @@ export default function ProductManagement() {
                 Add Product
               </Button>
             </DialogTrigger>
-          <DialogContent className="bg-pos-surface border-pos-secondary max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="text-pos-text">
-                Add New Product
-              </DialogTitle>
-            </DialogHeader>
-            <ProductForm
-              imagePreview={imagePreview}
-              setImagePreview={setImagePreview}
-              imageFile={imageFile}
-              setImageFile={setImageFile}
-              onSave={(productData) => {
-                console.log('Product form data:', productData);
-                console.log('Image file:', imageFile);
-                
-                // Prepare data for API according to documentation
-                const apiData = {
-                  name: productData.name!,
-                  slug: productData.slug!,
-                  category_id: productData.category!,
-                  price: dollarsToCents(productData.price || 0),
-                  description: productData.description || undefined,
-                  sku: productData.sku || undefined,
-                  stock: productData.stock || 0,
-                  is_available: productData.available ?? true,
-                  image: imageFile || null,
-                };
+            <DialogContent className="bg-pos-surface border-pos-secondary max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="text-pos-text">
+                  Add New Product
+                </DialogTitle>
+              </DialogHeader>
+              <ProductForm
+                imagePreview={imagePreview}
+                setImagePreview={setImagePreview}
+                imageFile={imageFile}
+                setImageFile={setImageFile}
+                onSave={(productData) => {
+                  console.log('Product form data:', productData);
+                  console.log('Image file:', imageFile);
 
-                console.log('API data prepared:', apiData);
+                  // Prepare data for API according to documentation
+                  const apiData = {
+                    name: productData.name!,
+                    slug: productData.slug!,
+                    category_id: productData.category!,
+                    price: dollarsToCents(productData.price || 0),
+                    description: productData.description || undefined,
+                    sku: productData.sku || undefined,
+                    stock: productData.stock || 0,
+                    is_available: productData.available ?? true,
+                    image: imageFile || null,
+                  };
 
-                createMutation.mutate(apiData, {
-                  onSuccess: () => {
-                    console.log('Product created successfully!');
-                    setIsAddingProduct(false);
-                    setImagePreview("");
-                    setImageFile(null);
-                  },
-                  onError: (error) => {
-                    console.error('Error creating product:', error);
-                  },
-                });
-              }}
-              onCancel={() => setIsAddingProduct(false)}
-            />
-          </DialogContent>
-        </Dialog>
+                  console.log('API data prepared:', apiData);
+
+                  createMutation.mutate(apiData, {
+                    onSuccess: () => {
+                      console.log('Product created successfully!');
+                      setIsAddingProduct(false);
+                      setImagePreview("");
+                      setImageFile(null);
+                    },
+                    onError: (error) => {
+                      console.error('Error creating product:', error);
+                    },
+                  });
+                }}
+                onCancel={() => setIsAddingProduct(false)}
+              />
+            </DialogContent>
+          </Dialog>
         )}
         {activeTab === "categories" && (
           <Dialog open={isAddingCategory} onOpenChange={(open) => {
@@ -952,8 +962,8 @@ export default function ProductManagement() {
                 onSave={(categoryData) => {
                   if (editingCategory) {
                     updateCategoryMutation.mutate(
-                      { 
-                        id: editingCategory.id, 
+                      {
+                        id: editingCategory.id,
                         data: {
                           name: categoryData.name,
                           slug: categoryData.slug,
@@ -998,7 +1008,7 @@ export default function ProductManagement() {
           </Dialog>
         )}
         {activeTab === "modifiers" && (
-          <Button 
+          <Button
             className="bg-primary hover:bg-primary/90 text-primary-foreground"
             onClick={() => setIsAddingModifier(true)}
           >
@@ -1101,185 +1111,201 @@ export default function ProductManagement() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredProducts.map((product) => {
-              const stockStatus = getStockStatus(product);
-              return (
-                <Card
-                  key={product.id}
-                  className="bg-pos-surface border-pos-secondary"
-                >
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <CardTitle className="text-lg text-pos-text flex items-center">
-                          {product.name}
-                          {product.featured && (
-                            <Star className="ml-2 h-4 w-4 text-pos-warning fill-current" />
+                const stockStatus = getStockStatus(product);
+                return (
+                  <Card
+                    key={product.id}
+                    className="bg-pos-surface border-pos-secondary"
+                  >
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <CardTitle className="text-lg text-pos-text flex items-center">
+                            {product.name}
+                            {product.featured && (
+                              <Star className="ml-2 h-4 w-4 text-pos-warning fill-current" />
+                            )}
+                          </CardTitle>
+                          <p className="text-sm text-pos-text-muted mt-1 line-clamp-2">
+                            {product.description}
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          {product.available ? (
+                            <Eye className="h-4 w-4 text-pos-success" />
+                          ) : (
+                            <EyeOff className="h-4 w-4 text-pos-text-muted" />
                           )}
-                        </CardTitle>
-                        <p className="text-sm text-pos-text-muted mt-1 line-clamp-2">
-                          {product.description}
-                        </p>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-1">
-                        {product.available ? (
-                          <Eye className="h-4 w-4 text-pos-success" />
-                        ) : (
-                          <EyeOff className="h-4 w-4 text-pos-text-muted" />
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="aspect-video bg-pos-secondary rounded-md flex items-center justify-center overflow-hidden">
+                        {product.image ? (
+                          <img
+                            src={`${BACKEND_URL}${product.image}`}
+                            alt={product.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                            }}
+                          />
+                        ) : null}
+                        <ImageIcon className={`h-8 w-8 text-pos-text-muted ${product.image ? 'hidden' : ''}`} />
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-pos-text-muted text-sm">
+                            Price
+                          </span>
+                          <span className="text-pos-text font-bold text-lg">
+                            ${product.price.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-pos-text-muted text-sm">
+                            Cost
+                          </span>
+                          <span className="text-pos-text">${product.cost.toFixed(2)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-pos-text-muted text-sm">
+                            Margin
+                          </span>
+                          <span className="text-pos-success">
+                            {product.margin.toFixed(1)}%
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-pos-text-muted text-sm">
+                            Stock:
+                          </span>
+                          <span className="text-pos-text font-medium">
+                            {product.stock}
+                          </span>
+                          <div
+                            className={`w-2 h-2 rounded-full ${stockStatus.color}`}
+                          ></div>
+                        </div>
+                        {product.stock <= product.minStock && (
+                          <AlertTriangle className="h-4 w-4 text-pos-warning" />
                         )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0"
+                      </div>
+
+                      <div className="flex flex-wrap gap-1">
+                        <Badge variant="secondary" className="text-xs">
+                          {
+                            categories.find((c) => c.id === product.category)
+                              ?.name
+                          }
+                        </Badge>
+                        {product.tags.map((tag) => (
+                          <Badge key={tag} variant="outline" className="text-xs">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center space-x-2 pt-2">
+                        <Dialog
+                          open={editingProduct?.id === product.id}
+                          onOpenChange={(open) => {
+                            if (open) {
+                              // Set the editing product and initialize image preview
+                              setEditingProduct(product);
+                              // Concatenate BACKEND_URL with image path if image exists
+                              setImagePreview(product.image ? `${BACKEND_URL}${product.image}` : "");
+                              setImageFile(null);
+                            } else {
+                              // Reset when dialog closes
+                              setEditingProduct(null);
+                              setImagePreview("");
+                              setImageFile(null);
+                            }
+                          }}
                         >
-                          <MoreVertical className="h-4 w-4" />
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 border-pos-secondary text-pos-text-muted hover:text-pos-text"
+                            >
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="bg-pos-surface border-pos-secondary max-w-2xl">
+                            <DialogHeader>
+                              <DialogTitle className="text-pos-text">
+                                Edit Product
+                              </DialogTitle>
+                            </DialogHeader>
+                            <ProductForm
+                              product={product}
+                              imagePreview={imagePreview}
+                              setImagePreview={setImagePreview}
+                              imageFile={imageFile}
+                              setImageFile={setImageFile}
+                              onSave={(updatedData) => {
+                                // Build API data object
+                                const apiData: any = {
+                                  name: updatedData.name,
+                                  description: updatedData.description,
+                                  price: dollarsToCents(updatedData.price || 0),
+                                  cost: dollarsToCents(updatedData.cost || 0),
+                                  category_id: updatedData.category,
+                                  stock: updatedData.stock,
+                                  min_stock: updatedData.minStock,
+                                  available: updatedData.available,
+                                  featured: updatedData.featured,
+                                };
+
+                                // Only include image if a new image file was selected
+                                if (imageFile) {
+                                  apiData.image = imageFile;
+                                }
+
+                                updateMutation.mutate({ id: product.id, data: apiData });
+                                // Close dialog after save
+                                setEditingProduct(null);
+                              }}
+                              onCancel={() => {
+                                // Close the dialog when cancel is clicked
+                                setEditingProduct(null);
+                              }}
+                            />
+                          </DialogContent>
+                        </Dialog>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-pos-secondary text-pos-error hover:text-pos-error"
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to delete ${product.name}?`)) {
+                              deleteMutation.mutate(product.id);
+                            }
+                          }}
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="aspect-video bg-pos-secondary rounded-md flex items-center justify-center overflow-hidden">
-                      {product.image ? (
-                        <img 
-                          src={`${BACKEND_URL}${product.image}`}
-                          alt={product.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                          }}
-                        />
-                      ) : null}
-                      <ImageIcon className={`h-8 w-8 text-pos-text-muted ${product.image ? 'hidden' : ''}`} />
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-pos-text-muted text-sm">
-                          Price
-                        </span>
-                        <span className="text-pos-text font-bold text-lg">
-                          ${product.price.toFixed(2)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-pos-text-muted text-sm">
-                          Cost
-                        </span>
-                        <span className="text-pos-text">${product.cost.toFixed(2)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-pos-text-muted text-sm">
-                          Margin
-                        </span>
-                        <span className="text-pos-success">
-                          {product.margin.toFixed(1)}%
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-pos-text-muted text-sm">
-                          Stock:
-                        </span>
-                        <span className="text-pos-text font-medium">
-                          {product.stock}
-                        </span>
-                        <div
-                          className={`w-2 h-2 rounded-full ${stockStatus.color}`}
-                        ></div>
-                      </div>
-                      {product.stock <= product.minStock && (
-                        <AlertTriangle className="h-4 w-4 text-pos-warning" />
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap gap-1">
-                      <Badge variant="secondary" className="text-xs">
-                        {
-                          categories.find((c) => c.id === product.category)
-                            ?.name
-                        }
-                      </Badge>
-                      {product.tags.map((tag) => (
-                        <Badge key={tag} variant="outline" className="text-xs">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-
-                    <div className="flex items-center space-x-2 pt-2">
-                      <Dialog onOpenChange={(open) => {
-                        if (open) {
-                          // Initialize image preview with product's existing image
-                          setImagePreview(product.image || "");
-                          setImageFile(null);
-                        } else {
-                          // Reset when dialog closes
-                          setImagePreview("");
-                          setImageFile(null);
-                        }
-                      }}>
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1 border-pos-secondary text-pos-text-muted hover:text-pos-text"
-                          >
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="bg-pos-surface border-pos-secondary max-w-2xl">
-                          <DialogHeader>
-                            <DialogTitle className="text-pos-text">
-                              Edit Product
-                            </DialogTitle>
-                          </DialogHeader>
-                          <ProductForm
-                            product={product}
-                            imagePreview={imagePreview}
-                            setImagePreview={setImagePreview}
-                            imageFile={imageFile}
-                            setImageFile={setImageFile}
-                            onSave={(updatedData) => {
-                              const apiData = {
-                                name: updatedData.name,
-                                description: updatedData.description,
-                                price: dollarsToCents(updatedData.price || 0),
-                                cost: dollarsToCents(updatedData.cost || 0),
-                                category_id: updatedData.category,
-                                stock: updatedData.stock,
-                                min_stock: updatedData.minStock,
-                                available: updatedData.available,
-                                featured: updatedData.featured,
-                                image: updatedData.image || undefined,
-                              };
-
-                              updateMutation.mutate({ id: product.id, data: apiData });
-                            }}
-                            onCancel={() => {}}
-                          />
-                        </DialogContent>
-                      </Dialog>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="border-pos-secondary text-pos-error hover:text-pos-error"
-                        onClick={() => {
-                          if (window.confirm(`Are you sure you want to delete ${product.name}?`)) {
-                            deleteMutation.mutate(product.id);
-                          }
-                        }}
-                        disabled={deleteMutation.isPending}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
 
@@ -1348,7 +1374,7 @@ export default function ProductManagement() {
               </CardContent>
             </Card>
           ) : (
-            <>
+            <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {categoryListResponse.data?.map((category) => (
                   <Card key={category.id} className="bg-card border-border">
@@ -1450,12 +1476,25 @@ export default function ProductManagement() {
                   </div>
                 </div>
               )}
-            </>
+            </div>
           )}
         </TabsContent>
 
         {/* Modifiers Tab */}
         <TabsContent value="modifiers" className="space-y-6">
+          {/* Debug button to force cache refresh */}
+          <Button
+            onClick={() => {
+              console.log('Invalidating modifiers cache...');
+              queryClient.invalidateQueries({ queryKey: ['modifiers'] });
+              console.log('Cache invalidated, refetching...');
+            }}
+            variant="outline"
+            className="mb-4"
+          >
+            🔄 Force Refresh Modifiers Data
+          </Button>
+
           {modifiersLoading ? (
             <div className="flex justify-center items-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
@@ -1477,7 +1516,7 @@ export default function ProductManagement() {
               </CardContent>
             </Card>
           ) : (
-            <>
+            <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {modifierListResponse.data.map((modifier) => (
                   <Card key={modifier.id} className="bg-card border-border">
@@ -1571,7 +1610,7 @@ export default function ProductManagement() {
                   </div>
                 </div>
               )}
-            </>
+            </div>
           )}
         </TabsContent>
       </Tabs>
@@ -1594,8 +1633,8 @@ export default function ProductManagement() {
                 category: formData.get("category") as string,
                 required: formData.get("required") === "on",
                 min_selections: parseInt(formData.get("min_selections") as string) || 0,
-                max_selections: formData.get("max_selections") 
-                  ? parseInt(formData.get("max_selections") as string) 
+                max_selections: formData.get("max_selections")
+                  ? parseInt(formData.get("max_selections") as string)
                   : null,
               };
               createModifierMutation.mutate(data, {
@@ -1715,9 +1754,14 @@ export default function ProductManagement() {
       </Dialog>
 
       {/* Manage Modifier Options Dialog */}
-      <Dialog 
-        open={!!selectedModifierForOptions} 
-        onOpenChange={(open) => !open && setSelectedModifierForOptions(null)}
+      {console.log('selectedModifierForOptions:', selectedModifierForOptions)}
+      {console.log('Dialog open state:', !!selectedModifierForOptions)}
+      <Dialog
+        open={!!selectedModifierForOptions}
+        onOpenChange={(open) => {
+          console.log('Dialog onOpenChange called, open:', open);
+          !open && setSelectedModifierForOptions(null);
+        }}
       >
         <DialogContent className="bg-card border-border max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -1757,7 +1801,7 @@ export default function ProductManagement() {
                         available: formData.get("option_available") === "on",
                         sort_order: parseInt(formData.get("option_sort_order") as string || "0"),
                       };
-                      
+
                       if (selectedModifierForOptions) {
                         createModifierOptionMutation.mutate(
                           {
@@ -1848,7 +1892,7 @@ export default function ProductManagement() {
                 <h3 className="text-lg font-semibold text-foreground">
                   Existing Options ({modifierOptionsData.data?.length || 0})
                 </h3>
-                
+
                 {!modifierOptionsData.data || modifierOptionsData.data.length === 0 ? (
                   <p className="text-muted-foreground text-center py-8">
                     No options yet. Add your first option above.
@@ -1877,12 +1921,12 @@ export default function ProductManagement() {
                                   Price: ${(option.price / 100).toFixed(2)}
                                 </p>
                               </div>
-                              
+
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                  <Button 
-                                    variant="outline" 
-                                    size="sm" 
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
                                     className="text-destructive hover:bg-destructive/10"
                                   >
                                     <Trash2 className="h-4 w-4" />

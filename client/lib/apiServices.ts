@@ -3,7 +3,7 @@
  * Import these functions to make API calls with automatic authentication
  */
 
-import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from "./apiClient";
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete, apiUpload } from "./apiClient";
 
 // ==================== Auth Services ====================
 
@@ -212,9 +212,6 @@ export async function createProduct(productData: {
   for (const [key, value] of formData.entries()) {
     console.log(`${key}:`, value);
   }
-
-  // Import apiUpload from apiClient
-  const { apiUpload } = await import('./apiClient');
   
   interface ProductResponse {
     id: string;
@@ -528,9 +525,6 @@ export async function createCategory(categoryData: {
   if (categoryData.image) {
     formData.append("image", categoryData.image);
   }
-
-  // Import apiUpload from apiClient
-  const { apiUpload } = await import('./apiClient');
   
   interface CategoryResponse {
     status: string;
@@ -675,8 +669,6 @@ export async function uploadImage(file: File, folder: string = 'products'): Prom
   formData.append('file', file);
   formData.append('folder', folder);
 
-  // Import apiUpload from apiClient
-  const { apiUpload } = await import('./apiClient');
   return apiUpload<UploadResponse>('/upload/image', formData);
 }
 

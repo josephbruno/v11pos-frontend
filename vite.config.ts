@@ -11,6 +11,42 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     outDir: "dist/spa",
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          // Vendor chunks
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
+              return 'react-vendor';
+            }
+            if (id.includes('@radix-ui')) {
+              return 'ui-vendor';
+            }
+            if (id.includes('@tanstack/react-query')) {
+              return 'query-vendor';
+            }
+            if (id.includes('framer-motion')) {
+              return 'animation-vendor';
+            }
+            if (id.includes('lucide-react') || id.includes('date-fns') || id.includes('clsx') || id.includes('tailwind-merge')) {
+              return 'utils';
+            }
+            if (id.includes('recharts')) {
+              return 'charts';
+            }
+            return 'vendor'; // Other vendor libraries
+          }
+          
+          // Split pages into separate chunks
+          if (id.includes('/client/pages/')) {
+            const pageName = id.split('/client/pages/')[1].split('.')[0];
+            return `page-${pageName.toLowerCase()}`;
+          }
+        },
+      },
+    },
+    sourcemap: false, // Disable sourcemaps for production to reduce build size
   },
   plugins: [react(), expressPlugin()],
   resolve: {
