@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   Bell,
   Users,
+  CreditCard,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,12 +26,12 @@ import type { QROrderStatus, QROrderWithDetails } from "@/shared/api";
 const mockOrder: QROrderWithDetails = {
   id: "qr-order-001",
   orderId: "qr-order-001",
-  orderNumber: "QR-101",
+  order_number: "QR-101",
   qrOrderNumber: "QR-101",
-  tableId: "table-1",
+  table_id: "table-1",
   sessionId: "session-123",
   deviceFingerprint: "device-abc",
-  customerId: undefined,
+  customer_id: undefined,
   customerName: "Guest",
   customerPhone: "+1 (555) 123-4567",
   items: [
@@ -158,9 +159,12 @@ const mockOrder: QROrderWithDetails = {
   loyaltyDiscount: 0,
   finalTotal: 25.82,
   orderType: "qr_order",
-  status: "preparing",
-  paymentStatus: "pending",
+  status: "preparing" as any,
+  payment_status: "pending",
   paymentMethod: "pay_at_table",
+  restaurant_id: "res-1",
+  total_amount: 25.82,
+  created_at: new Date("2024-01-21T12:30:00"),
   createdAt: new Date("2024-01-21T12:30:00"),
   updatedAt: new Date("2024-01-21T12:35:00"),
   estimatedTime: 20,
@@ -283,21 +287,19 @@ function StatusTimeline({ currentStatus }: { currentStatus: string }) {
             className="flex items-center space-x-3"
           >
             <div
-              className={`flex items-center justify-center w-8 h-8 rounded-full border-2 ${
-                isCompleted
-                  ? "bg-green-500 border-green-500 text-white"
-                  : isCurrent
-                    ? "bg-blue-500 border-blue-500 text-white"
-                    : "bg-gray-100 border-gray-300 text-gray-400"
-              }`}
+              className={`flex items-center justify-center w-8 h-8 rounded-full border-2 ${isCompleted
+                ? "bg-green-500 border-green-500 text-white"
+                : isCurrent
+                  ? "bg-blue-500 border-blue-500 text-white"
+                  : "bg-gray-100 border-gray-300 text-gray-400"
+                }`}
             >
               <Icon className="h-4 w-4" />
             </div>
             <div className="flex-1">
               <div
-                className={`font-medium ${
-                  isCompleted || isCurrent ? "text-gray-900" : "text-gray-400"
-                }`}
+                className={`font-medium ${isCompleted || isCurrent ? "text-gray-900" : "text-gray-400"
+                  }`}
               >
                 {step.label}
               </div>
@@ -372,8 +374,8 @@ function KOTGroupStatus({
                   {kotGroup.department}
                 </div>
                 <div className="text-sm text-gray-600">
-                  {kotGroup.items.length} item
-                  {kotGroup.items.length !== 1 ? "s" : ""}
+                  {kotGroup.items?.length ?? 0} item
+                  {kotGroup.items?.length !== 1 ? "s" : ""}
                 </div>
               </div>
             </div>
@@ -407,7 +409,7 @@ export default function OrderTracking() {
   const getEstimatedTimeRemaining = () => {
     if (!order.estimatedTime || !order.createdAt) return null;
     const estimatedFinishTime = new Date(
-      order.createdAt.getTime() + order.estimatedTime * 60000,
+      (order.createdAt as Date).getTime() + order.estimatedTime * 60000,
     );
     const now = new Date();
     const remaining = Math.max(
@@ -420,7 +422,7 @@ export default function OrderTracking() {
   const getElapsedTime = () => {
     if (!order.createdAt) return 0;
     const now = new Date();
-    return Math.floor((now.getTime() - order.createdAt.getTime()) / 60000);
+    return Math.floor((now.getTime() - (order.createdAt as Date).getTime()) / 60000);
   };
 
   const timeRemaining = getEstimatedTimeRemaining();
@@ -472,15 +474,14 @@ export default function OrderTracking() {
             <div className="flex items-center justify-between">
               <CardTitle className="text-gray-900">Order Status</CardTitle>
               <Badge
-                className={`${
-                  order.status === "ready"
-                    ? "bg-green-100 text-green-800"
-                    : order.status === "preparing"
-                      ? "bg-blue-100 text-blue-800"
-                      : "bg-yellow-100 text-yellow-800"
-                } border-0`}
+                className={`${order.status === "ready"
+                  ? "bg-green-100 text-green-800"
+                  : order.status === "preparing"
+                    ? "bg-blue-100 text-blue-800"
+                    : "bg-yellow-100 text-yellow-800"
+                  } border-0`}
               >
-                {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                {(order.status as string).charAt(0).toUpperCase() + (order.status as string).slice(1)}
               </Badge>
             </div>
           </CardHeader>
@@ -550,7 +551,7 @@ export default function OrderTracking() {
                   </p>
                   {item.modifiers.length > 0 && (
                     <div className="text-sm text-gray-500 mt-1">
-                      {item.modifiers.map((mod) => mod.name).join(", ")}
+                      {item.modifiers.map((mod: any) => mod.name).join(", ")}
                     </div>
                   )}
                   {item.notes && (
@@ -572,9 +573,9 @@ export default function OrderTracking() {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span>Subtotal:</span>
-                <span>${order.subtotal.toFixed(2)}</span>
+                <span>${order.subtotal?.toFixed(2) ?? "0.00"}</span>
               </div>
-              {order.taxes.map((tax) => (
+              {order.taxes?.map((tax: any) => (
                 <div
                   key={tax.taxRuleId}
                   className="flex justify-between text-sm"

@@ -52,7 +52,7 @@ interface User {
   name: string;
   email: string;
   phone: string;
-  role: "admin" | "manager" | "staff" | "cashier";
+  role: "super_admin" | "admin" | "supervisor" | "user";
   status: "active" | "inactive" | "suspended";
   joinDate: string;
   lastLogin: string;
@@ -112,7 +112,7 @@ const modalVariants = {
       type: "spring",
       damping: 25,
       stiffness: 400,
-    },
+    } as any,
   },
   exit: {
     opacity: 0,
@@ -120,7 +120,7 @@ const modalVariants = {
     y: 0,
     transition: {
       duration: 0.2,
-    },
+    } as any,
   },
 };
 
@@ -138,9 +138,22 @@ export default function UserManagement() {
   // Mock data
   const roles: Role[] = [
     {
+      id: "super_admin",
+      name: "Super Administrator",
+      description: "Global system access and multi-tenant management",
+      permissions: [
+        "manage_organizations",
+        "manage_branches",
+        "system_configuration",
+        "data_migration",
+        "global_analytics",
+      ],
+      userCount: 1,
+    },
+    {
       id: "admin",
       name: "Administrator",
-      description: "Full system access and management",
+      description: "Full restaurant management access",
       permissions: [
         "manage_users",
         "manage_products",
@@ -152,31 +165,24 @@ export default function UserManagement() {
       userCount: 2,
     },
     {
-      id: "manager",
-      name: "Manager",
-      description: "Operations management and staff supervision",
+      id: "supervisor",
+      name: "Supervisor",
+      description: "Operations supervision and kitchen management",
       permissions: [
         "manage_products",
         "view_analytics",
         "manage_orders",
-        "manage_staff_schedules",
         "process_payments",
+        "view_menu",
       ],
       userCount: 3,
     },
     {
-      id: "staff",
-      name: "Staff",
-      description: "General restaurant operations",
+      id: "user",
+      name: "User",
+      description: "General POS and order operations",
       permissions: ["manage_orders", "process_payments", "view_menu"],
-      userCount: 8,
-    },
-    {
-      id: "cashier",
-      name: "Cashier",
-      description: "Point of sale operations only",
-      permissions: ["process_payments", "view_menu"],
-      userCount: 4,
+      userCount: 10,
     },
   ];
 
@@ -224,7 +230,7 @@ export default function UserManagement() {
       name: "Maria Garcia",
       email: "maria.garcia@restaurant.com",
       phone: "+1 (555) 234-5678",
-      role: "manager",
+      role: "admin",
       status: "active",
       joinDate: "2023-03-20",
       lastLogin: "2024-01-20 13:45",
@@ -262,7 +268,7 @@ export default function UserManagement() {
       name: "David Chen",
       email: "david.chen@restaurant.com",
       phone: "+1 (555) 345-6789",
-      role: "staff",
+      role: "supervisor",
       status: "active",
       joinDate: "2023-06-10",
       lastLogin: "2024-01-20 12:15",
@@ -295,7 +301,7 @@ export default function UserManagement() {
       name: "Sarah Wilson",
       email: "sarah.wilson@restaurant.com",
       phone: "+1 (555) 456-7890",
-      role: "cashier",
+      role: "user",
       status: "inactive",
       joinDate: "2023-09-05",
       lastLogin: "2024-01-18 16:00",
@@ -353,14 +359,14 @@ export default function UserManagement() {
 
   const getRoleColor = (role: string) => {
     switch (role) {
+      case "super_admin":
+        return "bg-purple-600 text-white";
       case "admin":
         return "bg-red-500 text-white";
-      case "manager":
+      case "supervisor":
         return "bg-yellow-500 text-black";
-      case "staff":
+      case "user":
         return "bg-green-500 text-white";
-      case "cashier":
-        return "bg-blue-500 text-white";
       default:
         return "bg-gray-500 text-white";
     }
@@ -413,7 +419,7 @@ export default function UserManagement() {
       name: user?.name || "",
       email: user?.email || "",
       phone: user?.phone || "",
-      role: user?.role || "staff",
+      role: user?.role || "user",
       status: user?.status || "active",
     });
 

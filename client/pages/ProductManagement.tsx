@@ -226,8 +226,9 @@ export default function ProductManagement() {
 
   // API Hooks - Fetch products
   const { data: productsResponse, isLoading: productsLoading } = useProducts(filters);
-  const apiProducts = productsResponse?.data || [];
-  const pagination = productsResponse?.pagination;
+  // Ensure we handle both paginated and non-paginated responses if needed
+  const apiProducts = (productsResponse as any)?.data || (Array.isArray(productsResponse) ? productsResponse : []);
+  const pagination = (productsResponse as any)?.pagination;
 
   // API Hooks - Mutations
   const createMutation = useCreateProduct();
@@ -235,13 +236,13 @@ export default function ProductManagement() {
   const deleteMutation = useDeleteProduct();
 
   // Map API categories to UI format
-  const categories: Category[] = apiCategories.map(cat => ({
+  const categories: any[] = apiCategories.map((cat: any) => ({
     id: cat.id,
     name: cat.name,
     description: cat.description || "",
     active: cat.active,
     sortOrder: cat.sort_order,
-    productCount: 0, // This would need a separate API call
+    productCount: 0,
   }));
 
   // Use categories directly from API
@@ -1616,367 +1617,366 @@ export default function ProductManagement() {
       </Tabs>
 
       {/* Add/Edit Modifier Dialog */}
-      <Dialog open={isAddingModifier} onOpenChange={setIsAddingModifier}>
-        <DialogContent className="bg-card border-border max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-foreground">
-              {editingModifier ? "Edit Modifier" : "Add New Modifier"}
-            </DialogTitle>
-          </DialogHeader>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData(e.currentTarget);
-              const data = {
-                name: formData.get("name") as string,
-                type: formData.get("type") as "single" | "multiple",
-                category: formData.get("category") as string,
-                required: formData.get("required") === "on",
-                min_selections: parseInt(formData.get("min_selections") as string) || 0,
-                max_selections: formData.get("max_selections")
-                  ? parseInt(formData.get("max_selections") as string)
-                  : null,
-              };
-              createModifierMutation.mutate(data, {
-                onSuccess: () => {
-                  setIsAddingModifier(false);
-                  setEditingModifier(null);
-                },
-              });
-            }}
-            className="space-y-4"
-          >
-            <div className="grid grid-cols-2 gap-4">
+      <>
+        <Dialog open={isAddingModifier} onOpenChange={setIsAddingModifier}>
+          <DialogContent className="bg-card border-border max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">
+                {editingModifier ? "Edit Modifier" : "Add New Modifier"}
+              </DialogTitle>
+            </DialogHeader>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                const data = {
+                  name: formData.get("name") as string,
+                  type: formData.get("type") as "single" | "multiple",
+                  category: formData.get("category") as string,
+                  required: formData.get("required") === "on",
+                  min_selections: parseInt(formData.get("min_selections") as string) || 0,
+                  max_selections: formData.get("max_selections")
+                    ? parseInt(formData.get("max_selections") as string)
+                    : null,
+                };
+                createModifierMutation.mutate(data, {
+                  onSuccess: () => {
+                    setIsAddingModifier(false);
+                    setEditingModifier(null);
+                  },
+                });
+              }}
+              className="space-y-4"
+            >
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="modifier-name" className="text-foreground">
+                    Name *
+                  </Label>
+                  <Input
+                    id="modifier-name"
+                    name="name"
+                    placeholder="e.g., Size, Toppings"
+                    required
+                    className="bg-background border-input text-foreground"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="modifier-type" className="text-foreground">
+                    Type *
+                  </Label>
+                  <select
+                    id="modifier-type"
+                    name="type"
+                    required
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    <option value="single">Single Choice</option>
+                    <option value="multiple">Multiple Choice</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="space-y-2">
-                <Label htmlFor="modifier-name" className="text-foreground">
-                  Name *
+                <Label htmlFor="modifier-category" className="text-foreground">
+                  Category
                 </Label>
                 <Input
-                  id="modifier-name"
-                  name="name"
-                  placeholder="e.g., Size, Toppings"
-                  required
+                  id="modifier-category"
+                  name="category"
+                  placeholder="e.g., Size, Add-ons, Customization"
                   className="bg-background border-input text-foreground"
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="modifier-type" className="text-foreground">
-                  Type *
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="min-selections" className="text-foreground">
+                    Minimum Selections
+                  </Label>
+                  <Input
+                    id="min-selections"
+                    name="min_selections"
+                    type="number"
+                    min="0"
+                    defaultValue="0"
+                    className="bg-background border-input text-foreground"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="max-selections" className="text-foreground">
+                    Maximum Selections
+                  </Label>
+                  <Input
+                    id="max-selections"
+                    name="max_selections"
+                    type="number"
+                    min="1"
+                    placeholder="Leave empty for unlimited"
+                    className="bg-background border-input text-foreground"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="modifier-required"
+                  name="required"
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <Label htmlFor="modifier-required" className="text-foreground cursor-pointer">
+                  Required (Customer must make a selection)
                 </Label>
-                <select
-                  id="modifier-type"
-                  name="type"
-                  required
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setIsAddingModifier(false);
+                    setEditingModifier(null);
+                  }}
                 >
-                  <option value="single">Single Choice</option>
-                  <option value="multiple">Multiple Choice</option>
-                </select>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                  disabled={createModifierMutation.isPending}
+                >
+                  {createModifierMutation.isPending ? "Creating..." : "Create Modifier"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Manage Modifier Options Dialog */}
+        {console.log('selectedModifierForOptions:', selectedModifierForOptions)}
+        {console.log('Dialog open state:', !!selectedModifierForOptions)}
+        <Dialog
+          open={!!selectedModifierForOptions}
+          onOpenChange={(open) => {
+            console.log('Dialog onOpenChange called, open:', open);
+            !open && setSelectedModifierForOptions(null);
+          }}
+        >
+          <DialogContent className="bg-card border-border max-w-3xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">
+                Manage Options
+                {selectedModifierData && (
+                  <span className="text-muted-foreground ml-2">
+                    - {selectedModifierData.name}
+                  </span>
+                )}
+              </DialogTitle>
+            </DialogHeader>
+
+            {optionsLoading ? (
+              <div className="flex justify-center items-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
               </div>
-            </div>
+            ) : !modifierOptionsData?.data ? (
+              <p className="text-destructive text-center py-8">
+                Error loading modifier options. Please try again.
+              </p>
+            ) : (
+              <div className="space-y-6">
+                {/* Add New Option Form */}
+                <Card className="bg-muted/50 border-border">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Add New Option</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const formData = new FormData(e.currentTarget);
+                        const data = {
+                          name: formData.get("option_name") as string,
+                          price: Math.round(parseFloat(formData.get("option_price") as string || "0") * 100),
+                          available: formData.get("option_available") === "on",
+                          sort_order: parseInt(formData.get("option_sort_order") as string || "0"),
+                        };
 
-            <div className="space-y-2">
-              <Label htmlFor="modifier-category" className="text-foreground">
-                Category
-              </Label>
-              <Input
-                id="modifier-category"
-                name="category"
-                placeholder="e.g., Size, Add-ons, Customization"
-                className="bg-background border-input text-foreground"
-              />
-            </div>
+                        if (selectedModifierForOptions) {
+                          createModifierOptionMutation.mutate(
+                            {
+                              modifierId: selectedModifierForOptions,
+                              data: data,
+                            },
+                            {
+                              onSuccess: () => {
+                                e.currentTarget.reset();
+                              },
+                            }
+                          );
+                        }
+                      }}
+                      className="grid grid-cols-2 gap-4"
+                    >
+                      <div className="space-y-2">
+                        <Label htmlFor="option_name" className="text-foreground">
+                          Option Name *
+                        </Label>
+                        <Input
+                          id="option_name"
+                          name="option_name"
+                          placeholder="e.g., Small, Large, Extra Cheese"
+                          required
+                          className="bg-background border-input text-foreground"
+                        />
+                      </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="min-selections" className="text-foreground">
-                  Minimum Selections
-                </Label>
-                <Input
-                  id="min-selections"
-                  name="min_selections"
-                  type="number"
-                  min="0"
-                  defaultValue="0"
-                  className="bg-background border-input text-foreground"
-                />
+                      <div className="space-y-2">
+                        <Label htmlFor="option_price" className="text-foreground">
+                          Additional Price ($)
+                        </Label>
+                        <Input
+                          id="option_price"
+                          name="option_price"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          defaultValue="0.00"
+                          placeholder="0.00"
+                          className="bg-background border-input text-foreground"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="option_sort_order" className="text-foreground">
+                          Sort Order
+                        </Label>
+                        <Input
+                          id="option_sort_order"
+                          name="option_sort_order"
+                          type="number"
+                          min="0"
+                          defaultValue="0"
+                          className="bg-background border-input text-foreground"
+                        />
+                      </div>
+
+                      <div className="flex items-center space-x-2 pt-8">
+                        <input
+                          type="checkbox"
+                          id="option_available"
+                          name="option_available"
+                          defaultChecked
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                        <Label htmlFor="option_available" className="text-foreground cursor-pointer">
+                          Available
+                        </Label>
+                      </div>
+
+                      <div className="col-span-2">
+                        <Button
+                          type="submit"
+                          className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+                          disabled={createModifierOptionMutation.isPending}
+                        >
+                          {createModifierOptionMutation.isPending ? "Adding..." : "Add Option"}
+                        </Button>
+                      </div>
+                    </form>
+                  </CardContent>
+                </Card>
+
+                {/* Existing Options List */}
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold text-foreground">
+                    Existing Options ({modifierOptionsData.data?.length || 0})
+                  </h3>
+
+                  {!modifierOptionsData.data || modifierOptionsData.data.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-8">
+                      No options yet. Add your first option above.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {modifierOptionsData.data
+                        .sort((a, b) => a.sort_order - b.sort_order)
+                        .map((option) => (
+                          <Card key={option.id} className="bg-card border-border">
+                            <CardContent className="p-4">
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-3">
+                                    <span className="font-medium text-foreground">
+                                      {option.name}
+                                    </span>
+                                    <Badge variant={option.available ? "default" : "secondary"}>
+                                      {option.available ? "Available" : "Unavailable"}
+                                    </Badge>
+                                    <span className="text-muted-foreground text-sm">
+                                      Order: {option.sort_order}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    Price: ${(option.price / 100).toFixed(2)}
+                                  </p>
+                                </div>
+
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="text-destructive hover:bg-destructive/10"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Delete Option</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        Are you sure you want to delete "{option.name}"? This action cannot be undone.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        onClick={() => {
+                                          if (selectedModifierForOptions) {
+                                            deleteModifierOptionMutation.mutate(option.id);
+                                          }
+                                        }}
+                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                      >
+                                        Delete
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                    </div>
+                  )}
+                </div>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="max-selections" className="text-foreground">
-                  Maximum Selections
-                </Label>
-                <Input
-                  id="max-selections"
-                  name="max_selections"
-                  type="number"
-                  min="1"
-                  placeholder="Leave empty for unlimited"
-                  className="bg-background border-input text-foreground"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="modifier-required"
-                name="required"
-                className="h-4 w-4 rounded border-gray-300"
-              />
-              <Label htmlFor="modifier-required" className="text-foreground cursor-pointer">
-                Required (Customer must make a selection)
-              </Label>
-            </div>
+            )}
 
             <DialogFooter>
               <Button
-                type="button"
                 variant="outline"
-                onClick={() => {
-                  setIsAddingModifier(false);
-                  setEditingModifier(null);
-                }}
+                onClick={() => setSelectedModifierForOptions(null)}
               >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                disabled={createModifierMutation.isPending}
-              >
-                {createModifierMutation.isPending ? "Creating..." : "Create Modifier"}
+                Close
               </Button>
             </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Manage Modifier Options Dialog */}
-      {console.log('selectedModifierForOptions:', selectedModifierForOptions)}
-      {console.log('Dialog open state:', !!selectedModifierForOptions)}
-      <Dialog
-        open={!!selectedModifierForOptions}
-        onOpenChange={(open) => {
-          console.log('Dialog onOpenChange called, open:', open);
-          !open && setSelectedModifierForOptions(null);
-        }}
-      >
-        <DialogContent className="bg-card border-border max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-foreground">
-              Manage Options
-              {selectedModifierData && (
-                <span className="text-muted-foreground ml-2">
-                  - {selectedModifierData.name}
-                </span>
-              )}
-            </DialogTitle>
-          </DialogHeader>
-
-          {optionsLoading ? (
-            <div className="flex justify-center items-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-            </div>
-          ) : !modifierOptionsData?.data ? (
-            <p className="text-destructive text-center py-8">
-              Error loading modifier options. Please try again.
-            </p>
-          ) : (
-            <div className="space-y-6">
-              {/* Add New Option Form */}
-              <Card className="bg-muted/50 border-border">
-                <CardHeader>
-                  <CardTitle className="text-lg">Add New Option</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const formData = new FormData(e.currentTarget);
-                      const data = {
-                        name: formData.get("option_name") as string,
-                        price: Math.round(parseFloat(formData.get("option_price") as string || "0") * 100),
-                        available: formData.get("option_available") === "on",
-                        sort_order: parseInt(formData.get("option_sort_order") as string || "0"),
-                      };
-
-                      if (selectedModifierForOptions) {
-                        createModifierOptionMutation.mutate(
-                          {
-                            modifierId: selectedModifierForOptions,
-                            data: data,
-                          },
-                          {
-                            onSuccess: () => {
-                              e.currentTarget.reset();
-                            },
-                          }
-                        );
-                      }
-                    }}
-                    className="grid grid-cols-2 gap-4"
-                  >
-                    <div className="space-y-2">
-                      <Label htmlFor="option_name" className="text-foreground">
-                        Option Name *
-                      </Label>
-                      <Input
-                        id="option_name"
-                        name="option_name"
-                        placeholder="e.g., Small, Large, Extra Cheese"
-                        required
-                        className="bg-background border-input text-foreground"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="option_price" className="text-foreground">
-                        Additional Price ($)
-                      </Label>
-                      <Input
-                        id="option_price"
-                        name="option_price"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        defaultValue="0.00"
-                        placeholder="0.00"
-                        className="bg-background border-input text-foreground"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="option_sort_order" className="text-foreground">
-                        Sort Order
-                      </Label>
-                      <Input
-                        id="option_sort_order"
-                        name="option_sort_order"
-                        type="number"
-                        min="0"
-                        defaultValue="0"
-                        className="bg-background border-input text-foreground"
-                      />
-                    </div>
-
-                    <div className="flex items-center space-x-2 pt-8">
-                      <input
-                        type="checkbox"
-                        id="option_available"
-                        name="option_available"
-                        defaultChecked
-                        className="h-4 w-4 rounded border-gray-300"
-                      />
-                      <Label htmlFor="option_available" className="text-foreground cursor-pointer">
-                        Available
-                      </Label>
-                    </div>
-
-                    <div className="col-span-2">
-                      <Button
-                        type="submit"
-                        className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
-                        disabled={createModifierOptionMutation.isPending}
-                      >
-                        {createModifierOptionMutation.isPending ? "Adding..." : "Add Option"}
-                      </Button>
-                    </div>
-                  </form>
-                </CardContent>
-              </Card>
-
-              {/* Existing Options List */}
-              <div className="space-y-3">
-                <h3 className="text-lg font-semibold text-foreground">
-                  Existing Options ({modifierOptionsData.data?.length || 0})
-                </h3>
-
-                {!modifierOptionsData.data || modifierOptionsData.data.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">
-                    No options yet. Add your first option above.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {modifierOptionsData.data
-                      .sort((a, b) => a.sort_order - b.sort_order)
-                      .map((option) => (
-                        <Card key={option.id} className="bg-card border-border">
-                          <CardContent className="p-4">
-                            <div className="flex items-center justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-3">
-                                  <span className="font-medium text-foreground">
-                                    {option.name}
-                                  </span>
-                                  <Badge variant={option.available ? "default" : "secondary"}>
-                                    {option.available ? "Available" : "Unavailable"}
-                                  </Badge>
-                                  <span className="text-muted-foreground text-sm">
-                                    Order: {option.sort_order}
-                                  </span>
-                                </div>
-                                <p className="text-sm text-muted-foreground mt-1">
-                                  Price: ${(option.price / 100).toFixed(2)}
-                                </p>
-                              </div>
-
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="text-destructive hover:bg-destructive/10"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Delete Option</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Are you sure you want to delete "{option.name}"? This action cannot be undone.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction
-                                      onClick={() => {
-                                        if (selectedModifierForOptions) {
-                                          deleteModifierOptionMutation.mutate({
-                                            modifierId: selectedModifierForOptions,
-                                            optionId: option.id,
-                                          });
-                                        }
-                                      }}
-                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                    >
-                                      Delete
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setSelectedModifierForOptions(null)}
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      </>
     </div>
   );
 }

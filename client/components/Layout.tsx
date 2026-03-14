@@ -22,6 +22,7 @@ import {
   Calendar,
   Bell,
 } from "lucide-react";
+import { navigationConfig, UserRole } from "@/lib/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,86 +45,7 @@ interface LayoutProps {
   children: ReactNode;
 }
 
-const navigation = [
-  {
-    name: "Dashboard",
-    href: "/",
-    icon: LayoutDashboard,
-    description: "Overview & Quick Stats",
-  },
-  {
-    name: "Order Terminal",
-    href: "/order",
-    icon: ShoppingCart,
-    description: "POS & Billing",
-  },
-  {
-    name: "Kitchen Queue",
-    href: "/queue",
-    icon: Monitor,
-    description: "Live Order Queue",
-  },
-  {
-    name: "Analytics",
-    href: "/analytics",
-    icon: BarChart3,
-    description: "Reports & Insights",
-  },
-  {
-    name: "Reports",
-    href: "/reports",
-    icon: FileText,
-    description: "Business Analytics",
-  },
-  {
-    name: "Products",
-    href: "/products",
-    icon: Package,
-    description: "Menu & Inventory",
-  },
-  {
-    name: "Combos",
-    href: "/combos",
-    icon: ChefHat,
-    description: "Combo Products",
-  },
-  {
-    name: "Tax Rules",
-    href: "/tax",
-    icon: FileText,
-    description: "Tax Configuration",
-  },
-  {
-    name: "Customers",
-    href: "/customers",
-    icon: Heart,
-    description: "Customer & Loyalty",
-  },
-  {
-    name: "QR Orders",
-    href: "/qr-management",
-    icon: QrCode,
-    description: "QR Code & Tables",
-  },
-  {
-    name: "Table Booking",
-    href: "/table-booking",
-    icon: Calendar,
-    description: "Reservations & Tables",
-  },
-  {
-    name: "Users",
-    href: "/users",
-    icon: Users,
-    description: "Staff & Roles",
-  },
-  {
-    name: "Settings",
-    href: "/settings",
-    icon: Settings,
-    description: "Configuration",
-  },
-];
+// Navigation moved to @/lib/navigation
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
@@ -216,35 +138,39 @@ export default function Layout({ children }: LayoutProps) {
 
           {/* Navigation */}
           <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-            {navigation.map((item) => {
-              const isActive = location.pathname === item.href;
-              return (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  onClick={closeSidebar}
-                  className={cn(
-                    "group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-all duration-200",
-                    isActive
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-lg"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                  )}
-                >
-                  <item.icon
+            {navigationConfig
+              .filter((item) =>
+                item.roles.includes((user?.role as UserRole) || "user"),
+              )
+              .map((item) => {
+                const isActive = location.pathname === item.href;
+                return (
+                  <Link
+                    key={item.name}
+                    to={item.href}
+                    onClick={closeSidebar}
                     className={cn(
-                      "mr-3 h-5 w-5 transition-colors",
+                      "group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-all duration-200",
                       isActive
-                        ? "text-sidebar-primary-foreground"
-                        : "text-sidebar-foreground group-hover:text-sidebar-accent-foreground",
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-lg"
+                        : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                     )}
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium">{item.name}</div>
-                    <div className="text-xs opacity-75">{item.description}</div>
-                  </div>
-                </Link>
-              );
-            })}
+                  >
+                    <item.icon
+                      className={cn(
+                        "mr-3 h-5 w-5 transition-colors",
+                        isActive
+                          ? "text-sidebar-primary-foreground"
+                          : "text-sidebar-foreground group-hover:text-sidebar-accent-foreground",
+                      )}
+                    />
+                    <div className="flex-1">
+                      <div className="font-medium">{item.name}</div>
+                      <div className="text-xs opacity-75">{item.description}</div>
+                    </div>
+                  </Link>
+                );
+              })}
           </nav>
 
           {/* User section */}

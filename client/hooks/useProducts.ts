@@ -10,21 +10,26 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
-  searchProducts,
-  getFeaturedProducts,
-  getAvailableProducts,
-  type Product,
-  type ProductFilters,
 } from "@/lib/apiServices";
+import {
+  Product,
+  ProductFilters,
+  ProductListResponse
+} from "@shared/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 
 /**
  * Hook to fetch paginated products list
  */
 export function useProducts(filters?: ProductFilters) {
+  const { user } = useAuth();
+  const restaurantId = user?.branchId || "";
+
   return useQuery({
-    queryKey: ["products", filters],
-    queryFn: () => getProducts(filters),
+    queryKey: ["products", restaurantId, filters],
+    queryFn: () => getProducts(restaurantId, filters),
+    enabled: !!restaurantId,
     staleTime: 30000, // Cache for 30 seconds
   });
 }
@@ -44,10 +49,13 @@ export function useProduct(productId: string | undefined) {
  * Hook to search products
  */
 export function useProductSearch(query: string, enabled = true) {
+  const { user } = useAuth();
+  const restaurantId = user?.branchId || "";
+
   return useQuery({
-    queryKey: ["products", "search", query],
-    queryFn: () => searchProducts(query),
-    enabled: enabled && query.length > 0,
+    queryKey: ["products", restaurantId, "search", query],
+    queryFn: () => getProducts(restaurantId, { search: query }),
+    enabled: enabled && !!restaurantId && query.length > 0,
     staleTime: 30000,
   });
 }
@@ -56,9 +64,13 @@ export function useProductSearch(query: string, enabled = true) {
  * Hook to get featured products
  */
 export function useFeaturedProducts(limit = 10) {
+  const { user } = useAuth();
+  const restaurantId = user?.branchId || "";
+
   return useQuery({
-    queryKey: ["products", "featured", limit],
-    queryFn: () => getFeaturedProducts(limit),
+    queryKey: ["products", restaurantId, "featured", limit],
+    queryFn: () => getProducts(restaurantId, { active: true, page_size: limit }), // Using active as proxy or add featured filter to apiServices
+    enabled: !!restaurantId,
     staleTime: 60000, // Cache for 1 minute
   });
 }
@@ -66,10 +78,14 @@ export function useFeaturedProducts(limit = 10) {
 /**
  * Hook to get available products
  */
-export function useAvailableProducts(filters?: Omit<ProductFilters, 'available'>) {
+export function useAvailableProducts(filters?: Omit<ProductFilters, 'active'>) {
+  const { user } = useAuth();
+  const restaurantId = user?.branchId || "";
+
   return useQuery({
-    queryKey: ["products", "available", filters],
-    queryFn: () => getAvailableProducts(filters),
+    queryKey: ["products", restaurantId, "available", filters],
+    queryFn: () => getProducts(restaurantId, { ...filters, active: true }),
+    enabled: !!restaurantId,
     staleTime: 30000,
   });
 }

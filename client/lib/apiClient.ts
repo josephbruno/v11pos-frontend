@@ -78,7 +78,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
       localStorage.removeItem("restaurant-pos-token");
       localStorage.removeItem("restaurant-pos-token-type");
       localStorage.removeItem("restaurant-pos-token-expires");
-      
+
       // Redirect to login if not already there
       if (!window.location.pathname.includes("/login")) {
         window.location.href = "/login";
@@ -213,6 +213,27 @@ export async function apiUpload<T = any>(
     headers: {
       ...getAuthHeaders(),
       // Don't set Content-Type for FormData, browser will set it with boundary
+      ...options?.headers,
+    },
+    body: formData,
+    ...options,
+  });
+
+  return handleResponse<T>(response);
+}
+
+/**
+ * Upload file with form data using PUT
+ */
+export async function apiUploadPut<T = any>(
+  endpoint: string,
+  formData: FormData,
+  options?: RequestInit
+): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    method: "PUT",
+    headers: {
+      ...getAuthHeaders(),
       ...options?.headers,
     },
     body: formData,

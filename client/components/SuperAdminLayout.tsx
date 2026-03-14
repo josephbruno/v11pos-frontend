@@ -22,6 +22,7 @@ import {
   Workflow,
   Globe,
 } from "lucide-react";
+import { navigationConfig, UserRole } from "@/lib/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,78 +46,7 @@ interface SuperAdminLayoutProps {
   children: ReactNode;
 }
 
-const navigation = [
-  {
-    name: "System Overview",
-    href: "/super-admin",
-    icon: LayoutDashboard,
-    description: "System Health & Metrics",
-    category: "overview",
-  },
-  {
-    name: "Organization Tree",
-    href: "/super-admin/organizations",
-    icon: Building2,
-    description: "Multi-tenant Management",
-    category: "organizations",
-  },
-  {
-    name: "Category Builder",
-    href: "/super-admin/categories",
-    icon: Layers3,
-    description: "Data Classification System",
-    category: "configuration",
-  },
-  {
-    name: "Branch Configuration",
-    href: "/super-admin/branches",
-    icon: GitBranch,
-    description: "Data Flow & Routing",
-    category: "configuration",
-  },
-  {
-    name: "Data Migration",
-    href: "/super-admin/migration",
-    icon: Database,
-    description: "Transfer & Sync Systems",
-    category: "data",
-  },
-  {
-    name: "Workflow Builder",
-    href: "/super-admin/workflows",
-    icon: Workflow,
-    description: "Process Automation",
-    category: "automation",
-  },
-  {
-    name: "Global Analytics",
-    href: "/super-admin/analytics",
-    icon: BarChart3,
-    description: "Cross-System Reports",
-    category: "insights",
-  },
-  {
-    name: "Network Config",
-    href: "/super-admin/network",
-    icon: Network,
-    description: "API & Integrations",
-    category: "technical",
-  },
-  {
-    name: "Security Center",
-    href: "/super-admin/security",
-    icon: Shield,
-    description: "Access & Permissions",
-    category: "security",
-  },
-  {
-    name: "Global Settings",
-    href: "/super-admin/settings",
-    icon: Settings,
-    description: "System Configuration",
-    category: "settings",
-  },
-];
+// Navigation moved to @/lib/navigation
 
 const categoryColors = {
   overview: "bg-blue-500",
@@ -164,14 +94,19 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
   const closeSidebar = () => setSidebarOpen(false);
 
   // Group navigation by category
-  const groupedNavigation = navigation.reduce((acc, item) => {
-    const category = item.category;
-    if (!acc[category]) {
-      acc[category] = [];
-    }
-    acc[category].push(item);
-    return acc;
-  }, {} as Record<string, typeof navigation>);
+  const groupedNavigation = navigationConfig
+    .filter((item) => item.roles.includes("super_admin"))
+    .reduce(
+      (acc, item) => {
+        const category = item.category || "other";
+        if (!acc[category]) {
+          acc[category] = [];
+        }
+        acc[category].push(item);
+        return acc;
+      },
+      {} as Record<string, typeof navigationConfig>,
+    );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -268,8 +203,8 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
                             isActive
                               ? "bg-white/20"
                               : categoryColors[
-                                  item.category as keyof typeof categoryColors
-                                ],
+                              item.category as keyof typeof categoryColors
+                              ],
                           )}
                         >
                           <item.icon

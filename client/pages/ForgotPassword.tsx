@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ArrowLeft, Mail, Lock, CheckCircle, Loader2, Moon, Sun, Eye, EyeOff } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
+import { forgotPassword, resetPassword } from "@/lib/apiServices";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
 
@@ -32,26 +33,11 @@ export default function ForgotPassword() {
     setError("");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email }),
-      });
-
-      const result = await response.json();
-
-      if (response.ok) {
-        setExpiresIn(result.data?.expires_in || 600);
-        // Note: Backend returns success even for non-existent emails (security feature)
-        // Real validation happens when OTP is used
-        setStep(2);
-      } else {
-        setError(result.detail || "Failed to send OTP. Please try again.");
-      }
-    } catch (err) {
-      setError("Network error. Please check your connection.");
+      const result = await forgotPassword(email);
+      setExpiresIn(result.data?.expires_in || 600);
+      setStep(2);
+    } catch (err: any) {
+      setError(err.message || "Failed to send OTP. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -83,35 +69,18 @@ export default function ForgotPassword() {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          otp,
-          new_password: newPassword,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (response.ok) {
-        setStep(3);
+      await resetPassword(email, otp, newPassword);
+      setStep(3);
+    } catch (err: any) {
+      // Provide helpful error message
+      const errorMsg = err.message || "Failed to reset password";
+      if (errorMsg.toLowerCase().includes("invalid") || errorMsg.toLowerCase().includes("expired")) {
+        setError("Invalid or expired OTP. Please check your email or request a new OTP. Note: OTP is only sent if the email exists in our system.");
+      } else if (errorMsg.toLowerCase().includes("user not found")) {
+        setError("Email address not found in our system. Please check the email address and try again.");
       } else {
-        // Provide helpful error message
-        const errorMsg = result.detail || "Failed to reset password";
-        if (errorMsg.toLowerCase().includes("invalid") || errorMsg.toLowerCase().includes("expired")) {
-          setError("Invalid or expired OTP. Please check your email or request a new OTP. Note: OTP is only sent if the email exists in our system.");
-        } else if (errorMsg.toLowerCase().includes("user not found")) {
-          setError("Email address not found in our system. Please check the email address and try again.");
-        } else {
-          setError(errorMsg);
-        }
+        setError(errorMsg);
       }
-    } catch (err) {
-      setError("Network error. Please check your connection.");
     } finally {
       setLoading(false);
     }
@@ -189,11 +158,10 @@ export default function ForgotPassword() {
                     onChange={(e) => setEmail(e.target.value)}
                     required
                     disabled={loading}
-                    className={`h-11 transition-all duration-200 ${
-                      error
+                    className={`h-11 transition-all duration-200 ${error
                         ? "border-red-500 focus:border-red-500"
                         : "border-gray-300 dark:border-gray-600 focus:border-pos-accent"
-                    }`}
+                      }`}
                   />
                 </div>
 

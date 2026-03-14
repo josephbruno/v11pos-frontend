@@ -10,18 +10,26 @@ import {
   createCategory,
   updateCategory,
   deleteCategory,
-  type Category,
-  type CategoryFilters,
 } from "@/lib/apiServices";
+import {
+  Category,
+  CategoryFilters,
+  CategoryListResponse
+} from "@shared/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 
 /**
  * Hook to fetch paginated categories list
  */
 export function useCategories(filters?: CategoryFilters) {
+  const { user } = useAuth();
+  const restaurantId = user?.branchId || "";
+
   return useQuery({
-    queryKey: ["categories", filters],
-    queryFn: () => getCategories(filters),
+    queryKey: ["categories", restaurantId, filters],
+    queryFn: () => getCategories(restaurantId, filters),
+    enabled: !!restaurantId,
     staleTime: 60000, // Cache for 1 minute
   });
 }
@@ -30,9 +38,13 @@ export function useCategories(filters?: CategoryFilters) {
  * Hook to fetch all active categories (no pagination)
  */
 export function useActiveCategories() {
+  const { user } = useAuth();
+  const restaurantId = user?.branchId || "";
+
   return useQuery({
-    queryKey: ["categories", "active"],
-    queryFn: () => getCategories({ active: true, page_size: 100 }),
+    queryKey: ["categories", restaurantId, "active"],
+    queryFn: () => getCategories(restaurantId, { active: true, page_size: 100 }),
+    enabled: !!restaurantId,
     staleTime: 60000,
   });
 }
@@ -83,11 +95,11 @@ export function useUpdateCategory() {
   const { addToast } = useToast();
 
   return useMutation({
-    mutationFn: ({ 
-      id, 
-      data 
-    }: { 
-      id: string; 
+    mutationFn: ({
+      id,
+      data
+    }: {
+      id: string;
       data: {
         name?: string;
         slug?: string;

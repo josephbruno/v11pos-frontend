@@ -1,25 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: "super_admin" | "admin" | "manager" | "staff" | "cashier";
-  avatar?: string;
-  phone?: string;
-  status?: string;
-  permissions?: string[];
-  join_date?: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-interface LoginResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-  user: User;
-}
+import { User, LoginResponse, LoginRequest } from "@shared/api";
 
 interface AuthContextType {
   user: User | null;
@@ -42,7 +23,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Check for stored auth on app load
     const storedUser = localStorage.getItem("restaurant-pos-user");
     const storedToken = localStorage.getItem("restaurant-pos-token");
-    
+
     if (storedUser && storedToken) {
       setUser(JSON.parse(storedUser));
     }
@@ -53,17 +34,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
 
     try {
-      // Create form data for OAuth2 standard
-      const formData = new URLSearchParams();
-      formData.append("username", email);
-      formData.append("password", password);
-
+      const loginData: LoginRequest = { email, password };
       const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Type": "application/json",
         },
-        body: formData.toString(),
+        body: JSON.stringify(loginData),
       });
 
       if (!response.ok) {

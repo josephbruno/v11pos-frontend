@@ -12,19 +12,24 @@ import {
   createModifierOption,
   getModifierOptions,
   deleteModifierOption,
-  type Modifier,
-  type ModifierOption,
-  type ModifierFilters,
 } from "@/lib/apiServices";
+import {
+  ModifierFilters
+} from "@shared/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 
 /**
  * Hook to fetch paginated modifiers list
  */
 export function useModifiers(filters?: ModifierFilters) {
+  const { user } = useAuth();
+  const restaurantId = user?.branchId || "";
+
   return useQuery({
-    queryKey: ["modifiers", filters],
-    queryFn: () => getModifiers(filters),
+    queryKey: ["modifiers", restaurantId, filters],
+    queryFn: () => getModifiers(restaurantId, filters),
+    enabled: !!restaurantId,
     staleTime: 60000, // Cache for 1 minute
   });
 }

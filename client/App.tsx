@@ -48,6 +48,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { UserRole } from "./lib/navigation";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ToastProvider } from "./contexts/ToastContext";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -104,6 +105,34 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RoleProtectedRoute({
+  children,
+  allowedRoles,
+}: {
+  children: React.ReactNode;
+  allowedRoles: UserRole[];
+}) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-pos-accent"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!allowedRoles.includes(user.role as UserRole)) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
 
@@ -148,101 +177,101 @@ function AppRoutes() {
         <Route
           path="/super-admin"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
                 <Dashboard />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/super-admin/categories"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
                 <CategoryConfiguration />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/super-admin/organizations"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
                 <Organizations />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/super-admin/branches"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
                 <Branches />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/super-admin/migration"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
                 <Migration />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/super-admin/workflows"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
                 <Workflows />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/super-admin/analytics"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
                 <GlobalAnalytics />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/super-admin/network"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
                 <Network />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/super-admin/security"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
                 <Security />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/super-admin/settings"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
                 <SuperAdminSettings />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
@@ -268,71 +297,71 @@ function AppRoutes() {
         <Route
           path="/analytics"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin", "admin", "supervisor"]}>
               <LayoutWrapper>
                 <Analytics />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/reports"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin", "admin", "supervisor"]}>
               <LayoutWrapper>
                 <Reports />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/products"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin", "admin", "supervisor"]}>
               <LayoutWrapper>
                 <ProductManagement />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/combos"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin", "admin", "supervisor"]}>
               <LayoutWrapper>
                 <ComboManagement />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/tax"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin", "admin"]}>
               <LayoutWrapper>
                 <TaxManagement />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/customers"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin", "admin", "supervisor"]}>
               <LayoutWrapper>
                 <CustomerManagement />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/qr-management"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin", "admin", "supervisor"]}>
               <LayoutWrapper>
                 <QRManagement />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
@@ -348,21 +377,21 @@ function AppRoutes() {
         <Route
           path="/users"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin", "admin"]}>
               <LayoutWrapper>
                 <UserManagement />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
           path="/settings"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["super_admin", "admin"]}>
               <LayoutWrapper>
                 <Settings />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route path="*" element={<NotFound />} />

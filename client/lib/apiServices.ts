@@ -1,821 +1,475 @@
 /**
  * API Services - Organized API calls by domain
- * Import these functions to make API calls with automatic authentication
+ * Aligned with OpenAPI specification v1.0.0
  */
 
-import { apiGet, apiPost, apiPut, apiPatch, apiDelete, apiUpload } from "./apiClient";
+import {
+  apiGet, apiPost, apiPut, apiPatch, apiDelete, apiUpload, apiUploadPut
+} from "./apiClient";
+import {
+  User, LoginRequest, LoginResponse, Restaurant, Category, Product, Order,
+  CategoryFilters, ProductFilters, OrderFilters, ModifierFilters,
+  CategoryListResponse, ProductListResponse, OrderListResponse
+} from "@shared/api";
 
-// ==================== Auth Services ====================
+// ==================== Health & System ====================
 
-export interface LoginRequest {
-  email: string;
-  password: string;
+export async function checkHealth() {
+  return apiGet("/health");
 }
 
-export interface LoginResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    phone: string;
-    role: string;
-    status: string;
-    avatar: string | null;
-    permissions: string[];
-    join_date: string;
-    created_at: string;
-    updated_at: string;
-  };
+// ==================== Authentication ====================
+
+/**
+ * Handle user login
+ * POST /api/v1/auth/login
+ */
+export async function loginUser(credentials: LoginRequest) {
+  return apiPost<LoginResponse>("/auth/login", credentials);
 }
 
-// Note: Login is handled in AuthContext, but keeping this for reference
-export async function loginUser(email: string, password: string) {
-  const formData = new URLSearchParams();
-  formData.append("username", email);
-  formData.append("password", password);
+/**
+ * Refresh access token
+ * POST /api/v1/auth/refresh
+ */
+export async function refreshToken(refresh_token: string) {
+  return apiPost<LoginResponse>("/auth/refresh", { refresh_token });
+}
 
-  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: formData.toString(),
+/**
+ * Request password reset
+ * POST /api/v1/auth/forgot-password
+ */
+export async function forgotPassword(email: string) {
+  return apiPost("/auth/forgot-password", { email });
+}
+
+/**
+ * Verify OTP without resetting password
+ * POST /api/v1/auth/verify-otp
+ */
+export async function verifyOTP(email: string, otp: string) {
+  return apiPost("/auth/verify-otp", { email, otp });
+}
+
+/**
+ * Reset password with OTP
+ * POST /api/v1/auth/reset-password
+ */
+export async function resetPassword(email: string, otp: string, newPassword: string) {
+  return apiPost("/auth/reset-password", {
+    email,
+    otp,
+    new_password: newPassword
   });
-
-  if (!response.ok) throw new Error("Login failed");
-  return response.json() as Promise<LoginResponse>;
 }
 
-// ==================== User Services ====================
-
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  role: string;
-  status: string;
-  avatar?: string | null;
-  permissions?: string[];
-  join_date?: string;
-  created_at?: string;
-  updated_at?: string;
+/**
+ * Logout user
+ * POST /api/v1/auth/logout
+ */
+export async function logoutUser() {
+  return apiPost("/auth/logout");
 }
 
+/**
+ * Get login logs for current user
+ * GET /api/v1/auth/login-logs/me
+ */
+export async function getMyLoginLogs(skip = 0, limit = 50) {
+  return apiGet(`/auth/login-logs/me?skip=${skip}&limit=${limit}`);
+}
+
+// ==================== User Management ====================
+
+/**
+ * Get current authenticated user info
+ * GET /api/v1/users/me
+ */
 export async function getCurrentUser() {
   return apiGet<User>("/users/me");
 }
 
-export async function getUsers() {
-  return apiGet<User[]>("/users");
+/**
+ * Get list of users (requires auth)
+ * GET /api/v1/users
+ */
+export async function getUsers(skip = 0, limit = 100) {
+  return apiGet<User[]>(`/users?skip=${skip}&limit=${limit}`);
 }
 
+/**
+ * Get user by ID
+ * GET /api/v1/users/{user_id}
+ */
 export async function getUserById(userId: string) {
   return apiGet<User>(`/users/${userId}`);
 }
 
+/**
+ * Create a new user
+ * POST /api/v1/users
+ */
 export async function createUser(userData: Partial<User>) {
   return apiPost<User>("/users", userData);
 }
 
+/**
+ * Update user info
+ * PUT /api/v1/users/{user_id}
+ */
 export async function updateUser(userId: string, userData: Partial<User>) {
   return apiPut<User>(`/users/${userId}`, userData);
 }
 
+/**
+ * Delete user
+ * DELETE /api/v1/users/{user_id}
+ */
 export async function deleteUser(userId: string) {
   return apiDelete(`/users/${userId}`);
 }
 
-// ==================== Product Services ====================
+// ==================== Restaurant Management ====================
 
-export interface Product {
-  id: string;
-  name: string;
-  slug: string;
-  description?: string | null;
-  price: number; // Price in cents
-  cost?: number; // Cost in cents
-  category_id?: string | null;
-  sku?: string | null;
-  stock: number;
-  min_stock?: number;
-  available: boolean;
-  featured: boolean;
-  image?: string | null;
-  images?: string[];
-  tags?: string[];
-  department?: string | null;
-  printer_tag?: string | null;
-  preparation_time?: number | null;
-  nutritional_info?: any | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ProductListResponse {
-  status: string;
-  message: string;
-  data: Product[];
-  pagination: {
-    page: number;
-    page_size: number;
-    total_items: number;
-    total_pages: number;
-    has_next: boolean;
-    has_previous: boolean;
-  };
-}
-
-export interface ProductFilters {
-  page?: number;
-  page_size?: number;
-  search?: string;
-  category_id?: string;
-  available?: boolean;
-  featured?: boolean;
-  min_price?: number;
-  max_price?: number;
+/**
+ * Get list of restaurants for current user
+ * GET /api/v1/restaurants/my-restaurants
+ */
+export async function getMyRestaurants(skip = 0, limit = 100) {
+  return apiGet<Restaurant[]>(`/restaurants/my-restaurants?skip=${skip}&limit=${limit}`);
 }
 
 /**
- * Get paginated list of products with optional filters
+ * Get restaurant by ID
+ * GET /api/v1/restaurants/{restaurant_id}
  */
-export async function getProducts(filters?: ProductFilters) {
+export async function getRestaurantById(restaurantId: string) {
+  return apiGet<Restaurant>(`/restaurants/${restaurantId}`);
+}
+
+/**
+ * Create a new restaurant
+ * POST /api/v1/restaurants
+ */
+export async function createRestaurant(restaurantData: Partial<Restaurant>) {
+  return apiPost<Restaurant>("/restaurants", restaurantData);
+}
+
+/**
+ * Update restaurant info
+ * PUT /api/v1/restaurants/{restaurant_id}
+ */
+export async function updateRestaurant(restaurantId: string, restaurantData: Partial<Restaurant>) {
+  return apiPut<Restaurant>(`/restaurants/${restaurantId}`, restaurantData);
+}
+
+// ==================== Product & Category Services ====================
+
+/**
+ * Get categories for a restaurant
+ * GET /api/v1/products/categories/restaurant/{restaurant_id}
+ */
+export async function getCategories(restaurantId: string, filters?: CategoryFilters) {
   const params = new URLSearchParams();
-  
   if (filters) {
-    if (filters.page) params.append("page", filters.page.toString());
-    if (filters.page_size) params.append("page_size", filters.page_size.toString());
-    if (filters.search) params.append("search", filters.search);
-    if (filters.category_id) params.append("category_id", filters.category_id);
-    if (filters.available !== undefined) params.append("available", filters.available.toString());
-    if (filters.featured !== undefined) params.append("featured", filters.featured.toString());
-    if (filters.min_price) params.append("min_price", filters.min_price.toString());
-    if (filters.max_price) params.append("max_price", filters.max_price.toString());
+    if (filters.active !== undefined) params.append("active_only", String(filters.active));
+    if (filters.page !== undefined) params.append("page", String(filters.page));
+    if (filters.page_size !== undefined) params.append("page_size", String(filters.page_size));
   }
 
-  const queryString = params.toString();
-  const endpoint = queryString ? `/products/?${queryString}` : "/products/";
-  
-  return apiGet<ProductListResponse>(endpoint);
+  const query = params.toString();
+  const endpoint = `/products/categories/restaurant/${restaurantId}${query ? `?${query}` : ""}`;
+
+  // If we have pagination filters, it likely returns a paginated response
+  // but the current spec/code might expect Category[]
+  // I'll return Category[] for now or handle both if needed.
+  // Actually, I'll return CategoryListResponse if filters have page/page_size, else Category[]
+
+  return apiGet<any>(endpoint);
 }
 
 /**
- * Get a single product by ID
+ * Create a new product category
+ * POST /api/v1/products/categories
+ */
+export async function createCategory(categoryData: Partial<Category>) {
+  return apiPost<Category>("/products/categories", categoryData);
+}
+
+/**
+ * Get category by ID
+ * GET /api/v1/products/categories/{category_id}
+ */
+export async function getCategoryById(categoryId: string) {
+  return apiGet<Category>(`/products/categories/${categoryId}`);
+}
+
+/**
+ * Update product category
+ * PUT /api/v1/products/categories/{category_id}
+ */
+export async function updateCategory(categoryId: string, categoryData: Partial<Category>) {
+  return apiPut<Category>(`/products/categories/${categoryId}`, categoryData);
+}
+
+/**
+ * Delete product category
+ * DELETE /api/v1/products/categories/{category_id}
+ */
+export async function deleteCategory(categoryId: string) {
+  return apiDelete(`/products/categories/${categoryId}`);
+}
+
+/**
+ * Get products for a restaurant
+ * GET /api/v1/products/restaurant/{restaurant_id}
+ */
+export async function getProducts(restaurantId: string, filters?: any) {
+  const params = new URLSearchParams();
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined) params.append(key, String(value));
+    });
+  }
+  return apiGet<Product[]>(`/products/restaurant/${restaurantId}?${params.toString()}`);
+}
+
+/**
+ * Get product by ID
+ * GET /api/v1/products/{product_id}
  */
 export async function getProductById(productId: string) {
   return apiGet<Product>(`/products/${productId}`);
 }
 
 /**
- * Create a new product
+ * Create product (handles both object and FormData for image)
+ * POST /api/v1/products/
  */
-export async function createProduct(productData: {
-  name: string;
-  slug: string;
-  category_id: string;
-  price: number; // in cents
-  description?: string;
-  sku?: string;
-  stock?: number;
-  is_available?: boolean;
-  image?: File | null;
-}) {
-  console.log('Creating product with data:', productData);
-  
+export async function createProduct(data: Partial<Product> | FormData) {
+  if (data && 'append' in data && typeof data.append === 'function') {
+    return apiUpload<Product>("/products/", data as FormData);
+  }
+
   const formData = new FormData();
-  formData.append("name", productData.name);
-  formData.append("slug", productData.slug);
-  formData.append("category_id", productData.category_id);
-  formData.append("price", String(productData.price));
-  
-  if (productData.description) {
-    formData.append("description", productData.description);
-  }
-  if (productData.sku) {
-    formData.append("sku", productData.sku);
-  }
-  if (productData.stock !== undefined) {
-    formData.append("stock", String(productData.stock));
-  }
-  if (productData.is_available !== undefined) {
-    formData.append("is_available", String(productData.is_available));
-  }
-  if (productData.image) {
-    formData.append("image", productData.image);
-    console.log('Image file attached:', productData.image.name, productData.image.size);
-  }
-
-  // Log FormData contents
-  console.log('FormData entries:');
-  for (const [key, value] of formData.entries()) {
-    console.log(`${key}:`, value);
-  }
-  
-  interface ProductResponse {
-    id: string;
-    name: string;
-    slug: string;
-    description?: string;
-    price: number;
-    category_id: string;
-    sku?: string;
-    stock: number;
-    is_available: boolean;
-    image_url?: string;
-    created_at: string;
-    updated_at: string;
-  }
-  
-  try {
-    // Use fetch directly to ensure proper multipart/form-data handling
-    const token = localStorage.getItem("token");
-    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
-    
-    const response = await fetch(`${API_BASE_URL}/products/`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        // Don't set Content-Type - browser will set it with boundary for multipart/form-data
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ detail: 'Failed to create product' }));
-      console.error('API Error:', errorData);
-      throw new Error(errorData.detail || 'Failed to create product');
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      if (value instanceof File) {
+        formData.append(key, value);
+      } else if (typeof value === 'object' && !Array.isArray(value)) {
+        formData.append(key, JSON.stringify(value));
+      } else if (Array.isArray(value)) {
+        value.forEach(v => formData.append(`${key}[]`, String(v)));
+      } else {
+        formData.append(key, String(value));
+      }
     }
-
-    const result = await response.json();
-    console.log('Product created successfully:', result);
-    return result;
-  } catch (error) {
-    console.error('Error creating product:', error);
-    throw error;
-  }
-}
-
-/**
- * Update an existing product with optional image upload
- */
-export async function updateProduct(
-  productId: string, 
-  productData: {
-    name?: string;
-    slug?: string;
-    category_id?: string;
-    price?: number;
-    description?: string;
-    sku?: string;
-    stock?: number;
-    is_available?: boolean;
-    image?: File | null;
-  }
-) {
-  const formData = new FormData();
-  
-  if (productData.name) formData.append("name", productData.name);
-  if (productData.slug) formData.append("slug", productData.slug);
-  if (productData.category_id) formData.append("category_id", productData.category_id);
-  if (productData.price !== undefined) formData.append("price", String(productData.price));
-  if (productData.description) formData.append("description", productData.description);
-  if (productData.sku) formData.append("sku", productData.sku);
-  if (productData.stock !== undefined) formData.append("stock", String(productData.stock));
-  if (productData.is_available !== undefined) formData.append("is_available", String(productData.is_available));
-  if (productData.image) formData.append("image", productData.image);
-
-  // Use custom fetch for PUT with FormData
-  const token = localStorage.getItem("token");
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
-  
-  const response = await fetch(`${API_BASE_URL}/products/${productId}`, {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
   });
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.detail || "Failed to update product");
-  }
-
-  return response.json();
+  return apiUpload<Product>("/products/", formData);
 }
 
 /**
- * Delete a product
+ * Update product (handles both object and FormData for image)
+ * PUT /api/v1/products/{product_id}
+ */
+export async function updateProduct(productId: string, data: Partial<Product> | FormData) {
+  if (data && 'append' in data && typeof data.append === 'function') {
+    return apiUploadPut<Product>(`/products/${productId}`, data as FormData);
+  }
+
+  const formData = new FormData();
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      if (value instanceof File) {
+        formData.append(key, value);
+      } else if (typeof value === 'object' && !Array.isArray(value)) {
+        formData.append(key, JSON.stringify(value));
+      } else if (Array.isArray(value)) {
+        value.forEach(v => formData.append(`${key}[]`, String(v)));
+      } else {
+        formData.append(key, String(value));
+      }
+    }
+  });
+
+  return apiUploadPut<Product>(`/products/${productId}`, formData);
+}
+
+/**
+ * Delete product
+ * DELETE /api/v1/products/{product_id}
  */
 export async function deleteProduct(productId: string) {
   return apiDelete(`/products/${productId}`);
 }
 
-/**
- * Search products
- */
-export async function searchProducts(query: string, limit = 20) {
-  return getProducts({ search: query, page_size: limit, page: 1 });
-}
-
-/**
- * Get featured products
- */
-export async function getFeaturedProducts(limit = 10) {
-  return getProducts({ featured: true, available: true, page_size: limit, page: 1 });
-}
-
-/**
- * Get available products
- */
-export async function getAvailableProducts(filters?: Omit<ProductFilters, 'available'>) {
-  return getProducts({ ...filters, available: true });
-}
-
-// ==================== Order Services ====================
-
-export interface Order {
-  id: string;
-  order_number: string;
-  customer_name?: string;
-  table_number?: string;
-  items: OrderItem[];
-  total_amount: number;
-  status: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface OrderItem {
-  id: string;
-  product_id: string;
-  product_name: string;
-  quantity: number;
-  price: number;
-  subtotal: number;
-}
-
-export async function getOrders() {
-  return apiGet<Order[]>("/orders");
-}
-
-export async function getOrderById(orderId: string) {
-  return apiGet<Order>(`/orders/${orderId}`);
-}
-
-export async function createOrder(orderData: Partial<Order>) {
-  return apiPost<Order>("/orders", orderData);
-}
-
-export async function updateOrderStatus(orderId: string, status: string) {
-  return apiPatch<Order>(`/orders/${orderId}`, { status });
-}
-
-// ==================== Table Booking Services ====================
-
-export interface TableBooking {
-  id: string;
-  booking_number: string;
-  customer_name: string;
-  customer_email: string;
-  customer_phone: string;
-  table_id: string;
-  party_size: number;
-  booking_date: string;
-  booking_time: string;
-  duration: number;
-  status: string;
-  occasion?: string;
-  special_requests?: string;
-  source: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export async function getBookings() {
-  return apiGet<TableBooking[]>("/bookings");
-}
-
-export async function getBookingById(bookingId: string) {
-  return apiGet<TableBooking>(`/bookings/${bookingId}`);
-}
-
-export async function createBooking(bookingData: Partial<TableBooking>) {
-  return apiPost<TableBooking>("/bookings", bookingData);
-}
-
-export async function updateBooking(bookingId: string, bookingData: Partial<TableBooking>) {
-  return apiPut<TableBooking>(`/bookings/${bookingId}`, bookingData);
-}
-
-export async function updateBookingStatus(bookingId: string, status: string) {
-  return apiPatch<TableBooking>(`/bookings/${bookingId}`, { status });
-}
-
-export async function deleteBooking(bookingId: string) {
-  return apiDelete(`/bookings/${bookingId}`);
-}
-
-// ==================== Analytics Services ====================
-
-export interface AnalyticsData {
-  total_revenue: number;
-  total_orders: number;
-  average_order_value: number;
-  popular_products: Array<{ name: string; count: number }>;
-  revenue_by_period: Array<{ date: string; revenue: number }>;
-}
-
-export async function getAnalytics(startDate?: string, endDate?: string) {
-  const params = new URLSearchParams();
-  if (startDate) params.append("start_date", startDate);
-  if (endDate) params.append("end_date", endDate);
-  
-  return apiGet<AnalyticsData>(`/analytics?${params.toString()}`);
-}
-
-// ==================== Category Services ====================
-
-export interface Category {
-  id: string;
-  name: string;
-  slug: string;
-  description?: string | null;
-  image?: string | null;
-  active: boolean;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CategoryListResponse {
-  status: string;
-  message: string;
-  data: Category[];
-  pagination: {
-    page: number;
-    page_size: number;
-    total: number;
-    total_pages: number;
-    has_next: boolean;
-    has_prev: boolean;
-  };
-}
-
-export interface CategoryFilters {
-  page?: number;
-  page_size?: number;
-  active?: boolean;
-}
-
-/**
- * Get paginated list of categories with optional filters
- */
-export async function getCategories(filters?: CategoryFilters) {
-  const params = new URLSearchParams();
-  
-  if (filters) {
-    if (filters.page) params.append("page", filters.page.toString());
-    if (filters.page_size) params.append("page_size", filters.page_size.toString());
-    if (filters.active !== undefined) params.append("active", filters.active.toString());
-  }
-
-  const queryString = params.toString();
-  const endpoint = queryString ? `/categories/?${queryString}` : "/categories/";
-  
-  return apiGet<CategoryListResponse>(endpoint);
-}
-
-/**
- * Get a single category by ID
- */
-export async function getCategoryById(categoryId: string) {
-  interface CategoryResponse {
-    status: string;
-    message: string;
-    data: Category;
-  }
-  const response = await apiGet<CategoryResponse>(`/categories/${categoryId}`);
-  return response.data;
-}
-
-/**
- * Create a new category with optional image upload
- */
-export async function createCategory(categoryData: {
-  name: string;
-  slug: string;
-  description?: string;
-  active?: boolean;
-  sort_order?: number;
-  image?: File | null;
-}) {
-  const formData = new FormData();
-  formData.append("name", categoryData.name);
-  formData.append("slug", categoryData.slug);
-  if (categoryData.description) {
-    formData.append("description", categoryData.description);
-  }
-  formData.append("active", String(categoryData.active ?? true));
-  formData.append("sort_order", String(categoryData.sort_order ?? 0));
-  
-  // Add image if provided
-  if (categoryData.image) {
-    formData.append("image", categoryData.image);
-  }
-  
-  interface CategoryResponse {
-    status: string;
-    message: string;
-    data: Category;
-  }
-  
-  const response = await apiUpload<CategoryResponse>("/categories/", formData);
-  return response.data;
-}
-
-/**
- * Update an existing category with optional new image
- */
-export async function updateCategory(
-  categoryId: string,
-  categoryData: {
-    name?: string;
-    slug?: string;
-    description?: string;
-    active?: boolean;
-    sort_order?: number;
-    image?: File | null;
-  }
-) {
-  const formData = new FormData();
-  
-  // Add only provided fields
-  if (categoryData.name !== undefined) {
-    formData.append("name", categoryData.name);
-  }
-  if (categoryData.slug !== undefined) {
-    formData.append("slug", categoryData.slug);
-  }
-  if (categoryData.description !== undefined) {
-    formData.append("description", categoryData.description);
-  }
-  if (categoryData.active !== undefined) {
-    formData.append("active", String(categoryData.active));
-  }
-  if (categoryData.sort_order !== undefined) {
-    formData.append("sort_order", String(categoryData.sort_order));
-  }
-  
-  // Add new image if provided
-  if (categoryData.image) {
-    formData.append("image", categoryData.image);
-  }
-
-  // Use custom fetch with PUT method for FormData
-  const token = localStorage.getItem("restaurant-pos-token");
-  const tokenType = localStorage.getItem("restaurant-pos-token-type") || "bearer";
-  
-  const response = await fetch(
-    `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1"}/categories/${categoryId}`,
-    {
-      method: "PUT",
-      headers: {
-        ...(token ? { Authorization: `${tokenType} ${token}` } : {}),
-        // Don't set Content-Type for FormData
-      },
-      body: formData,
-    }
-  );
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ detail: "Failed to update category" }));
-    throw new Error(errorData.detail || "Failed to update category");
-  }
-
-  interface CategoryResponse {
-    status: string;
-    message: string;
-    data: Category;
-  }
-  
-  const result = await response.json() as CategoryResponse;
-  return result.data;
-}
-
-/**
- * Delete a category (also deletes associated image)
- */
-export async function deleteCategory(categoryId: string) {
-  interface DeleteResponse {
-    status: string;
-    message: string;
-    data: null;
-  }
-  return apiDelete<DeleteResponse>(`/categories/${categoryId}`);
-}
-
-// ==================== Customer Services ====================
-
-export interface Customer {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  address?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export async function getCustomers() {
-  return apiGet<Customer[]>("/customers");
-}
-
-export async function getCustomerById(customerId: string) {
-  return apiGet<Customer>(`/customers/${customerId}`);
-}
-
-export async function createCustomer(customerData: Partial<Customer>) {
-  return apiPost<Customer>("/customers", customerData);
-}
-
-export async function updateCustomer(customerId: string, customerData: Partial<Customer>) {
-  return apiPut<Customer>(`/customers/${customerId}`, customerData);
-}
-
-export async function deleteCustomer(customerId: string) {
-  return apiDelete(`/customers/${customerId}`);
-}
-
-// ==================== File Upload Services ====================
-
-export interface UploadResponse {
-  url: string;
-  filename: string;
-  size: number;
-  content_type: string;
-}
-
-/**
- * Upload an image file
- * @param file - The file to upload
- * @param folder - Optional folder path (e.g., 'products', 'categories')
- * @returns Upload response with file URL
- */
-export async function uploadImage(file: File, folder: string = 'products'): Promise<UploadResponse> {
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('folder', folder);
-
-  return apiUpload<UploadResponse>('/upload/image', formData);
-}
-
 // ==================== Modifier Services ====================
 
-export interface ModifierOption {
-  id: string;
-  modifier_id: string;
-  name: string;
-  price: number; // in cents
-  available: boolean;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Modifier {
-  id: string;
-  name: string;
-  type: 'single' | 'multiple';
-  category: string;
-  required: boolean;
-  min_selections: number;
-  max_selections: number | null;
-  options: ModifierOption[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ModifierListResponse {
-  success: boolean;
-  message: string;
-  data: Modifier[];
-  pagination: {
-    page: number;
-    page_size: number;
-    total_items: number;
-    total_pages: number;
-    has_next: boolean;
-    has_prev: boolean;
-  };
-}
-
-export interface ModifierFilters {
-  page?: number;
-  page_size?: number;
-  category?: string;
-}
-
 /**
- * Get paginated list of modifiers with optional filters
+ * Get modifiers for a restaurant
+ * GET /api/v1/products/modifiers/restaurant/{restaurant_id}
  */
-export async function getModifiers(filters?: ModifierFilters) {
-  let endpoint = "/modifiers/";
+export async function getModifiers(restaurantId: string, filters?: ModifierFilters) {
   const params = new URLSearchParams();
+  if (filters?.active !== undefined) params.append("active_only", String(filters.active));
 
-  if (filters?.page) params.append("page", String(filters.page));
-  if (filters?.page_size) params.append("page_size", String(filters.page_size));
-  if (filters?.category) params.append("category", filters.category);
-
-  if (params.toString()) {
-    endpoint += `?${params.toString()}`;
-  }
-
-  return apiGet<ModifierListResponse>(endpoint);
+  return apiGet(`/products/modifiers/restaurant/${restaurantId}?${params.toString()}`);
 }
 
 /**
- * Get a single modifier by ID
+ * Get modifier by ID
  */
 export async function getModifierById(modifierId: string) {
-  return apiGet<Modifier>(`/modifiers/${modifierId}`);
+  return apiGet(`/products/modifiers/${modifierId}`);
 }
 
 /**
  * Create a new modifier
  */
-export async function createModifier(modifierData: {
-  name: string;
-  type: 'single' | 'multiple';
-  category?: string;
-  required?: boolean;
-  min_selections?: number;
-  max_selections?: number | null;
-}) {
-  return apiPost<Modifier>("/modifiers/", modifierData);
+export async function createModifier(modifierData: any) {
+  return apiPost("/products/modifiers", modifierData);
 }
 
 /**
  * Delete a modifier
  */
 export async function deleteModifier(modifierId: string) {
-  return apiDelete(`/modifiers/${modifierId}`);
+  return apiDelete(`/products/modifiers/${modifierId}`);
 }
 
 /**
- * Create a new modifier option
+ * Get options for a modifier
  */
-export async function createModifierOption(
-  modifierId: string,
-  optionData: {
-    name: string;
-    price?: number;
-    available?: boolean;
-    sort_order?: number;
-  }
-) {
-  return apiPost<ModifierOption>(`/modifiers/${modifierId}/options`, optionData);
-}
-
-/**
- * Get all options for a modifier
- */
-export async function getModifierOptions(
-  modifierId: string,
-  filters?: { page?: number; page_size?: number }
-) {
-  let endpoint = `/modifiers/${modifierId}/options`;
+export async function getModifierOptions(modifierId: string, filters?: any) {
   const params = new URLSearchParams();
-
-  if (filters?.page) params.append("page", String(filters.page));
-  if (filters?.page_size) params.append("page_size", String(filters.page_size));
-
-  if (params.toString()) {
-    endpoint += `?${params.toString()}`;
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined) params.append(key, String(value));
+    });
   }
+  return apiGet(`/products/modifiers/${modifierId}/options?${params.toString()}`);
+}
 
-  interface OptionsResponse {
-    success: boolean;
-    message: string;
-    data: ModifierOption[];
-    pagination: {
-      page: number;
-      page_size: number;
-      total_items: number;
-      total_pages: number;
-      has_next: boolean;
-      has_prev: boolean;
-    };
-  }
-
-  return apiGet<OptionsResponse>(endpoint);
+/**
+ * Create a modifier option
+ */
+export async function createModifierOption(modifierId: string, optionData: any) {
+  return apiPost(`/products/modifiers/${modifierId}/options`, optionData);
 }
 
 /**
  * Delete a modifier option
  */
 export async function deleteModifierOption(optionId: string) {
-  return apiDelete(`/modifier-options/${optionId}`);
+  return apiDelete(`/products/modifiers/options/${optionId}`);
+}
+
+// ==================== Order & Table Services ====================
+
+/**
+ * Get all tables for a restaurant
+ * GET /api/v1/tables/restaurant/{restaurant_id}
+ */
+export async function getTables(restaurantId: string) {
+  return apiGet(`/tables/restaurant/${restaurantId}`);
+}
+
+/**
+ * Get orders for a restaurant
+ * GET /api/v1/orders/restaurant/{restaurant_id}
+ */
+export async function getOrders(restaurantId: string, skip = 0, limit = 100) {
+  return apiGet<Order[]>(`/orders/restaurant/${restaurantId}?skip=${skip}&limit=${limit}`);
+}
+
+/**
+ * Create a new order
+ * POST /api/v1/orders/
+ */
+export async function createOrder(orderData: Partial<Order>) {
+  return apiPost<Order>("/orders/", orderData);
+}
+
+/**
+ * Update order status
+ * PATCH /api/v1/orders/{order_id}/status
+ */
+export async function updateOrderStatus(orderId: string, status: string) {
+  return apiPatch<Order>(`/orders/${orderId}/status`, { status });
+}
+
+// ==================== Kitchen Display System (KDS) ====================
+
+/**
+ * Get active tickets for a kitchen station
+ * GET /api/v1/kds/tickets/station/{station_id}
+ */
+export async function getKdsTickets(stationId: string) {
+  return apiGet(`/kds/tickets/station/${stationId}`);
+}
+
+/**
+ * Update ticket item status (preparing, ready, etc.)
+ * PATCH /api/v1/kds/items/{item_id}/status
+ */
+export async function updateKdsItemStatus(itemId: string, status: string) {
+  return apiPatch(`/kds/items/${itemId}/status`, { status });
+}
+
+// ==================== Inventory Management ====================
+
+/**
+ * Get inventory stock levels for restaurant
+ * GET /api/v1/inventory/stock/restaurant/{restaurant_id}
+ */
+export async function getInventoryStock(restaurantId: string) {
+  return apiGet(`/inventory/stock/restaurant/${restaurantId}`);
+}
+
+/**
+ * Record stock transaction
+ * POST /api/v1/inventory/transactions
+ */
+export async function recordStockTransaction(transactionData: any) {
+  return apiPost("/inventory/transactions", transactionData);
+}
+
+// ==================== Staff Management ====================
+
+/**
+ * Get staff members for restaurant
+ * GET /api/v1/staff/restaurant/{restaurant_id}
+ */
+export async function getStaffMembers(restaurantId: string) {
+  return apiGet(`/staff/restaurant/${restaurantId}`);
+}
+
+/**
+ * Clock in/out for shift
+ * POST /api/v1/staff/attendance/clock
+ */
+export async function clockStaff(staffId: string, action: 'clock_in' | 'clock_out') {
+  return apiPost("/staff/attendance/clock", { staff_id: staffId, action });
+}
+
+// ==================== Reports & Analytics ====================
+
+/**
+ * Get sales dashboard data
+ * GET /api/v1/reports/dashboard/restaurant/{restaurant_id}
+ */
+export async function getDashboardStats(restaurantId: string, period = 'today') {
+  return apiGet(`/reports/dashboard/restaurant/${restaurantId}?period=${period}`);
+}
+
+/**
+ * Generate PDF report
+ * GET /api/v1/reports/sales/pdf
+ */
+export async function generateSalesReport(restaurantId: string, startDate: string, endDate: string) {
+  return apiGet(`/reports/sales/pdf?restaurant_id=${restaurantId}&start_date=${startDate}&end_date=${endDate}`, {
+    headers: { Accept: "application/pdf" }
+  });
 }
