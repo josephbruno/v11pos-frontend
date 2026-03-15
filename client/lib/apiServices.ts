@@ -164,6 +164,22 @@ export async function updateRestaurant(restaurantId: string, restaurantData: Par
   return apiPut<Restaurant>(`/restaurants/${restaurantId}`, restaurantData);
 }
 
+/**
+ * Partially update restaurant info
+ * PATCH /api/v1/restaurants/{restaurant_id}
+ */
+export async function patchRestaurant(restaurantId: string, restaurantData: Partial<Restaurant> | any) {
+  return apiPatch<Restaurant>(`/restaurants/${restaurantId}`, restaurantData);
+}
+
+/**
+ * Delete restaurant
+ * DELETE /api/v1/restaurants/{restaurant_id}
+ */
+export async function deleteRestaurant(restaurantId: string) {
+  return apiDelete(`/restaurants/${restaurantId}`);
+}
+
 // ==================== Product & Category Services ====================
 
 /**

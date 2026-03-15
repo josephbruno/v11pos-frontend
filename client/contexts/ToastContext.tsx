@@ -58,15 +58,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const getBackgroundColor = (type: Toast["type"]) => {
     switch (type) {
       case "success":
-        return "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800";
+        return "bg-green-600 border-green-700 text-white";
       case "error":
-        return "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800";
+        return "bg-red-600 border-red-700 text-white";
       case "warning":
-        return "bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800";
+        return "bg-amber-500 border-amber-600 text-black";
       case "info":
-        return "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800";
+        return "bg-blue-600 border-blue-700 text-white";
       default:
-        return "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800";
+        return "bg-blue-600 border-blue-700 text-white";
     }
   };
 
@@ -86,11 +86,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             <div className="flex items-start space-x-3">
               {getIcon(toast.type)}
               <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                <h4 className="text-sm font-medium">
                   {toast.title}
                 </h4>
                 {toast.description && (
-                  <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                  <p className="text-sm mt-1 opacity-90">
                     {toast.description}
                   </p>
                 )}
@@ -98,7 +98,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="h-6 w-6 p-0 hover:bg-black/10"
                 onClick={() => removeToast(toast.id)}
               >
                 <X className="h-4 w-4" />

@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -12,6 +13,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -38,11 +46,14 @@ import {
   generateSlug,
 } from "@/hooks/useCategories";
 import { getImageCropConfig, validateImageFile } from "@/lib/imageCropConfig";
+import { useAuth } from "@/contexts/AuthContext";
+import { getMyRestaurants } from "@/lib/apiServices";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
 interface Category {
   id: string;
+  restaurant_id?: string;
   name: string;
   slug: string;
   description: string | null;
@@ -53,14 +64,69 @@ interface Category {
   updated_at: string;
 }
 
+interface RestaurantOption {
+  id: string;
+  name: string;
+}
+
 export default function CategoryConfiguration() {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [isAddingCategory, setIsAddingCategory] = useState(false);
-  
+  const [selectedRestaurantId, setSelectedRestaurantId] = useState(user?.branchId || "");
+
   const [imagePreview, setImagePreview] = useState<string>("");
   const [imageFile, setImageFile] = useState<File | null>(null);
+
+  const { data: restaurantsResponse, isLoading: isRestaurantsLoading } = useQuery({
+    queryKey: ["my-restaurants", user?.id],
+    queryFn: () => getMyRestaurants(0, 500),
+    enabled: isSuperAdmin,
+    staleTime: 60000,
+  });
+
+  const restaurantOptions: RestaurantOption[] = useMemo(() => {
+    const source = (restaurantsResponse as any)?.data ?? restaurantsResponse;
+    const restaurants = Array.isArray(source)
+      ? source
+      : Array.isArray(source?.items)
+        ? source.items
+        : Array.isArray(source?.restaurants)
+          ? source.restaurants
+          : [];
+
+    return Array.from(
+      new Map(
+        restaurants
+          .filter((restaurant: any) => restaurant?.id && (restaurant?.name || restaurant?.business_name))
+          .map((restaurant: any) => [
+            String(restaurant.id),
+            {
+              id: String(restaurant.id),
+              name: String(restaurant.name || restaurant.business_name),
+            },
+          ]),
+      ).values(),
+    ) as RestaurantOption[];
+  }, [restaurantsResponse]);
+
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      setSelectedRestaurantId(user?.branchId || "");
+      return;
+    }
+
+    if (!selectedRestaurantId && restaurantOptions.length > 0) {
+      setSelectedRestaurantId(restaurantOptions[0].id);
+    }
+  }, [isSuperAdmin, user?.branchId, selectedRestaurantId, restaurantOptions]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedRestaurantId]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -73,7 +139,7 @@ export default function CategoryConfiguration() {
   const { data: categoriesResponse, isLoading } = useCategories({
     page: currentPage,
     page_size: 12,
-  });
+  }, selectedRestaurantId);
   
   const createMutation = useCreateCategory();
   const updateMutation = useUpdateCategory();
@@ -90,6 +156,10 @@ export default function CategoryConfiguration() {
     category,
     onSave,
     onCancel,
+    restaurantOptions,
+    defaultRestaurantId,
+    isSuperAdmin,
+    isRestaurantsLoading,
     imagePreview,
     setImagePreview,
     imageFile,
@@ -98,12 +168,17 @@ export default function CategoryConfiguration() {
     category?: Category;
     onSave: (category: any) => void;
     onCancel: () => void;
+    restaurantOptions: RestaurantOption[];
+    defaultRestaurantId: string;
+    isSuperAdmin: boolean;
+    isRestaurantsLoading: boolean;
     imagePreview: string;
     setImagePreview: (preview: string) => void;
     imageFile: File | null;
     setImageFile: (file: File | null) => void;
   }) => {
     const [formData, setFormData] = useState({
+      restaurant_id: category?.restaurant_id || defaultRestaurantId || "",
       name: category?.name || "",
       slug: category?.slug || "",
       description: category?.description || "",
@@ -142,6 +217,10 @@ export default function CategoryConfiguration() {
 
       if (formData.sort_order < 0) {
         newErrors.sort_order = "Sort order cannot be negative";
+      }
+
+      if (!formData.restaurant_id) {
+        newErrors.restaurant_id = "Restaurant is required";
       }
 
       setErrors(newErrors);
@@ -189,7 +268,45 @@ export default function CategoryConfiguration() {
     };
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 pb-1">
+        <div className="space-y-2">
+          <Label htmlFor="restaurant_id" className="text-foreground">
+            Restaurant <span className="text-destructive">*</span>
+          </Label>
+          <Select
+            value={formData.restaurant_id || "none"}
+            onValueChange={(value) => {
+              setFormData({ ...formData, restaurant_id: value === "none" ? "" : value });
+              if (errors.restaurant_id) setErrors({ ...errors, restaurant_id: "" });
+            }}
+            disabled={!isSuperAdmin || isRestaurantsLoading}
+          >
+            <SelectTrigger className={`bg-background border-border text-foreground ${errors.restaurant_id ? "border-destructive" : ""}`}>
+              <SelectValue
+                placeholder={
+                  isRestaurantsLoading
+                    ? "Loading restaurants..."
+                    : "Select restaurant"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent className="bg-background border-border">
+              <SelectItem value="none">Select Restaurant</SelectItem>
+              {restaurantOptions.length === 0 && (
+                <SelectItem value="no-restaurants" disabled>
+                  No restaurants found
+                </SelectItem>
+              )}
+              {restaurantOptions.map((restaurant) => (
+                <SelectItem key={restaurant.id} value={restaurant.id}>
+                  {restaurant.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {errors.restaurant_id && <p className="text-xs text-destructive">{errors.restaurant_id}</p>}
+        </div>
+
         <div className="space-y-2">
           <Label htmlFor="image" className="text-foreground">Category Image</Label>
           <div className="flex items-start gap-4">
@@ -332,16 +449,23 @@ export default function CategoryConfiguration() {
           }
         }}>
           <DialogTrigger asChild>
-            <Button className="bg-primary hover:bg-primary/90">
+            <Button
+              className="bg-primary hover:bg-primary/90"
+              disabled={isSuperAdmin && !selectedRestaurantId}
+            >
               <Plus className="mr-2 h-4 w-4" />
               Add Category
             </Button>
           </DialogTrigger>
-          <DialogContent className="bg-card border-border max-w-2xl">
+          <DialogContent className="bg-card border-border w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-foreground">Add New Category</DialogTitle>
             </DialogHeader>
             <CategoryForm
+              restaurantOptions={restaurantOptions}
+              defaultRestaurantId={selectedRestaurantId}
+              isSuperAdmin={isSuperAdmin}
+              isRestaurantsLoading={isRestaurantsLoading}
               imagePreview={imagePreview}
               setImagePreview={setImagePreview}
               imageFile={imageFile}
@@ -365,6 +489,37 @@ export default function CategoryConfiguration() {
         </Dialog>
       </div>
 
+      {isSuperAdmin && (
+        <Card className="bg-card border-border">
+          <CardContent className="p-4">
+            <div className="space-y-2">
+              <Label htmlFor="restaurant-filter" className="text-foreground">
+                Restaurant
+              </Label>
+              <Select
+                value={selectedRestaurantId || "none"}
+                onValueChange={(value) =>
+                  setSelectedRestaurantId(value === "none" ? "" : value)
+                }
+                disabled={isRestaurantsLoading}
+              >
+                <SelectTrigger id="restaurant-filter" className="bg-background border-border text-foreground">
+                  <SelectValue placeholder={isRestaurantsLoading ? "Loading restaurants..." : "Select restaurant"} />
+                </SelectTrigger>
+                <SelectContent className="bg-background border-border">
+                  <SelectItem value="none">Select Restaurant</SelectItem>
+                  {restaurantOptions.map((restaurant) => (
+                    <SelectItem key={restaurant.id} value={restaurant.id}>
+                      {restaurant.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="bg-card border-border">
         <CardContent className="p-4">
           <div className="relative">
@@ -386,6 +541,14 @@ export default function CategoryConfiguration() {
             <p className="text-muted-foreground">Loading categories...</p>
           </div>
         </div>
+      ) : isSuperAdmin && !selectedRestaurantId ? (
+        <div className="flex justify-center items-center py-12">
+          <div className="text-center">
+            <Layers className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Select a restaurant</h3>
+            <p className="text-muted-foreground">Choose a restaurant to manage categories.</p>
+          </div>
+        </div>
       ) : filteredCategories.length === 0 ? (
         <div className="flex justify-center items-center py-12">
           <div className="text-center">
@@ -395,7 +558,7 @@ export default function CategoryConfiguration() {
               {searchQuery ? "Try adjusting your search" : "Get started by creating your first category"}
             </p>
             {!searchQuery && (
-              <Button onClick={() => setIsAddingCategory(true)}>
+              <Button onClick={() => setIsAddingCategory(true)} disabled={isSuperAdmin && !selectedRestaurantId}>
                 <Plus className="mr-2 h-4 w-4" />
                 Create Category
               </Button>
@@ -461,12 +624,16 @@ export default function CategoryConfiguration() {
                         Edit
                       </Button>
                     </DialogTrigger>
-                    <DialogContent className="bg-card border-border max-w-2xl">
+                    <DialogContent className="bg-card border-border w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
                       <DialogHeader>
                         <DialogTitle className="text-foreground">Edit Category</DialogTitle>
                       </DialogHeader>
                       <CategoryForm
                         category={category}
+                        restaurantOptions={restaurantOptions}
+                        defaultRestaurantId={selectedRestaurantId}
+                        isSuperAdmin={isSuperAdmin}
+                        isRestaurantsLoading={isRestaurantsLoading}
                         imagePreview={imagePreview}
                         setImagePreview={setImagePreview}
                         imageFile={imageFile}

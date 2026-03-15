@@ -22,9 +22,9 @@ import { useToast } from "@/contexts/ToastContext";
 /**
  * Hook to fetch paginated categories list
  */
-export function useCategories(filters?: CategoryFilters) {
+export function useCategories(filters?: CategoryFilters, restaurantIdOverride?: string) {
   const { user } = useAuth();
-  const restaurantId = user?.branchId || "";
+  const restaurantId = restaurantIdOverride || user?.branchId || "";
 
   return useQuery({
     queryKey: ["categories", restaurantId, filters],
@@ -37,9 +37,9 @@ export function useCategories(filters?: CategoryFilters) {
 /**
  * Hook to fetch all active categories (no pagination)
  */
-export function useActiveCategories() {
+export function useActiveCategories(restaurantIdOverride?: string) {
   const { user } = useAuth();
-  const restaurantId = user?.branchId || "";
+  const restaurantId = restaurantIdOverride || user?.branchId || "";
 
   return useQuery({
     queryKey: ["categories", restaurantId, "active"],
@@ -101,6 +101,7 @@ export function useUpdateCategory() {
     }: {
       id: string;
       data: {
+        restaurant_id?: string;
         name?: string;
         slug?: string;
         description?: string;

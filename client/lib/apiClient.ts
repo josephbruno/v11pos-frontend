@@ -31,7 +31,8 @@ export function getAuthToken(): string | null {
  * Get the token type from localStorage
  */
 export function getTokenType(): string {
-  return localStorage.getItem("restaurant-pos-token-type") || "bearer";
+  const tokenType = localStorage.getItem("restaurant-pos-token-type") || "Bearer";
+  return tokenType.toLowerCase() === "bearer" ? "Bearer" : tokenType;
 }
 
 /**
@@ -76,6 +77,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
       // Clear stored auth data
       localStorage.removeItem("restaurant-pos-user");
       localStorage.removeItem("restaurant-pos-token");
+      localStorage.removeItem("restaurant-pos-refresh-token");
       localStorage.removeItem("restaurant-pos-token-type");
       localStorage.removeItem("restaurant-pos-token-expires");
 
