@@ -68,7 +68,7 @@ export const navigationConfig: NavItem[] = [
     },
     {
         name: "Product",
-        href: "/products",
+        href: "/products?tab=products",
         icon: Package,
         description: "Product Management",
         roles: ["super_admin"],
@@ -76,7 +76,7 @@ export const navigationConfig: NavItem[] = [
     },
     {
         name: "Modifiers",
-        href: "/products",
+        href: "/products?tab=modifiers",
         icon: FileText,
         description: "Modifier Management",
         roles: ["super_admin"],

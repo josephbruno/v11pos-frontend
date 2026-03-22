@@ -1,0 +1,18 @@
+[2m11:47:34 pm[22m [31m[1m[vite][22m[39m [31mInternal server error:   x Unexpected token `motion`. Expected jsx identifier
+     ,-[D:/BESTWAVE INNOVATION/Projects/pos/v11pos-frontend/client/pages/CategoryConfiguration.tsx:516:1]
+ 513 |   };
+ 514 | 
+ 515 |   return (
+ 516 |     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="space-y-6">
+     :      ^^^^^^
+ 517 |       <div className="flex items-center justify-between">
+ 518 |         <div>
+ 518 |           <h1 className="text-3xl font-bold text-foreground">Category Management</h1>
+     `----
+
+
+Caused by:
+    Syntax Error[39m
+  Plugin: [35mvite:react-swc[39m
+  File: [36mD:/BESTWAVE INNOVATION/Projects/pos/v11pos-frontend/client/pages/CategoryConfiguration.tsx[39m
+  

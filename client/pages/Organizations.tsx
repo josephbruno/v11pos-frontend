@@ -14,6 +14,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -26,6 +36,7 @@ import {
 import { Activity, Building2, Calendar, MapPin, Pencil, Plus } from "lucide-react";
 import {
   createRestaurant,
+  getRestaurantById,
   getMyRestaurants,
   patchRestaurant,
   updateRestaurant,
@@ -100,6 +111,10 @@ export default function Organizations() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  const [pendingStatusChange, setPendingStatusChange] = useState<{
+    restaurant: Restaurant;
+    active: boolean;
+  } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState("");
@@ -152,49 +167,56 @@ export default function Organizations() {
     }
 
     if (field === "email") {
-      if (trimmed && !isValidEmail(trimmed)) {
+      if (!trimmed) return "Email is required.";
+      if (!isValidEmail(trimmed)) {
         return "Please enter a valid email like manager@restaurant.com.";
       }
       return "";
     }
 
     if (field === "phone") {
-      if (trimmed && !/^[0-9]{10}$/.test(trimmed)) {
+      if (!trimmed) return "Phone number is required.";
+      if (!/^[0-9]{10}$/.test(trimmed)) {
         return "Phone number must be exactly 10 digits.";
       }
       return "";
     }
 
     if (field === "postal_code") {
-      if (trimmed && !/^[0-9]{6}$/.test(trimmed)) {
+      if (!trimmed) return "Postal code is required.";
+      if (!/^[0-9]{6}$/.test(trimmed)) {
         return "Postal code must be exactly 6 digits.";
       }
       return "";
     }
 
     if (field === "city") {
-      if (trimmed && !/^[a-zA-Z\s]+$/.test(trimmed)) {
+      if (!trimmed) return "City is required.";
+      if (!/^[a-zA-Z\s]+$/.test(trimmed)) {
         return "City should contain letters only.";
       }
       return "";
     }
 
     if (field === "state") {
-      if (trimmed && !/^[a-zA-Z\s]+$/.test(trimmed)) {
+      if (!trimmed) return "State is required.";
+      if (!/^[a-zA-Z\s]+$/.test(trimmed)) {
         return "State should contain letters only.";
       }
       return "";
     }
 
     if (field === "country") {
-      if (trimmed && !/^[a-zA-Z\s]+$/.test(trimmed)) {
+      if (!trimmed) return "Country is required.";
+      if (!/^[a-zA-Z\s]+$/.test(trimmed)) {
         return "Country should contain letters only.";
       }
       return "";
     }
 
     if (field === "address") {
-      if (trimmed && !/^[a-zA-Z0-9\s/,]+$/.test(trimmed)) {
+      if (!trimmed) return "Address is required.";
+      if (!/^[a-zA-Z0-9\s/,]+$/.test(trimmed)) {
         return "Address allows letters, numbers, space, / and comma only.";
       }
       return "";
@@ -431,8 +453,25 @@ export default function Organizations() {
       try {
         await patchRestaurant(editingOrganization.id, updatePayload);
       } catch {
-        // Fallback for backends that only support PUT on this endpoint.
         await updateRestaurant(editingOrganization.id, updatePayload);
+      }
+
+      const refreshedResponse = await getRestaurantById(editingOrganization.id);
+      const refreshed = (refreshedResponse as any)?.data ?? refreshedResponse;
+      const refreshedName = String(
+        refreshed?.name || refreshed?.business_name || "",
+      ).trim();
+      const expectedName = editForm.name.trim();
+      const normalizedExpected = expectedName.toLowerCase();
+      const normalizedRefreshed = refreshedName.toLowerCase();
+
+      if (normalizedRefreshed && normalizedRefreshed !== normalizedExpected) {
+        addToast({
+          type: "warning",
+          title: "Name Not Updated by API",
+          description:
+            "Restaurant update response did not persist the new name. Please verify backend update rules.",
+        });
       }
 
       // Update local state immediately so status reflects without waiting for backend normalization.
@@ -501,9 +540,9 @@ export default function Organizations() {
       };
 
       try {
-        await patchRestaurant(restaurant.id, payload);
-      } catch {
         await updateRestaurant(restaurant.id, payload);
+      } catch {
+        await patchRestaurant(restaurant.id, payload);
       }
 
       addToast({
@@ -530,6 +569,14 @@ export default function Organizations() {
     } finally {
       setStatusUpdatingId(null);
     }
+  };
+
+  const handleRequestRestaurantStatusChange = (restaurant: Restaurant, active: boolean) => {
+    if (statusUpdatingId === restaurant.id) return;
+    const currentStatus = normalizeRestaurantStatus(restaurant);
+    const nextStatus: "active" | "inactive" = active ? "active" : "inactive";
+    if (currentStatus === nextStatus) return;
+    setPendingStatusChange({ restaurant, active });
   };
 
   const activeCount = organizations.filter((org) => org.status === "active").length;
@@ -1066,7 +1113,7 @@ export default function Organizations() {
                             <Switch
                               checked={normalizeRestaurantStatus(org) === "active"}
                               onCheckedChange={(checked) =>
-                                handleToggleRestaurantStatus(org, checked)
+                                handleRequestRestaurantStatusChange(org, checked)
                               }
                               disabled={statusUpdatingId === org.id}
                             />
@@ -1110,6 +1157,40 @@ export default function Organizations() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog
+        open={!!pendingStatusChange}
+        onOpenChange={(open) => {
+          if (!open) setPendingStatusChange(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change Restaurant Status?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingStatusChange
+                ? `Are you sure you want to set ${pendingStatusChange.restaurant.name} as ${
+                    pendingStatusChange.active ? "Active" : "Inactive"
+                  }?`
+                : "Confirm status change."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!pendingStatusChange) return;
+                const target = pendingStatusChange;
+                setPendingStatusChange(null);
+                await handleToggleRestaurantStatus(target.restaurant, target.active);
+              }}
+            >
+              {pendingStatusChange?.active ? "Set Active" : "Set Inactive"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.div>
   );
 }

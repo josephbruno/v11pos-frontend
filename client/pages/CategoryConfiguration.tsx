@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -14,6 +14,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -22,14 +30,24 @@ import {
 } from "@/components/ui/select";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Plus,
-  Trash2,
   Search,
   Edit,
   ImageIcon,
@@ -42,7 +60,6 @@ import {
   useCategories,
   useCreateCategory,
   useUpdateCategory,
-  useDeleteCategory,
   generateSlug,
 } from "@/hooks/useCategories";
 import { getImageCropConfig, validateImageFile } from "@/lib/imageCropConfig";
@@ -69,6 +86,14 @@ interface RestaurantOption {
   name: string;
 }
 
+function sanitizeCategoryName(value: string) {
+  return value.replace(/[^A-Za-z\s]/g, "");
+}
+
+function sanitizeCategoryDescription(value: string) {
+  return value.replace(/[^A-Za-z0-9\s]/g, "");
+}
+
 export default function CategoryConfiguration() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
@@ -76,10 +101,12 @@ export default function CategoryConfiguration() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [pendingCategoryStatusChange, setPendingCategoryStatusChange] = useState<{
+    category: Category;
+    active: boolean;
+  } | null>(null);
   const [selectedRestaurantId, setSelectedRestaurantId] = useState(user?.branchId || "");
-
-  const [imagePreview, setImagePreview] = useState<string>("");
-  const [imageFile, setImageFile] = useState<File | null>(null);
 
   const { data: restaurantsResponse, isLoading: isRestaurantsLoading } = useQuery({
     queryKey: ["my-restaurants", user?.id],
@@ -113,6 +140,10 @@ export default function CategoryConfiguration() {
     ) as RestaurantOption[];
   }, [restaurantsResponse]);
 
+  const restaurantNameById = useMemo(() => {
+    return new Map(restaurantOptions.map((restaurant) => [restaurant.id, restaurant.name]));
+  }, [restaurantOptions]);
+
   useEffect(() => {
     if (!isSuperAdmin) {
       setSelectedRestaurantId(user?.branchId || "");
@@ -143,14 +174,40 @@ export default function CategoryConfiguration() {
   
   const createMutation = useCreateCategory();
   const updateMutation = useUpdateCategory();
-  const deleteMutation = useDeleteCategory();
 
   const categories = categoriesResponse?.data || [];
   const pagination = categoriesResponse?.pagination;
 
-  const filteredCategories = categories.filter((cat) =>
-    cat.name.toLowerCase().includes(debouncedSearch.toLowerCase())
-  );
+  const filteredCategories = useMemo(() => {
+    return categories
+      .filter((cat) => {
+        const matchesSearch = cat.name.toLowerCase().includes(debouncedSearch.toLowerCase());
+        if (!matchesSearch) return false;
+        if (!isSuperAdmin && selectedRestaurantId) {
+          return String(cat.restaurant_id || "") === String(selectedRestaurantId);
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const orderA = Number.isFinite(a.sort_order) ? a.sort_order : 0;
+        const orderB = Number.isFinite(b.sort_order) ? b.sort_order : 0;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.name.localeCompare(b.name);
+      });
+  }, [categories, debouncedSearch, isSuperAdmin, selectedRestaurantId]);
+
+  const handleToggleCategoryStatus = (category: any, checked: boolean) => {
+    updateMutation.mutate({
+      id: category.id,
+      data: { active: checked },
+    });
+  };
+
+  const handleRequestCategoryStatusChange = (category: Category, checked: boolean) => {
+    const nextStatus = !!checked;
+    if (nextStatus === !!category.active) return;
+    setPendingCategoryStatusChange({ category, active: nextStatus });
+  };
 
   const CategoryForm = ({
     category,
@@ -160,10 +217,6 @@ export default function CategoryConfiguration() {
     defaultRestaurantId,
     isSuperAdmin,
     isRestaurantsLoading,
-    imagePreview,
-    setImagePreview,
-    imageFile,
-    setImageFile,
   }: {
     category?: Category;
     onSave: (category: any) => void;
@@ -172,11 +225,10 @@ export default function CategoryConfiguration() {
     defaultRestaurantId: string;
     isSuperAdmin: boolean;
     isRestaurantsLoading: boolean;
-    imagePreview: string;
-    setImagePreview: (preview: string) => void;
-    imageFile: File | null;
-    setImageFile: (file: File | null) => void;
   }) => {
+    const imageInputRef = useRef<HTMLInputElement | null>(null);
+    const [localImagePreview, setLocalImagePreview] = useState<string>(category?.image || "");
+    const [localImageFile, setLocalImageFile] = useState<File | null>(null);
     const [formData, setFormData] = useState({
       restaurant_id: category?.restaurant_id || defaultRestaurantId || "",
       name: category?.name || "",
@@ -187,31 +239,45 @@ export default function CategoryConfiguration() {
     });
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [touched, setTouched] = useState<Record<string, boolean>>({});
 
     const imageCropConfig = getImageCropConfig('category');
     const { width: cropWidth, height: cropHeight } = imageCropConfig;
 
     useEffect(() => {
-      if (!category && formData.name) {
-        setFormData(prev => ({
+      const generatedSlug = generateSlug(formData.name);
+      setFormData((prev) => {
+        if (!generatedSlug || prev.slug === generatedSlug) {
+          return prev;
+        }
+        return {
           ...prev,
-          slug: generateSlug(formData.name),
-        }));
-      }
-    }, [formData.name, category]);
+          slug: generatedSlug,
+        };
+      });
+    }, [formData.name]);
+
+    useEffect(() => {
+      setLocalImagePreview(category?.image || "");
+      setLocalImageFile(null);
+    }, [category?.id, category?.image]);
 
     const validateForm = () => {
       const newErrors: Record<string, string> = {};
+      const hasImage = Boolean(localImageFile || localImagePreview || category?.image);
+      const slugValue = (formData.slug || generateSlug(formData.name)).trim();
 
       if (!formData.name.trim()) {
         newErrors.name = "Category name is required";
       } else if (formData.name.length < 2) {
         newErrors.name = "Category name must be at least 2 characters";
+      } else if (!/^[A-Za-z\s]+$/.test(formData.name.trim())) {
+        newErrors.name = "Category name can contain letters and spaces only";
       }
 
-      if (!formData.slug.trim()) {
+      if (!slugValue) {
         newErrors.slug = "Slug is required";
-      } else if (!/^[a-z0-9-]+$/.test(formData.slug)) {
+      } else if (!/^[a-z0-9-]+$/.test(slugValue)) {
         newErrors.slug = "Slug can only contain lowercase letters, numbers, and hyphens";
       }
 
@@ -219,34 +285,83 @@ export default function CategoryConfiguration() {
         newErrors.sort_order = "Sort order cannot be negative";
       }
 
+      if (formData.description && !/^[A-Za-z0-9\s]*$/.test(formData.description)) {
+        newErrors.description = "Description cannot contain special characters";
+      }
+
       if (!formData.restaurant_id) {
         newErrors.restaurant_id = "Restaurant is required";
+      }
+
+      if (!hasImage) {
+        newErrors.image = "Category image is required";
       }
 
       setErrors(newErrors);
       return Object.keys(newErrors).length === 0;
     };
 
+    const validateMandatoryField = (field: "restaurant_id" | "name" | "image") => {
+      setErrors((prevErrors) => {
+        const nextErrors = { ...prevErrors };
+        if (field === "restaurant_id") {
+          if (!formData.restaurant_id) nextErrors.restaurant_id = "Restaurant is required";
+          else delete nextErrors.restaurant_id;
+        }
+        if (field === "name") {
+          if (!formData.name.trim()) nextErrors.name = "Category name is required";
+          else if (formData.name.length < 2) {
+            nextErrors.name = "Category name must be at least 2 characters";
+          } else if (!/^[A-Za-z\s]+$/.test(formData.name.trim())) {
+            nextErrors.name = "Category name can contain letters and spaces only";
+          } else delete nextErrors.name;
+        }
+        if (field === "image") {
+          const hasImage = Boolean(localImageFile || localImagePreview || category?.image);
+          if (!hasImage) nextErrors.image = "Category image is required";
+          else delete nextErrors.image;
+        }
+        return nextErrors;
+      });
+    };
+
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       
       if (file) {
+        setTouched((prev) => ({ ...prev, image: true }));
         const validation = validateImageFile(file, 'category');
         
         if (!validation.valid) {
-          setErrors({ ...errors, image: validation.error || 'Invalid image file' });
+          setErrors((prevErrors) => ({
+            ...prevErrors,
+            image: validation.error || "Invalid image file",
+          }));
+          setLocalImageFile(null);
           return;
         }
 
-        setErrors({ ...errors, image: '' });
-        setImageFile(file);
+        setErrors((prevErrors) => {
+          const nextErrors = { ...prevErrors };
+          delete nextErrors.image;
+          return nextErrors;
+        });
+        setTouched((prev) => ({ ...prev, image: true }));
+        setLocalImageFile(file);
 
         const objectUrl = URL.createObjectURL(file);
-        setImagePreview(objectUrl);
+        setLocalImagePreview(objectUrl);
       }
     };
 
     const handleSubmit = async () => {
+      setTouched((prev) => ({
+        ...prev,
+        restaurant_id: true,
+        name: true,
+        image: true,
+      }));
+
       if (!validateForm()) {
         return;
       }
@@ -256,7 +371,8 @@ export default function CategoryConfiguration() {
       try {
         const categoryData = {
           ...formData,
-          image: imageFile,
+          slug: (formData.slug || generateSlug(formData.name)).trim(),
+          image: localImageFile,
         };
 
         onSave(categoryData);
@@ -271,13 +387,20 @@ export default function CategoryConfiguration() {
       <div className="space-y-6 pb-1">
         <div className="space-y-2">
           <Label htmlFor="restaurant_id" className="text-foreground">
-            Restaurant <span className="text-destructive">*</span>
+            Restaurant
           </Label>
           <Select
             value={formData.restaurant_id || "none"}
             onValueChange={(value) => {
-              setFormData({ ...formData, restaurant_id: value === "none" ? "" : value });
-              if (errors.restaurant_id) setErrors({ ...errors, restaurant_id: "" });
+              const nextRestaurantId = value === "none" ? "" : value;
+              setFormData({ ...formData, restaurant_id: nextRestaurantId });
+              setTouched((prev) => ({ ...prev, restaurant_id: true }));
+              setErrors((prevErrors) => {
+                const nextErrors = { ...prevErrors };
+                if (!nextRestaurantId) nextErrors.restaurant_id = "Restaurant is required";
+                else delete nextErrors.restaurant_id;
+                return nextErrors;
+              });
             }}
             disabled={!isSuperAdmin || isRestaurantsLoading}
           >
@@ -308,14 +431,61 @@ export default function CategoryConfiguration() {
         </div>
 
         <div className="space-y-2">
+          <Label htmlFor="name" className="text-foreground">
+            Category Name
+          </Label>
+          <Input
+            id="name"
+            value={formData.name}
+            onChange={(e) => {
+              setFormData({ ...formData, name: sanitizeCategoryName(e.target.value) });
+              if (errors.name) setErrors({ ...errors, name: '' });
+            }}
+            onBlur={() => {
+              setTouched((prev) => ({ ...prev, name: true }));
+              validateMandatoryField("name");
+            }}
+            className={`bg-background border-border text-foreground ${errors.name ? 'border-destructive' : ''}`}
+            placeholder="Enter category name"
+          />
+          {(errors.name && (touched.name || isSubmitting)) && (
+            <p className="text-xs text-destructive">{errors.name}</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="description" className="text-foreground">Description</Label>
+          <Textarea
+            id="description"
+            value={formData.description}
+            onChange={(e) => {
+              setFormData({ ...formData, description: sanitizeCategoryDescription(e.target.value) });
+              if (errors.description) {
+                setErrors((prev) => {
+                  const next = { ...prev };
+                  delete next.description;
+                  return next;
+                });
+              }
+            }}
+            className="bg-background border-border text-foreground"
+            placeholder="Category description"
+            rows={3}
+          />
+          {errors.description && (
+            <p className="text-xs text-destructive">{errors.description}</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="image" className="text-foreground">Category Image</Label>
           <div className="flex items-start gap-4">
             <div className="w-32 h-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted">
-              {imagePreview ? (
+              {localImagePreview ? (
                 <img
-                  src={imagePreview.startsWith('http') || imagePreview.startsWith('/uploads') 
-                    ? `${BACKEND_URL}${imagePreview}` 
-                    : imagePreview}
+                  src={localImagePreview.startsWith('http') || localImagePreview.startsWith('/uploads') 
+                    ? `${BACKEND_URL}${localImagePreview}` 
+                    : localImagePreview}
                   alt="Preview"
                   className="w-full h-full object-cover"
                 />
@@ -324,67 +494,36 @@ export default function CategoryConfiguration() {
               )}
             </div>
             <div className="flex-1 space-y-2">
-              <Input
+              <input
+                ref={imageInputRef}
                 id="image"
                 type="file"
                 accept="image/*"
                 onChange={handleImageChange}
-                className="bg-background border-border text-foreground"
+                className="hidden"
               />
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-border"
+                  onClick={() => imageInputRef.current?.click()}
+                >
+                  Choose File
+                </Button>
+                <span className="text-sm text-muted-foreground truncate max-w-[280px]">
+                  {localImageFile?.name || "No file chosen"}
+                </span>
+              </div>
               <p className="text-xs text-muted-foreground">
-                Upload a category image (max 10MB, JPG, PNG, GIF, WebP). Image will be cropped to {cropWidth}x{cropHeight}px.
+                Upload a category image (max 2MB, JPG, PNG, GIF, WebP). Image will be cropped to {cropWidth}x{cropHeight}px.
               </p>
-              {imageFile && <p className="text-xs text-green-600">✓ New image ready for upload</p>}
-              {errors.image && <p className="text-xs text-destructive">{errors.image}</p>}
+              {localImageFile && <p className="text-xs text-green-600">✓ New image ready for upload</p>}
+              {(errors.image && (touched.image || isSubmitting)) && (
+                <p className="text-xs text-destructive">{errors.image}</p>
+              )}
             </div>
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="name" className="text-foreground">
-              Category Name <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) => {
-                setFormData({ ...formData, name: e.target.value });
-                if (errors.name) setErrors({ ...errors, name: '' });
-              }}
-              className={`bg-background border-border text-foreground ${errors.name ? 'border-destructive' : ''}`}
-              placeholder="Enter category name"
-            />
-            {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="slug" className="text-foreground">
-              Slug <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="slug"
-              value={formData.slug}
-              onChange={(e) => {
-                setFormData({ ...formData, slug: e.target.value });
-                if (errors.slug) setErrors({ ...errors, slug: '' });
-              }}
-              className={`bg-background border-border text-foreground ${errors.slug ? 'border-destructive' : ''}`}
-              placeholder="category-slug"
-            />
-            {errors.slug && <p className="text-xs text-destructive">{errors.slug}</p>}
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="description" className="text-foreground">Description</Label>
-          <Textarea
-            id="description"
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            className="bg-background border-border text-foreground"
-            placeholder="Category description"
-            rows={3}
-          />
         </div>
 
         <div className="space-y-2">
@@ -398,7 +537,7 @@ export default function CategoryConfiguration() {
               setFormData({ ...formData, sort_order: parseInt(e.target.value) || 0 });
               if (errors.sort_order) setErrors({ ...errors, sort_order: '' });
             }}
-            className={`bg-background border-border text-foreground ${errors.sort_order ? 'border-destructive' : ''}`}
+            className={`bg-background border-border text-foreground max-w-[140px] ${errors.sort_order ? 'border-destructive' : ''}`}
             placeholder="0"
           />
           {errors.sort_order && <p className="text-xs text-destructive">{errors.sort_order}</p>}
@@ -406,16 +545,24 @@ export default function CategoryConfiguration() {
         </div>
 
         <div className="flex items-center space-x-2">
-          <Switch
-            id="active"
-            checked={formData.active}
-            onCheckedChange={(checked) => setFormData({ ...formData, active: checked })}
-          />
-          <Label htmlFor="active" className="text-foreground">Active</Label>
+          {category && (
+            <>
+              <Switch
+                id="active"
+                checked={formData.active}
+                onCheckedChange={(checked) => setFormData({ ...formData, active: checked })}
+              />
+              <Label htmlFor="active" className="text-foreground">Active</Label>
+            </>
+          )}
         </div>
 
         <div className="flex items-center justify-end space-x-2 pt-4 border-t border-border">
-          <Button variant="outline" onClick={onCancel} disabled={isSubmitting} className="border-border">Cancel</Button>
+          <DialogClose asChild>
+            <Button variant="outline" onClick={onCancel} disabled={isSubmitting} className="border-border">
+              Cancel
+            </Button>
+          </DialogClose>
           <Button onClick={handleSubmit} disabled={isSubmitting} className="bg-primary hover:bg-primary/90">
             {isSubmitting ? (
               <>
@@ -441,13 +588,7 @@ export default function CategoryConfiguration() {
           <h1 className="text-3xl font-bold text-foreground">Category Management</h1>
           <p className="text-muted-foreground mt-1">Organize and manage menu categories with images</p>
         </div>
-        <Dialog open={isAddingCategory} onOpenChange={(open) => {
-          setIsAddingCategory(open);
-          if (!open) {
-            setImagePreview("");
-            setImageFile(null);
-          }
-        }}>
+        <Dialog open={isAddingCategory} onOpenChange={setIsAddingCategory}>
           <DialogTrigger asChild>
             <Button
               className="bg-primary hover:bg-primary/90"
@@ -463,26 +604,18 @@ export default function CategoryConfiguration() {
             </DialogHeader>
             <CategoryForm
               restaurantOptions={restaurantOptions}
-              defaultRestaurantId={selectedRestaurantId}
+              defaultRestaurantId={isSuperAdmin ? "" : selectedRestaurantId}
               isSuperAdmin={isSuperAdmin}
               isRestaurantsLoading={isRestaurantsLoading}
-              imagePreview={imagePreview}
-              setImagePreview={setImagePreview}
-              imageFile={imageFile}
-              setImageFile={setImageFile}
               onSave={(categoryData) => {
                 createMutation.mutate(categoryData, {
                   onSuccess: () => {
                     setIsAddingCategory(false);
-                    setImagePreview("");
-                    setImageFile(null);
                   },
                 });
               }}
               onCancel={() => {
                 setIsAddingCategory(false);
-                setImagePreview("");
-                setImageFile(null);
               }}
             />
           </DialogContent>
@@ -565,6 +698,76 @@ export default function CategoryConfiguration() {
             )}
           </div>
         </div>
+      ) : isSuperAdmin ? (
+        <Card className="bg-card border-border">
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Restaurant</TableHead>
+                  <TableHead>Image</TableHead>
+                  <TableHead>Sort</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredCategories.map((category) => (
+                  <TableRow key={category.id}>
+                    <TableCell className="font-medium">{category.name}</TableCell>
+                    <TableCell className="max-w-[260px] truncate">
+                      {category.description || "N/A"}
+                    </TableCell>
+                    <TableCell>
+                      {restaurantNameById.get(String(category.restaurant_id || "")) || "Unassigned"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="h-10 w-10 rounded-md overflow-hidden bg-muted flex items-center justify-center">
+                        {category.image ? (
+                          <img
+                            src={`${BACKEND_URL}/uploads/${category.image}`}
+                            alt={category.name}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>{category.sort_order}</TableCell>
+                    <TableCell>
+                      <Badge variant={category.active ? "default" : "secondary"}>
+                        {category.active ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-border"
+                          onClick={() => setEditingCategory(category)}
+                        >
+                          <Edit className="mr-2 h-4 w-4" />
+                          Edit
+                        </Button>
+                        <Switch
+                          checked={!!category.active}
+                          onCheckedChange={(checked) =>
+                            handleRequestCategoryStatusChange(category, checked)
+                          }
+                          disabled={updateMutation.isPending}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredCategories.map((category) => (
@@ -609,63 +812,22 @@ export default function CategoryConfiguration() {
                 </div>
 
                 <div className="flex items-center space-x-2 pt-2">
-                  <Dialog onOpenChange={(open) => {
-                    if (open) {
-                      setImagePreview(category.image || "");
-                      setImageFile(null);
-                    } else {
-                      setImagePreview("");
-                      setImageFile(null);
-                    }
-                  }}>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" size="sm" className="flex-1 border-border">
-                        <Edit className="mr-2 h-4 w-4" />
-                        Edit
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="bg-card border-border w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
-                      <DialogHeader>
-                        <DialogTitle className="text-foreground">Edit Category</DialogTitle>
-                      </DialogHeader>
-                      <CategoryForm
-                        category={category}
-                        restaurantOptions={restaurantOptions}
-                        defaultRestaurantId={selectedRestaurantId}
-                        isSuperAdmin={isSuperAdmin}
-                        isRestaurantsLoading={isRestaurantsLoading}
-                        imagePreview={imagePreview}
-                        setImagePreview={setImagePreview}
-                        imageFile={imageFile}
-                        setImageFile={setImageFile}
-                        onSave={(updatedData) => {
-                          updateMutation.mutate({ id: category.id, data: updatedData }, {
-                            onSuccess: () => {
-                              setImagePreview("");
-                              setImageFile(null);
-                            },
-                          });
-                        }}
-                        onCancel={() => {
-                          setImagePreview("");
-                          setImageFile(null);
-                        }}
-                      />
-                    </DialogContent>
-                  </Dialog>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="border-border text-destructive hover:text-destructive"
-                    onClick={() => {
-                      if (window.confirm(`Are you sure you want to delete "${category.name}"?`)) {
-                        deleteMutation.mutate(category.id);
-                      }
-                    }}
-                    disabled={deleteMutation.isPending}
+                    className="flex-1 border-border"
+                    onClick={() => setEditingCategory(category)}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Edit className="mr-2 h-4 w-4" />
+                    Edit
                   </Button>
+                  <Switch
+                    checked={!!category.active}
+                    onCheckedChange={(checked) =>
+                      handleRequestCategoryStatusChange(category, checked)
+                    }
+                    disabled={updateMutation.isPending}
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -696,6 +858,73 @@ export default function CategoryConfiguration() {
           </Button>
         </div>
       )}
+
+      <Dialog
+        open={!!editingCategory}
+        onOpenChange={(open) => {
+          if (!open) setEditingCategory(null);
+        }}
+      >
+        <DialogContent className="bg-card border-border w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Edit Category</DialogTitle>
+          </DialogHeader>
+          {editingCategory && (
+            <CategoryForm
+              category={editingCategory}
+              restaurantOptions={restaurantOptions}
+              defaultRestaurantId={selectedRestaurantId}
+              isSuperAdmin={isSuperAdmin}
+              isRestaurantsLoading={isRestaurantsLoading}
+              onSave={(updatedData) => {
+                updateMutation.mutate(
+                  { id: editingCategory.id, data: updatedData },
+                  {
+                    onSuccess: () => {
+                      setEditingCategory(null);
+                    },
+                  },
+                );
+              }}
+              onCancel={() => setEditingCategory(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={!!pendingCategoryStatusChange}
+        onOpenChange={(open) => {
+          if (!open) setPendingCategoryStatusChange(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change Category Status?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingCategoryStatusChange
+                ? `Are you sure you want to set ${pendingCategoryStatusChange.category.name} as ${
+                    pendingCategoryStatusChange.active ? "Active" : "Inactive"
+                  }?`
+                : "Confirm status change."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (!pendingCategoryStatusChange) return;
+                const target = pendingCategoryStatusChange;
+                setPendingCategoryStatusChange(null);
+                handleToggleCategoryStatus(target.category, target.active);
+              }}
+            >
+              {pendingCategoryStatusChange?.active ? "Set Active" : "Set Inactive"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.div>
   );
 }

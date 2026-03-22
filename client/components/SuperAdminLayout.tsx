@@ -184,7 +184,10 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
                 </h3>
                 <div className="space-y-1">
                   {items.map((item) => {
-                    const isActive = location.pathname === item.href;
+                    const currentPath = `${location.pathname}${location.search}`;
+                    const isActive = item.href.includes("?")
+                      ? currentPath === item.href
+                      : location.pathname === item.href;
                     return (
                       <Link
                         key={item.name}

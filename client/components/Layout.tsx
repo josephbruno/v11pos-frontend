@@ -143,7 +143,10 @@ export default function Layout({ children }: LayoutProps) {
                 item.roles.includes((user?.role as UserRole) || "user"),
               )
               .map((item) => {
-                const isActive = location.pathname === item.href;
+                const currentPath = `${location.pathname}${location.search}`;
+                const isActive = item.href.includes("?")
+                  ? currentPath === item.href
+                  : location.pathname === item.href;
                 return (
                   <Link
                     key={item.name}

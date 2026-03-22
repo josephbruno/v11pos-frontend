@@ -10,7 +10,7 @@ export const IMAGE_CROP_CONFIG = {
     get aspectRatio() {
       return this.width / this.height;
     },
-    maxFileSize: 10 * 1024 * 1024, // 10MB
+    maxFileSize: 2 * 1024 * 1024, // 2MB
   },
   category: {
     width: parseInt(import.meta.env.VITE_CATEGORY_IMAGE_WIDTH || "600"),
@@ -18,7 +18,7 @@ export const IMAGE_CROP_CONFIG = {
     get aspectRatio() {
       return this.width / this.height;
     },
-    maxFileSize: 10 * 1024 * 1024, // 10MB
+    maxFileSize: 2 * 1024 * 1024, // 2MB
   },
   avatar: {
     width: 200,

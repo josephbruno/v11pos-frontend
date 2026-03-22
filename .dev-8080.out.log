@@ -1,0 +1,95 @@
+
+> dev
+> vite --mode development --host 127.0.0.1 --port 8080
+
+
+  [32m[1mVITE[22m v6.3.5[39m  [2mready in [0m[1m312[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m8080[22m/[39m
+[2m3:41:29 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m3:41:29 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m3:41:40 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m3:41:40 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m3:41:49 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css, /client/pages/Organizations.tsx, /client/pages/ForgotPassword.tsx, /client/pages/UserManagement.tsx, /client/pages/ProductManagement.tsx[22m
+[2m3:52:18 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m3:55:56 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m3:57:07 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m4:00:47 pm[22m [36m[1m[vite][22m[39m [32m.env.development changed, restarting server...[39m
+[2m4:00:47 pm[22m [36m[1m[vite][22m[39m server restarted.
+[2m4:03:53 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m4:05:38 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m4:07:32 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m4:26:16 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m4:30:53 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m4:35:16 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m4:40:10 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m4:59:11 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m4:59:24 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m5:04:23 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m5:08:44 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/contexts/ToastContext.tsx, /client/global.css[22m
+[2m5:08:45 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/client/contexts/ToastContext.tsx[22m Could not Fast Refresh ("useToast" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react-swc#consistent-components-exports
+[2m5:08:45 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/App.tsx, /client/global.css, /client/components/Layout.tsx, /client/components/SuperAdminLayout.tsx, /client/pages/Dashboard.tsx, /client/pages/Organizations.tsx, /client/pages/QRManagement.tsx, /client/pages/Login.tsx, /client/pages/UserManagement.tsx, /client/pages/CategoryConfiguration.tsx, /client/pages/ProductManagement.tsx[22m
+[2m5:08:45 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [33mhmr invalidate [39m[2m/client/App.tsx[22m Could not Fast Refresh ("true" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react-swc#consistent-components-exports
+[2m5:08:45 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/global.css[22m
+[2m6:00:32 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m6:05:01 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m6:10:09 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/Organizations.tsx, /client/global.css[22m
+[2m6:12:45 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/UserManagement.tsx, /client/global.css[22m
+[2m6:14:19 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/Organizations.tsx, /client/global.css[22m
+[2m7:58:13 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/global.css, /client/pages/CategoryConfiguration.tsx, /client/pages/Organizations.tsx, /client/pages/ForgotPassword.tsx, /client/pages/UserManagement.tsx, /client/pages/ProductManagement.tsx[22m
+[2m8:04:29 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m8:04:34 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m8:10:34 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/global.css, /client/pages/CategoryConfiguration.tsx, /client/pages/Organizations.tsx, /client/pages/ForgotPassword.tsx, /client/pages/UserManagement.tsx, /client/pages/ProductManagement.tsx[22m
+[2m8:21:39 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m8:25:24 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m8:30:10 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m10:04:57 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m10:23:50 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m10:23:58 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m10:24:06 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m10:24:26 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m10:24:39 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m10:25:04 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m11:33:37 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m11:40:32 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m11:42:50 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m11:44:36 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m11:47:33 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m11:47:56 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m11:50:50 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m11:52:56 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m11:55:25 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/Organizations.tsx, /client/global.css[22m
+[2m11:59:48 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/global.css, /client/pages/CategoryConfiguration.tsx, /client/pages/Organizations.tsx, /client/pages/ForgotPassword.tsx, /client/pages/UserManagement.tsx, /client/pages/ProductManagement.tsx[22m
+[2m11:59:55 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m12:16:46 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/Organizations.tsx, /client/global.css[22m
+[2m12:20:12 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m12:20:16 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m12:25:04 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m12:32:17 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/global.css, /client/pages/CategoryConfiguration.tsx, /client/pages/ProductManagement.tsx[22m
+[2m12:32:23 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m12:32:27 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m12:34:06 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m12:34:11 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m12:35:49 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m12:37:38 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/CategoryConfiguration.tsx, /client/global.css[22m
+[2m12:37:55 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:01:16 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:01:43 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:02:08 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:02:42 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:02:42 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:08:52 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:08:58 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:09:16 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:18:15 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:18:26 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:18:30 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:26:05 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/global.css, /client/pages/CategoryConfiguration.tsx, /client/pages/ProductManagement.tsx[22m
+[2m1:26:10 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/global.css, /client/pages/CategoryConfiguration.tsx, /client/pages/Organizations.tsx, /client/pages/ForgotPassword.tsx, /client/pages/UserManagement.tsx, /client/pages/ProductManagement.tsx[22m
+[2m1:26:16 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/global.css, /client/pages/CategoryConfiguration.tsx, /client/pages/Organizations.tsx, /client/pages/ForgotPassword.tsx, /client/pages/UserManagement.tsx, /client/pages/ProductManagement.tsx[22m
+[2m1:28:14 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:37:52 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:39:45 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/global.css, /client/pages/ProductManagement.tsx[22m
+[2m1:39:52 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:43:22 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m
+[2m1:58:36 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/client/pages/ProductManagement.tsx, /client/global.css[22m

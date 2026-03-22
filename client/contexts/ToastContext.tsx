@@ -25,7 +25,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     const id = Math.random().toString(36).substring(2, 9);
     const newToast = { ...toast, id };
 
-    setToasts((prev) => [...prev, newToast]);
+    // Single-toast mode: replace previous toast to avoid stacked dialogs/toasts.
+    setToasts([newToast]);
 
     // Auto remove after duration
     const timeoutId = setTimeout(() => {

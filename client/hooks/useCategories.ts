@@ -24,7 +24,8 @@ import { useToast } from "@/contexts/ToastContext";
  */
 export function useCategories(filters?: CategoryFilters, restaurantIdOverride?: string) {
   const { user } = useAuth();
-  const restaurantId = restaurantIdOverride || user?.branchId || "";
+  const restaurantId =
+    restaurantIdOverride !== undefined ? restaurantIdOverride : (user?.branchId || "");
 
   return useQuery({
     queryKey: ["categories", restaurantId, filters],
@@ -39,7 +40,8 @@ export function useCategories(filters?: CategoryFilters, restaurantIdOverride?: 
  */
 export function useActiveCategories(restaurantIdOverride?: string) {
   const { user } = useAuth();
-  const restaurantId = restaurantIdOverride || user?.branchId || "";
+  const restaurantId =
+    restaurantIdOverride !== undefined ? restaurantIdOverride : (user?.branchId || "");
 
   return useQuery({
     queryKey: ["categories", restaurantId, "active"],

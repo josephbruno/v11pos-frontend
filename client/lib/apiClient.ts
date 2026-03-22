@@ -99,7 +99,17 @@ async function handleResponse<T>(response: Response): Promise<T> {
     return {} as T;
   }
 
-  return response.json();
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    const text = await response.text();
+    return (text ? ({ message: text } as unknown as T) : ({} as T));
+  }
+
+  try {
+    return await response.json();
+  } catch {
+    return {} as T;
+  }
 }
 
 /**

@@ -22,9 +22,10 @@ import { useToast } from "@/contexts/ToastContext";
 /**
  * Hook to fetch paginated products list
  */
-export function useProducts(filters?: ProductFilters) {
+export function useProducts(filters?: ProductFilters, restaurantIdOverride?: string) {
   const { user } = useAuth();
-  const restaurantId = user?.branchId || "";
+  const restaurantId =
+    restaurantIdOverride !== undefined ? restaurantIdOverride : (user?.branchId || "");
 
   return useQuery({
     queryKey: ["products", restaurantId, filters],

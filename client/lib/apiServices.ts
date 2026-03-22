@@ -11,6 +11,7 @@ import {
   CategoryFilters, ProductFilters, OrderFilters, ModifierFilters,
   CategoryListResponse, ProductListResponse, OrderListResponse
 } from "@shared/api";
+import { validateUserPayload } from "./userValidation";
 
 // ==================== Health & System ====================
 
@@ -111,6 +112,38 @@ export async function getUserById(userId: string) {
  * POST /api/v1/users
  */
 export async function createUser(userData: Partial<User>) {
+  const candidate = userData as Record<string, any>;
+  const email = String(candidate.email ?? "").trim();
+  const restaurantId = String(candidate.restaurant_id ?? candidate.restaurantId ?? "").trim();
+  const role = String(candidate.role ?? "").trim();
+  const status = String(candidate.status ?? "").trim();
+  const validation = validateUserPayload(
+    {
+      fullName: String(candidate.full_name ?? candidate.name ?? ""),
+      username: String(candidate.username ?? ""),
+      password: String(candidate.password ?? ""),
+    },
+    { requirePassword: true },
+  );
+  const firstError = validation.name || validation.username || validation.password;
+  if (firstError) {
+    throw new Error(firstError);
+  }
+  if (!email) {
+    throw new Error("Email is required.");
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error("Enter a valid email address.");
+  }
+  if (!restaurantId) {
+    throw new Error("Please select a restaurant.");
+  }
+  if (!role) {
+    throw new Error("Please select a role.");
+  }
+  if (!status) {
+    throw new Error("Please select a status.");
+  }
   return apiPost<User>("/users", userData);
 }
 
@@ -119,6 +152,22 @@ export async function createUser(userData: Partial<User>) {
  * PUT /api/v1/users/{user_id}
  */
 export async function updateUser(userId: string, userData: Partial<User>) {
+  const candidate = userData as Record<string, any>;
+  const validation = validateUserPayload(
+    {
+      fullName:
+        candidate.full_name !== undefined || candidate.name !== undefined
+          ? String(candidate.full_name ?? candidate.name ?? "")
+          : undefined,
+      username: candidate.username !== undefined ? String(candidate.username ?? "") : undefined,
+      password: candidate.password !== undefined ? String(candidate.password ?? "") : undefined,
+    },
+    { validatePasswordIfProvided: true },
+  );
+  const firstError = validation.name || validation.username || validation.password;
+  if (firstError) {
+    throw new Error(firstError);
+  }
   return apiPut<User>(`/users/${userId}`, userData);
 }
 
@@ -210,7 +259,34 @@ export async function getCategories(restaurantId: string, filters?: CategoryFilt
  * POST /api/v1/products/categories
  */
 export async function createCategory(categoryData: Partial<Category>) {
-  return apiPost<Category>("/products/categories", categoryData);
+  const payload: Record<string, any> = { ...(categoryData as Record<string, any>) };
+  const imageValue = payload.image;
+  if (imageValue instanceof File) {
+    const formData = new FormData();
+    Object.entries(payload).forEach(([key, value]) => {
+      if (value === undefined || value === null) return;
+      if (key === "image" && value instanceof File) {
+        formData.append("image", value);
+        return;
+      }
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return;
+        formData.append(key, trimmed);
+        return;
+      }
+      formData.append(key, String(value));
+    });
+    return apiUpload<Category>("/products/categories", formData);
+  } else if (typeof imageValue === "string") {
+    const trimmed = imageValue.trim();
+    if (!trimmed) delete payload.image;
+    else payload.image = trimmed;
+  } else {
+    delete payload.image;
+  }
+
+  return apiPost<Category>("/products/categories", payload);
 }
 
 /**
@@ -226,7 +302,40 @@ export async function getCategoryById(categoryId: string) {
  * PUT /api/v1/products/categories/{category_id}
  */
 export async function updateCategory(categoryId: string, categoryData: Partial<Category>) {
-  return apiPut<Category>(`/products/categories/${categoryId}`, categoryData);
+  const payload: Record<string, any> = { ...(categoryData as Record<string, any>) };
+  const imageValue = payload.image;
+  if (imageValue instanceof File) {
+    const formData = new FormData();
+    Object.entries(payload).forEach(([key, value]) => {
+      if (value === undefined || value === null) return;
+      if (key === "image" && value instanceof File) {
+        formData.append("image", value);
+        return;
+      }
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return;
+        formData.append(key, trimmed);
+        return;
+      }
+      formData.append(key, String(value));
+    });
+    return apiUploadPut<Category>(`/products/categories/${categoryId}`, formData);
+  } else if (typeof imageValue === "string") {
+    const trimmed = imageValue.trim();
+    if (!trimmed) delete payload.image;
+    else payload.image = trimmed;
+  } else if (imageValue !== undefined) {
+    delete payload.image;
+  }
+
+  // Category update is partial in UI, so prefer PATCH.
+  // Fallback to PUT for backends that do not support PATCH on this endpoint.
+  try {
+    return await apiPatch<Category>(`/products/categories/${categoryId}`, payload);
+  } catch {
+    return apiPut<Category>(`/products/categories/${categoryId}`, payload);
+  }
 }
 
 /**
@@ -265,7 +374,7 @@ export async function getProductById(productId: string) {
  */
 export async function createProduct(data: Partial<Product> | FormData) {
   if (data && 'append' in data && typeof data.append === 'function') {
-    return apiUpload<Product>("/products/", data as FormData);
+    return apiUpload<Product>("/products", data as FormData);
   }
 
   const formData = new FormData();
@@ -283,7 +392,7 @@ export async function createProduct(data: Partial<Product> | FormData) {
     }
   });
 
-  return apiUpload<Product>("/products/", formData);
+  return apiUpload<Product>("/products", formData);
 }
 
 /**
@@ -345,6 +454,35 @@ export async function getModifierById(modifierId: string) {
  * Create a new modifier
  */
 export async function createModifier(modifierData: any) {
+  if (modifierData && typeof modifierData === "object" && "append" in modifierData) {
+    return apiUpload("/products/modifiers", modifierData as FormData);
+  }
+
+  if (modifierData && typeof modifierData === "object") {
+    const payload: Record<string, any> = { ...(modifierData as Record<string, any>) };
+    const iconValue = payload.icon;
+
+    if (iconValue instanceof File) {
+      const formData = new FormData();
+      Object.entries(payload).forEach(([key, value]) => {
+        if (value === undefined || value === null) return;
+        if (key === "icon" && value instanceof File) {
+          formData.append("icon", value);
+          return;
+        }
+        if (typeof value === "string") {
+          const trimmed = value.trim();
+          if (!trimmed) return;
+          formData.append(key, trimmed);
+          return;
+        }
+        formData.append(key, String(value));
+      });
+
+      return apiUpload("/products/modifiers", formData);
+    }
+  }
+
   return apiPost("/products/modifiers", modifierData);
 }
 

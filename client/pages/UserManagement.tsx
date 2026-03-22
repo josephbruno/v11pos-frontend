@@ -57,6 +57,7 @@ import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/contexts/ToastContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { validateFullName, validatePassword, validateUsername } from "@/lib/userValidation";
 import {
   createUser,
   deleteUser,
@@ -170,7 +171,12 @@ export default function UserManagement() {
   const [isAddingSchedule, setIsAddingSchedule] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [pendingStatusChange, setPendingStatusChange] = useState<{
+    user: User;
+    checked: boolean;
+  } | null>(null);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
+  const [statusUpdatingUserId, setStatusUpdatingUserId] = useState<string | null>(null);
   const { addToast } = useToast();
   const { user: authUser } = useAuth();
 
@@ -502,28 +508,68 @@ export default function UserManagement() {
     return role;
   };
 
+  const resetUserFilters = () => {
+    setSearchQuery("");
+    setSelectedRole("all");
+    setSelectedStatus("all");
+    setSelectedRestaurant("all");
+    setCurrentPage(1);
+  };
+
+  const closeAddUserModal = () => {
+    setIsAddingUser(false);
+    resetUserFilters();
+  };
+
   const handleCreateUser = async (newUser: any) => {
     if (authUser?.role === "super_admin") {
       try {
-        await createUser({
+        const selectedStatus = newUser.status as User["status"];
+        const createdUserResponse: any = await createUser({
           full_name: newUser.name,
           username: newUser.username,
           email: newUser.email,
           ...(newUser.phone ? { phone: newUser.phone } : {}),
           restaurant_id: newUser.restaurantId || undefined,
-          role: mapRoleForApi((newUser.role || "user") as User["role"]),
-          is_active: (newUser.status || "active") === "active",
-          status: newUser.status || "active",
+          role: mapRoleForApi(newUser.role as User["role"]),
+          is_active: newUser.status === "active",
+          status: newUser.status,
           password: newUser.password || undefined,
         } as any);
 
+        const createdUser = (createdUserResponse as any)?.data ?? createdUserResponse;
+        const createdUserId = String((createdUser as any)?.id || "").trim();
+        const apiReturnedStatus: User["status"] =
+          typeof (createdUser as any)?.status === "string"
+            ? ((createdUser as any).status as User["status"])
+            : (createdUser as any)?.is_active === false
+              ? "inactive"
+              : "active";
+
+        if (selectedStatus !== apiReturnedStatus && selectedStatus === "inactive" && createdUserId) {
+          await updateUser(createdUserId, {
+            status: "inactive",
+            is_active: false,
+          } as any);
+        }
+
         await loadSuperAdminUsers();
-        setIsAddingUser(false);
+        closeAddUserModal();
         addToast({
           type: "success",
           title: "User Created",
-          description: "New user has been added successfully.",
+          description: `New user has been added successfully (${apiReturnedStatus}).`,
         });
+        if (selectedStatus !== apiReturnedStatus) {
+          addToast({
+            type: selectedStatus === "inactive" && createdUserId ? "success" : "error",
+            title: "Status Mismatch",
+            description:
+              selectedStatus === "inactive" && createdUserId
+                ? "Backend returned active, so status was auto-corrected to inactive."
+                : "Selected status and API response status are different. Backend may be overriding status.",
+          });
+        }
       } catch (error: any) {
         addToast({
           type: "error",
@@ -544,8 +590,8 @@ export default function UserManagement() {
         restaurantChoices.find((restaurant) => restaurant.id === newUser.restaurantId)?.name ||
         "Unassigned",
       restaurantId: newUser.restaurantId || undefined,
-      role: (newUser.role as User["role"]) || "user",
-      status: (newUser.status as User["status"]) || "active",
+      role: newUser.role as User["role"],
+      status: newUser.status as User["status"],
       joinDate: new Date().toLocaleDateString(),
       lastLogin: "N/A",
       permissions: [],
@@ -559,7 +605,7 @@ export default function UserManagement() {
     };
 
     setUsers((prev) => [newLocalUser, ...prev]);
-    setIsAddingUser(false);
+    closeAddUserModal();
     addToast({
       type: "success",
       title: "User Created",
@@ -645,7 +691,17 @@ export default function UserManagement() {
         ) as Array<{ id: string; name: string }>,
       );
 
-      const mappedUsers: User[] = usersData.map((user: any) => {
+      const sortedUsersData = [...usersData].sort((a: any, b: any) => {
+        const aDate = new Date(
+          a?.created_at || a?.createdAt || a?.updated_at || a?.updatedAt || 0,
+        ).getTime();
+        const bDate = new Date(
+          b?.created_at || b?.createdAt || b?.updated_at || b?.updatedAt || 0,
+        ).getTime();
+        return bDate - aDate;
+      });
+
+      const mappedUsers: User[] = sortedUsersData.map((user: any) => {
         const restaurantId =
           user.restaurant_id ||
           user.restaurantId ||
@@ -809,6 +865,64 @@ export default function UserManagement() {
     setIsDeletingUser(false);
   };
 
+  const handleToggleUserStatus = async (targetUser: User, checked: boolean) => {
+    if (targetUser.status === "suspended") return;
+    if (statusUpdatingUserId === targetUser.id) return;
+
+    const nextStatus: User["status"] = checked ? "active" : "inactive";
+    const previousStatus = targetUser.status;
+    if (nextStatus === previousStatus) return;
+
+    setStatusUpdatingUserId(targetUser.id);
+    setApiUsers((prev) =>
+      prev.map((user) =>
+        user.id === targetUser.id ? { ...user, status: nextStatus } : user,
+      ),
+    );
+
+    try {
+      const response: any = await updateUser(targetUser.id, {
+        status: nextStatus,
+        is_active: checked,
+      } as any);
+
+      const payload = response?.data ?? response;
+      const apiStatus: User["status"] =
+        typeof payload?.status === "string"
+          ? (payload.status as User["status"])
+          : payload?.is_active === false
+            ? "inactive"
+            : "active";
+
+      setApiUsers((prev) =>
+        prev.map((user) =>
+          user.id === targetUser.id ? { ...user, status: apiStatus } : user,
+        ),
+      );
+    } catch (error: any) {
+      setApiUsers((prev) =>
+        prev.map((user) =>
+          user.id === targetUser.id ? { ...user, status: previousStatus } : user,
+        ),
+      );
+      addToast({
+        type: "error",
+        title: "Update Failed",
+        description: error?.message || "Could not update user status.",
+      });
+    } finally {
+      setStatusUpdatingUserId((current) => (current === targetUser.id ? null : current));
+    }
+  };
+
+  const handleRequestStatusChange = (targetUser: User, checked: boolean) => {
+    if (targetUser.status === "suspended") return;
+    if (statusUpdatingUserId === targetUser.id) return;
+    const nextStatus: User["status"] = checked ? "active" : "inactive";
+    if (nextStatus === targetUser.status) return;
+    setPendingStatusChange({ user: targetUser, checked });
+  };
+
   const handleAddAction = () => {
     const config = getTabConfig(activeTab);
     addToast({
@@ -848,7 +962,7 @@ export default function UserManagement() {
       username: user?.username || "",
       email: user?.email || "",
       restaurantId: initialRestaurantId,
-      role: user?.role || "user",
+      role: user?.role || "",
       status: user?.status || "active",
       password: "",
     });
@@ -857,34 +971,59 @@ export default function UserManagement() {
     const [showPassword, setShowPassword] = useState(false);
 
     const validateField = (
-      field: "name" | "username" | "email" | "restaurantId" | "password",
+      field: "name" | "username" | "email" | "restaurantId" | "password" | "role",
       value: string,
     ) => {
       const normalizedValue = value.trim();
       switch (field) {
         case "name":
-          if (!normalizedValue) return "Full name is required.";
-          if (normalizedValue.length < 2) return "Full name must be at least 2 characters.";
-          return "";
+          return validateFullName(normalizedValue);
         case "username":
-          if (!normalizedValue) return "Username is required.";
-          if (!/^[a-zA-Z0-9._-]{3,30}$/.test(normalizedValue)) {
-            return "Username must be 3-30 characters and use letters, numbers, ., _, -.";
+          {
+            const usernameError = validateUsername(normalizedValue);
+            if (usernameError) return usernameError;
+            const selectedRestaurantId = (formData.restaurantId || "").trim();
+            if (
+              usersForView.some(
+                (existingUser) => {
+                  const existingRestaurantId = (existingUser.restaurantId || "").trim();
+                  return (
+                    (existingUser.username || "").toLowerCase() ===
+                      normalizedValue.toLowerCase() &&
+                    existingUser.id !== user?.id &&
+                    existingRestaurantId === selectedRestaurantId
+                  );
+                },
+              )
+            ) {
+              return "Username already exists in this restaurant.";
+            }
+            return "";
           }
-          return "";
         case "email":
           if (!normalizedValue) return "Email is required.";
           if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedValue)) {
             return "Enter a valid email address.";
           }
+          if (
+            usersForView.some(
+              (existingUser) =>
+                existingUser.email.toLowerCase() === normalizedValue.toLowerCase() &&
+                existingUser.id !== user?.id,
+            )
+          ) {
+            return "Email already exists.";
+          }
           return "";
         case "restaurantId":
           if (!normalizedValue) return "Please select a restaurant.";
           return "";
+        case "role":
+          if (!normalizedValue) return "Please select a role.";
+          return "";
         case "password":
           if (!user) {
-            if (!normalizedValue) return "Temporary password is required.";
-            if (normalizedValue.length < 6) return "Password must be at least 6 characters.";
+            return validatePassword(normalizedValue, formData.username);
           }
           return "";
         default:
@@ -913,7 +1052,7 @@ export default function UserManagement() {
     };
 
     const handleFieldBlur = (
-      field: "name" | "username" | "email" | "restaurantId" | "password",
+      field: "name" | "username" | "email" | "restaurantId" | "password" | "role",
     ) => {
       const value = String((formData as any)[field] ?? "");
       const error = validateField(field, value);
@@ -928,11 +1067,14 @@ export default function UserManagement() {
     };
 
     const validateForm = () => {
-      const fields: Array<"name" | "username" | "email" | "restaurantId" | "password"> = [
+      const fields: Array<
+        "name" | "username" | "email" | "restaurantId" | "password" | "role"
+      > = [
         "name",
         "username",
         "email",
         "restaurantId",
+        "role",
         "password",
       ];
       const nextErrors: Record<string, string> = {};
@@ -1033,15 +1175,16 @@ export default function UserManagement() {
               Role
             </Label>
             <Select
-              value={formData.role}
+              value={formData.role || "none"}
               onValueChange={(value) =>
-                setFormData({ ...formData, role: value as any })
+                setFieldValue("role", value === "none" ? "" : value)
               }
             >
               <SelectTrigger className="bg-background border-border text-foreground">
-                <SelectValue />
+                <SelectValue placeholder="Select role" />
               </SelectTrigger>
               <SelectContent className="bg-background border-border">
+                <SelectItem value="none">Select Role</SelectItem>
                 {roles.map((role) => (
                   <SelectItem key={role.id} value={role.id}>
                     {role.name}
@@ -1049,6 +1192,9 @@ export default function UserManagement() {
                 ))}
               </SelectContent>
             </Select>
+            {formErrors.role && (
+              <p className="text-xs text-destructive">{formErrors.role}</p>
+            )}
           </div>
         </div>
 
@@ -1105,24 +1251,6 @@ export default function UserManagement() {
           ) : (
             <div />
           )}
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-foreground">Status</Label>
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <Switch
-                checked={formData.status === "active"}
-                onCheckedChange={(checked) =>
-                  setFormData({
-                    ...formData,
-                    status: checked ? "active" : "inactive",
-                  })
-                }
-              />
-              <span className="text-foreground text-sm">Active</span>
-            </div>
-          </div>
         </div>
 
         <div className="flex items-center justify-end space-x-2 pt-4 border-t border-border">
@@ -1512,21 +1640,20 @@ export default function UserManagement() {
                       <TableHead>Restaurant</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Role</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Last Login</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
+                      <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {isUsersLoading ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground">
+                        <TableCell colSpan={6} className="text-center text-muted-foreground">
                           Loading users...
                         </TableCell>
                       </TableRow>
                     ) : pagedUsers.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground">
+                        <TableCell colSpan={6} className="text-center text-muted-foreground">
                           No users found.
                         </TableCell>
                       </TableRow>
@@ -1539,8 +1666,6 @@ export default function UserManagement() {
                           <TableCell>
                             <Badge className={getRoleColor(user.role)}>{user.role}</Badge>
                           </TableCell>
-                          <TableCell className="capitalize">{user.status}</TableCell>
-                          <TableCell>{user.lastLogin}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
                               <Button
@@ -1551,6 +1676,17 @@ export default function UserManagement() {
                                 <Edit className="h-4 w-4" />
                               </Button>
                             </div>
+                          </TableCell>
+                          <TableCell>
+                              <Switch
+                                checked={user.status === "active"}
+                                disabled={
+                                  statusUpdatingUserId === user.id || user.status === "suspended"
+                                }
+                                onCheckedChange={(checked) =>
+                                  handleRequestStatusChange(user, checked)
+                                }
+                              />
                           </TableCell>
                         </TableRow>
                       ))
@@ -1591,7 +1727,16 @@ export default function UserManagement() {
         </motion.div>
 
         {isAddingUser && (
-          <Dialog open={isAddingUser} onOpenChange={setIsAddingUser}>
+          <Dialog
+            open={isAddingUser}
+            onOpenChange={(open) => {
+              if (open) {
+                setIsAddingUser(true);
+              } else {
+                closeAddUserModal();
+              }
+            }}
+          >
             <DialogContent className="bg-background border-border max-w-2xl">
               <DialogHeader>
                 <DialogTitle className="text-foreground">
@@ -1600,7 +1745,7 @@ export default function UserManagement() {
               </DialogHeader>
               <UserForm
                 onSave={handleCreateUser}
-                onCancel={() => setIsAddingUser(false)}
+                onCancel={closeAddUserModal}
               />
             </DialogContent>
           </Dialog>
@@ -1609,7 +1754,11 @@ export default function UserManagement() {
         {editingUser && (
           <Dialog
             open={!!editingUser}
-            onOpenChange={() => setEditingUser(null)}
+            onOpenChange={(open) => {
+              if (!open) {
+                setEditingUser(null);
+              }
+            }}
           >
             <DialogContent className="bg-background border-border max-w-2xl">
               <DialogHeader>
@@ -1651,6 +1800,42 @@ export default function UserManagement() {
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
                 {isDeletingUser ? "Deleting..." : "Delete"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog
+          open={!!pendingStatusChange}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPendingStatusChange(null);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Change User Status?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {pendingStatusChange
+                  ? `Are you sure you want to set ${pendingStatusChange.user.name} as ${
+                      pendingStatusChange.checked ? "Active" : "Inactive"
+                    }?`
+                  : "Confirm status change."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={async (e) => {
+                  e.preventDefault();
+                  if (!pendingStatusChange) return;
+                  const target = pendingStatusChange;
+                  setPendingStatusChange(null);
+                  await handleToggleUserStatus(target.user, target.checked);
+                }}
+              >
+                {pendingStatusChange?.checked ? "Set Active" : "Set Inactive"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -2060,7 +2245,16 @@ export default function UserManagement() {
       <AnimatePresence>
         {/* Add User Modal */}
         {isAddingUser && (
-          <Dialog open={isAddingUser} onOpenChange={setIsAddingUser}>
+          <Dialog
+            open={isAddingUser}
+            onOpenChange={(open) => {
+              if (open) {
+                setIsAddingUser(true);
+              } else {
+                closeAddUserModal();
+              }
+            }}
+          >
             <DialogContent className="bg-background border-border max-w-2xl">
               <DialogHeader>
                 <DialogTitle className="text-foreground">
@@ -2069,7 +2263,7 @@ export default function UserManagement() {
               </DialogHeader>
               <UserForm
                 onSave={handleCreateUser}
-                onCancel={() => setIsAddingUser(false)}
+                onCancel={closeAddUserModal}
               />
             </DialogContent>
           </Dialog>
@@ -2129,7 +2323,11 @@ export default function UserManagement() {
         {editingUser && (
           <Dialog
             open={!!editingUser}
-            onOpenChange={() => setEditingUser(null)}
+            onOpenChange={(open) => {
+              if (!open) {
+                setEditingUser(null);
+              }
+            }}
           >
             <DialogContent className="bg-background border-border max-w-2xl">
               <DialogHeader>
