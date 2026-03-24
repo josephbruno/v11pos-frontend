@@ -8,6 +8,7 @@ import {
   getModifiers,
   getModifierById,
   createModifier,
+  updateModifier,
   deleteModifier,
   createModifierOption,
   getModifierOptions,
@@ -22,9 +23,10 @@ import { useToast } from "@/contexts/ToastContext";
 /**
  * Hook to fetch paginated modifiers list
  */
-export function useModifiers(filters?: ModifierFilters) {
+export function useModifiers(filters?: ModifierFilters, restaurantIdOverride?: string) {
   const { user } = useAuth();
-  const restaurantId = user?.branchId || "";
+  const restaurantId =
+    restaurantIdOverride !== undefined ? restaurantIdOverride : (user?.branchId || "");
 
   return useQuery({
     queryKey: ["modifiers", restaurantId, filters],
@@ -93,6 +95,33 @@ export function useDeleteModifier() {
       addToast({
         type: "error",
         title: "Failed to Delete Modifier",
+        description: error.message || "An error occurred",
+      });
+    },
+  });
+}
+
+/**
+ * Hook to update a modifier
+ */
+export function useUpdateModifier() {
+  const queryClient = useQueryClient();
+  const { addToast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => updateModifier(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["modifiers"] });
+      addToast({
+        type: "success",
+        title: "Modifier Updated",
+        description: "Modifier has been updated successfully",
+      });
+    },
+    onError: (error: any) => {
+      addToast({
+        type: "error",
+        title: "Failed to Update Modifier",
         description: error.message || "An error occurred",
       });
     },

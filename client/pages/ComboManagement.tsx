@@ -1,4 +1,5 @@
-import { useState } from "react";
+﻿import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Plus,
   Search,
@@ -8,6 +9,7 @@ import {
   Save,
   X,
   ChefHat,
+  ImageIcon,
   Minus,
   RotateCcw,
   Percent,
@@ -37,6 +39,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/contexts/ToastContext";
+import { createCombo, getMyRestaurants } from "@/lib/apiServices";
+import { useProducts } from "@/hooks/useProducts";
+import { useCategories } from "@/hooks/useCategories";
 import type {
   Product,
   ComboProduct,
@@ -172,28 +179,60 @@ interface ComboBuilderProps {
   combo?: ComboProduct;
   onSave: (combo: Partial<ComboProduct>) => void;
   onCancel: () => void;
+  products: Product[];
+  categories: { id: string; name: string }[];
+  restaurantOptions: { id: string; name: string }[];
+  selectedRestaurantId: string;
+  onRestaurantChange: (value: string) => void;
+  isSuperAdmin: boolean;
+  currentRestaurantName: string;
 }
 
-function ComboBuilder({ combo, onSave, onCancel }: ComboBuilderProps) {
+function ComboBuilder({
+  combo,
+  onSave,
+  onCancel,
+  products,
+  categories,
+  restaurantOptions,
+  selectedRestaurantId,
+  onRestaurantChange,
+  isSuperAdmin,
+  currentRestaurantName,
+}: ComboBuilderProps) {
   const [formData, setFormData] = useState({
     name: combo?.name || "",
     description: combo?.description || "",
     discountType: combo?.discountType || "fixed",
     discountValue: combo?.discountValue || 0,
-    category: combo?.category || "combos",
     available: combo?.available ?? true,
     items: combo?.items || [],
   });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>("");
+  const [validFrom, setValidFrom] = useState("");
+  const [validUntil, setValidUntil] = useState("");
+  const [maxQuantityPerOrder, setMaxQuantityPerOrder] = useState<number | "">("");
+
+  const buildSlug = (value: string) =>
+    value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
 
-  const filteredProducts = mockProducts.filter((product) => {
+  const filteredProducts = products.filter((product) => {
     const matchesSearch = product.name
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
     const matchesCategory =
-      selectedCategory === "all" || product.category === selectedCategory;
+      selectedCategory === "all" ||
+      product.category_id === selectedCategory ||
+      product.category === selectedCategory;
     return matchesSearch && matchesCategory && product.available;
   });
 
@@ -261,7 +300,7 @@ function ComboBuilder({ combo, onSave, onCancel }: ComboBuilderProps) {
 
   const calculateTotalPrice = () => {
     const itemsTotal = formData.items.reduce((sum, item) => {
-      const product = mockProducts.find((p) => p.id === item.productId);
+      const product = products.find((p) => p.id === item.productId);
       return sum + (product ? product.price * item.quantity : 0);
     }, 0);
 
@@ -285,22 +324,47 @@ function ComboBuilder({ combo, onSave, onCancel }: ComboBuilderProps) {
     const comboData = {
       ...formData,
       basePrice: calculateTotalPrice(),
+      price: calculateComboPrice(),
+      slug: buildSlug(formData.name || ""),
+      image: imageFile || undefined,
+      valid_from: validFrom || undefined,
+      valid_until: validUntil || undefined,
+      max_quantity_per_order:
+        typeof maxQuantityPerOrder === "number" ? maxQuantityPerOrder : undefined,
     };
     onSave(comboData);
   };
-
-  const categories = Array.from(
-    new Set(mockProducts.map((p) => p.category)),
-  ).map((cat) => ({
-    id: cat,
-    name: cat.charAt(0).toUpperCase() + cat.slice(1).replace("-", " "),
-  }));
 
   return (
     <div className="space-y-6 max-h-[80vh] overflow-y-auto">
       {/* Combo Details */}
       <div className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-foreground">Restaurant</Label>
+            {isSuperAdmin ? (
+              <Select
+                value={selectedRestaurantId || "none"}
+                onValueChange={(value) =>
+                  onRestaurantChange(value === "none" ? "" : value)
+                }
+              >
+                <SelectTrigger className="bg-background border-border text-foreground">
+                  <SelectValue placeholder="Select Restaurant" />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border-border">
+                  <SelectItem value="none">Select Restaurant</SelectItem>
+                  {restaurantOptions.map((restaurant) => (
+                    <SelectItem key={restaurant.id} value={restaurant.id}>
+                      {restaurant.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input value={currentRestaurantName || "Current Restaurant"} disabled />
+            )}
+          </div>
           <div className="space-y-2">
             <Label htmlFor="combo-name" className="text-foreground">
               Combo Name
@@ -316,24 +380,12 @@ function ComboBuilder({ combo, onSave, onCancel }: ComboBuilderProps) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="combo-category" className="text-foreground">
-              Category
-            </Label>
-            <Select
-              value={formData.category}
-              onValueChange={(value) =>
-                setFormData({ ...formData, category: value })
-              }
-            >
-              <SelectTrigger className="bg-background border-border text-foreground">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-popover border-border">
-                <SelectItem value="combos">Combos</SelectItem>
-                <SelectItem value="meal-deals">Meal Deals</SelectItem>
-                <SelectItem value="family-packs">Family Packs</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label className="text-foreground">Slug</Label>
+            <Input
+              value={buildSlug(formData.name || "")}
+              disabled
+              className="bg-background border-border text-foreground"
+            />
           </div>
         </div>
 
@@ -401,6 +453,91 @@ function ComboBuilder({ combo, onSave, onCancel }: ComboBuilderProps) {
             </div>
           </div>
         </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label className="text-foreground">Price</Label>
+            <Input
+              value={calculateComboPrice().toFixed(2)}
+              disabled
+              className="bg-background border-border text-foreground"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-foreground">Valid From</Label>
+            <Input
+              type="date"
+              value={validFrom}
+              onChange={(e) => setValidFrom(e.target.value)}
+              className="bg-background border-border text-foreground"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-foreground">Valid Until</Label>
+            <Input
+              type="date"
+              value={validUntil}
+              onChange={(e) => setValidUntil(e.target.value)}
+              className="bg-background border-border text-foreground"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-foreground">Max Quantity Per Order</Label>
+            <Input
+              type="number"
+              min="1"
+              value={maxQuantityPerOrder}
+              onChange={(e) =>
+                setMaxQuantityPerOrder(e.target.value ? parseInt(e.target.value, 10) : "")
+              }
+              className="bg-background border-border text-foreground"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-foreground">Image</Label>
+            <div className="flex items-start gap-4">
+              <div className="w-24 h-24 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted">
+                {imagePreview ? (
+                  <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                )}
+              </div>
+              <div className="flex-1 space-y-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setImageFile(file);
+                    if (file) {
+                      setImagePreview(URL.createObjectURL(file));
+                    } else {
+                      setImagePreview("");
+                    }
+                  }}
+                  className="hidden"
+                  id="combo-image"
+                />
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => document.getElementById("combo-image")?.click()}
+                  >
+                    Choose Image
+                  </Button>
+                  <span className="text-sm text-muted-foreground truncate max-w-[280px]">
+                    {imageFile?.name || "No file selected"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <Separator />
@@ -422,7 +559,7 @@ function ComboBuilder({ combo, onSave, onCancel }: ComboBuilderProps) {
             </h4>
             <div className="space-y-2 max-h-40 overflow-y-auto">
               {formData.items.map((item) => {
-                const product = mockProducts.find(
+                const product = products.find(
                   (p) => p.id === item.productId,
                 );
                 if (!product) return null;
@@ -551,7 +688,7 @@ function ComboBuilder({ combo, onSave, onCancel }: ComboBuilderProps) {
                   </div>
                   <div className="flex flex-wrap gap-1 mt-1">
                     <Badge variant="outline" className="text-xs">
-                      {product.category}
+                      {product.category_id || product.category}
                     </Badge>
                     <Badge variant="outline" className="text-xs">
                       {product.department}
@@ -627,36 +764,254 @@ function ComboBuilder({ combo, onSave, onCancel }: ComboBuilderProps) {
 }
 
 export default function ComboManagement() {
+  const { user } = useAuth();
+  const { addToast } = useToast();
+  const isSuperAdmin = ["super_admin", "superadmin"].includes(
+    String(user?.role || "").toLowerCase().trim(),
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [isAddingCombo, setIsAddingCombo] = useState(false);
   const [editingCombo, setEditingCombo] = useState<ComboProduct | null>(null);
   const [combos, setCombos] = useState<ComboProduct[]>(mockCombos);
+
+  const buildComboSlug = (name: string) =>
+    name
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-");
+
+  const calculateComboPrice = (basePrice: number, discountType: string, discountValue: number) => {
+    if (discountType === "fixed") {
+      return Math.max(0, basePrice - discountValue);
+    }
+    return basePrice * (1 - discountValue / 100);
+  };
+  const [selectedRestaurantId, setSelectedRestaurantId] = useState(
+    isSuperAdmin ? "" : (user?.branchId || ""),
+  );
+
+  const { data: restaurantsResponse } = useQuery({
+    queryKey: ["my-restaurants", user?.id],
+    queryFn: () => getMyRestaurants(0, 500),
+    enabled: isSuperAdmin,
+    staleTime: 60000,
+  });
+
+  const { data: productsResponse, isLoading: productsLoading } = useProducts({
+    page: 1,
+    page_size: 200,
+  }, selectedRestaurantId);
+
+  const { data: categoriesData } = useCategories({
+    page_size: 200,
+  }, selectedRestaurantId);
+
+  const apiProducts = (() => {
+    const payload = productsResponse as any;
+    const source =
+      payload?.data?.data ??
+      payload?.data?.items ??
+      payload?.data?.products ??
+      payload?.data ??
+      payload;
+    return Array.isArray(source) ? source : [];
+  })();
+
+  const apiCategories = (() => {
+    const payload = categoriesData as any;
+    const source =
+      payload?.data?.data ??
+      payload?.data?.items ??
+      payload?.data?.categories ??
+      payload?.data ??
+      payload;
+    return Array.isArray(source) ? source : [];
+  })();
+
+  const productsDataSource = apiProducts.length ? apiProducts : mockProducts;
+  const categoryOptions = apiCategories.map((cat: any) => ({
+    id: String(cat.id),
+    name: String(cat.name || cat.title || ""),
+  }));
+
+  const restaurantOptions = (() => {
+    const payload = restaurantsResponse as any;
+    const source =
+      payload?.data?.data ??
+      payload?.data?.items ??
+      payload?.data?.restaurants ??
+      payload?.data ??
+      payload;
+    const restaurants = Array.isArray(source)
+      ? source
+      : Array.isArray(source?.items)
+        ? source.items
+        : Array.isArray(source?.restaurants)
+          ? source.restaurants
+          : [];
+
+    return Array.from(
+      new Map(
+        restaurants
+          .filter((restaurant: any) => restaurant?.id && (restaurant?.name || restaurant?.business_name))
+          .map((restaurant: any) => [
+            String(restaurant.id),
+            {
+              id: String(restaurant.id),
+              name: String(restaurant.name || restaurant.business_name),
+            },
+          ]),
+      ).values(),
+    ) as { id: string; name: string }[];
+  })();
+
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      setSelectedRestaurantId(user?.branchId || "");
+    }
+  }, [isSuperAdmin, user?.branchId]);
+
+  useEffect(() => {
+    if (isSuperAdmin && !selectedRestaurantId && restaurantOptions.length > 0) {
+      setSelectedRestaurantId(restaurantOptions[0].id);
+    }
+  }, [isSuperAdmin, selectedRestaurantId, restaurantOptions]);
+
+  const createComboMutation = useMutation({
+    mutationFn: createCombo,
+    onSuccess: (response: any) => {
+      const payload = response?.data?.data ?? response?.data ?? response ?? null;
+      if (payload) {
+        const mappedCombo: ComboProduct = {
+          id: payload.id || `combo-${Date.now()}`,
+          name: payload.name || "",
+          description: payload.description || "",
+          basePrice: Number(payload.base_price ?? payload.basePrice ?? 0),
+          discountType: payload.discount_type ?? payload.discountType ?? "fixed",
+          discountValue: Number(payload.discount_value ?? payload.discountValue ?? 0),
+          items: payload.items ?? [],
+          available: payload.available ?? payload.is_available ?? true,
+          category: payload.category ?? "combos",
+          tags: payload.tags ?? [],
+        };
+        setCombos((prev) => [...prev, mappedCombo]);
+      }
+      addToast({
+        type: "success",
+        title: "Combo Created",
+        description: "Combo has been created successfully",
+      });
+      setIsAddingCombo(false);
+      setEditingCombo(null);
+    },
+    onError: (error: any) => {
+      addToast({
+        type: "error",
+        title: "Failed to Create Combo",
+        description: error.message || "An error occurred while creating the combo",
+      });
+    },
+  });
 
   const filteredCombos = combos.filter((combo) =>
     combo.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const handleSaveCombo = (comboData: Partial<ComboProduct>) => {
-    const newCombo: ComboProduct = {
-      id: editingCombo?.id || `combo-${Date.now()}`,
-      name: comboData.name!,
-      description: comboData.description!,
-      basePrice: comboData.basePrice!,
-      discountType: comboData.discountType!,
-      discountValue: comboData.discountValue!,
-      items: comboData.items!,
-      available: comboData.available!,
-      category: comboData.category!,
-      tags: comboData.tags || [],
-    };
-
+    console.log("Saving combo payload input:", comboData);
     if (editingCombo) {
+      const newCombo: ComboProduct = {
+        id: editingCombo?.id || `combo-${Date.now()}`,
+        name: comboData.name!,
+        description: comboData.description!,
+        basePrice: comboData.basePrice!,
+        discountType: comboData.discountType!,
+        discountValue: comboData.discountValue!,
+        items: comboData.items!,
+        available: comboData.available!,
+        category: editingCombo?.category ?? "",
+        tags: comboData.tags || [],
+      };
       setCombos(combos.map((c) => (c.id === editingCombo.id ? newCombo : c)));
       setEditingCombo(null);
-    } else {
-      setCombos([...combos, newCombo]);
-      setIsAddingCombo(false);
+      return;
     }
+
+    const restaurantId = isSuperAdmin ? selectedRestaurantId : (user?.branchId || "");
+    const derivedCategoryId = (() => {
+      const firstItem = (comboData.items || [])[0];
+      if (!firstItem) return "";
+      const product = productsDataSource.find(
+        (p) => String(p.id) === String(firstItem.productId ?? firstItem.product_id),
+      ) as any;
+      return String(product?.category_id || product?.category || "");
+    })();
+
+    const payload = {
+      restaurant_id: restaurantId,
+      name: comboData.name,
+      slug: buildComboSlug(String(comboData.name || "")),
+      description: comboData.description,
+      category_id: derivedCategoryId,
+      price: calculateComboPrice(
+        Number(comboData.basePrice || 0),
+        String(comboData.discountType || "fixed"),
+        Number(comboData.discountValue || 0),
+      ),
+      available: comboData.available,
+      tags: comboData.tags || [],
+      valid_from: (comboData as any).valid_from,
+      valid_until: (comboData as any).valid_until,
+      max_quantity_per_order: (comboData as any).max_quantity_per_order,
+      items: (comboData.items || []).map((item: any) => ({
+        product_id: item.productId ?? item.product_id,
+        quantity: item.quantity,
+        required: item.required,
+        substitute_options: item.substituteOptions ?? item.substitute_options ?? [],
+      })),
+    };
+
+    if (!payload.restaurant_id) {
+      addToast({
+        type: "error",
+        title: "Restaurant Required",
+        description: "Please select a restaurant before creating a combo.",
+      });
+      return;
+    }
+    if (!payload.category_id) {
+      addToast({
+        type: "error",
+        title: "Category Required",
+        description: "Unable to infer category from selected products.",
+      });
+      return;
+    }
+
+    addToast({
+      type: "info",
+      title: "Saving Combo",
+      description: "Sending combo details to the server...",
+    });
+    const imageFile = (comboData as any).image as File | undefined;
+    if (imageFile) {
+      const formData = new FormData();
+      Object.entries(payload).forEach(([key, value]) => {
+        if (value === undefined || value === null) return;
+        if (key === "items") {
+          formData.append(key, JSON.stringify(value));
+          return;
+        }
+        formData.append(key, String(value));
+      });
+      formData.append("image", imageFile);
+      createComboMutation.mutate(formData);
+      return;
+    }
+
+    createComboMutation.mutate(payload);
   };
 
   const deleteCombo = (comboId: string) => {
@@ -665,7 +1020,7 @@ export default function ComboManagement() {
 
   const getComboPrice = (combo: ComboProduct) => {
     const itemsTotal = combo.items.reduce((sum, item) => {
-      const product = mockProducts.find((p) => p.id === item.productId);
+      const product = productsDataSource.find((p) => p.id === item.productId);
       return sum + (product ? product.price * item.quantity : 0);
     }, 0);
 
@@ -678,7 +1033,7 @@ export default function ComboManagement() {
 
   const getSavings = (combo: ComboProduct) => {
     const itemsTotal = combo.items.reduce((sum, item) => {
-      const product = mockProducts.find((p) => p.id === item.productId);
+      const product = productsDataSource.find((p) => p.id === item.productId);
       return sum + (product ? product.price * item.quantity : 0);
     }, 0);
     return itemsTotal - getComboPrice(combo);
@@ -696,25 +1051,54 @@ export default function ComboManagement() {
             Create and manage combo products to increase average order value
           </p>
         </div>
-        <Dialog open={isAddingCombo} onOpenChange={setIsAddingCombo}>
-          <DialogTrigger asChild>
-            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground">
-              <ChefHat className="mr-2 h-4 w-4" />
-              Create Combo
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="bg-card border-border max-w-4xl max-h-[90vh]">
-            <DialogHeader>
-              <DialogTitle className="text-card-foreground">
-                Create New Combo
-              </DialogTitle>
-            </DialogHeader>
-            <ComboBuilder
-              onSave={handleSaveCombo}
-              onCancel={() => setIsAddingCombo(false)}
-            />
-          </DialogContent>
-        </Dialog>
+        <div className="flex items-center gap-3">
+          {isSuperAdmin && (
+            <Select
+              value={selectedRestaurantId || "none"}
+              onValueChange={(value) => setSelectedRestaurantId(value === "none" ? "" : value)}
+            >
+              <SelectTrigger className="w-56 bg-background border-border text-foreground">
+                <SelectValue placeholder="Select Restaurant" />
+              </SelectTrigger>
+              <SelectContent className="bg-popover border-border">
+                <SelectItem value="none">Select Restaurant</SelectItem>
+                {restaurantOptions.map((restaurant) => (
+                  <SelectItem key={restaurant.id} value={restaurant.id}>
+                    {restaurant.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Dialog open={isAddingCombo} onOpenChange={setIsAddingCombo}>
+            <DialogTrigger asChild>
+              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                <ChefHat className="mr-2 h-4 w-4" />
+                Create Combo
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="bg-card border-border max-w-4xl max-h-[90vh]">
+              <DialogHeader>
+                <DialogTitle className="text-card-foreground">
+                  Create New Combo
+                </DialogTitle>
+              </DialogHeader>
+              <ComboBuilder
+                onSave={handleSaveCombo}
+                onCancel={() => setIsAddingCombo(false)}
+                products={productsDataSource}
+                categories={categoryOptions}
+                restaurantOptions={restaurantOptions}
+                selectedRestaurantId={selectedRestaurantId}
+                onRestaurantChange={setSelectedRestaurantId}
+                isSuperAdmin={isSuperAdmin}
+                currentRestaurantName={
+                  restaurantOptions.find((r) => r.id === selectedRestaurantId)?.name || ""
+                }
+              />
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Search */}
@@ -765,7 +1149,7 @@ export default function ComboManagement() {
                 </h4>
                 <div className="space-y-1">
                   {combo.items.map((item) => {
-                    const product = mockProducts.find(
+                    const product = productsDataSource.find(
                       (p) => p.id === item.productId,
                     );
                     if (!product) return null;
@@ -852,6 +1236,15 @@ export default function ComboManagement() {
                       combo={editingCombo || undefined}
                       onSave={handleSaveCombo}
                       onCancel={() => setEditingCombo(null)}
+                      products={productsDataSource}
+                      categories={categoryOptions}
+                      restaurantOptions={restaurantOptions}
+                      selectedRestaurantId={selectedRestaurantId}
+                      onRestaurantChange={setSelectedRestaurantId}
+                      isSuperAdmin={isSuperAdmin}
+                      currentRestaurantName={
+                        restaurantOptions.find((r) => r.id === selectedRestaurantId)?.name || ""
+                      }
                     />
                   </DialogContent>
                 </Dialog>

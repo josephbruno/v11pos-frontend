@@ -439,6 +439,8 @@ export async function deleteProduct(productId: string) {
 export async function getModifiers(restaurantId: string, filters?: ModifierFilters) {
   const params = new URLSearchParams();
   if (filters?.active !== undefined) params.append("active_only", String(filters.active));
+  if (filters?.page !== undefined) params.append("page", String(filters.page));
+  if (filters?.page_size !== undefined) params.append("page_size", String(filters.page_size));
 
   return apiGet(`/products/modifiers/restaurant/${restaurantId}?${params.toString()}`);
 }
@@ -491,6 +493,33 @@ export async function createModifier(modifierData: any) {
  */
 export async function deleteModifier(modifierId: string) {
   return apiDelete(`/products/modifiers/${modifierId}`);
+}
+
+// ==================== Combo Services ====================
+
+/**
+ * Create a new combo
+ * POST /api/v1/products/combos
+ */
+export async function createCombo(comboData: any) {
+  if (comboData && typeof comboData === "object" && "append" in comboData) {
+    return apiUpload("/products/combos", comboData as FormData);
+  }
+  return apiPost("/products/combos", comboData);
+}
+
+/**
+ * Update a modifier
+ */
+export async function updateModifier(modifierId: string, modifierData: any) {
+  if (modifierData && typeof modifierData === "object" && "append" in modifierData) {
+    return apiUploadPut(`/products/modifiers/${modifierId}`, modifierData as FormData);
+  }
+  try {
+    return await apiPatch(`/products/modifiers/${modifierId}`, modifierData);
+  } catch {
+    return apiPut(`/products/modifiers/${modifierId}`, modifierData);
+  }
 }
 
 /**

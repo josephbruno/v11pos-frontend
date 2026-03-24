@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import {
   Plus,
   Search,
@@ -70,12 +70,8 @@ import {
 } from "@/hooks/useCategories";
 import {
   useModifiers,
-  useModifier,
   useCreateModifier,
-  useDeleteModifier,
-  useModifierOptions,
-  useCreateModifierOption,
-  useDeleteModifierOption,
+  useUpdateModifier,
 } from "@/hooks/useModifiers";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -446,7 +442,7 @@ function ProductForm({
             <p className="text-xs text-muted-foreground">
               Upload a product image (max 2MB, JPG, PNG, GIF). Image will be cropped to {cropWidth}x{cropHeight}px.
             </p>
-            {imagePreview && <p className="text-xs text-green-600">✓ Image ready for upload</p>}
+            {imagePreview && <p className="text-xs text-green-600">âœ“ Image ready for upload</p>}
             {errors.image && <p className="text-xs text-destructive">{errors.image}</p>}
           </div>
         </div>
@@ -736,11 +732,19 @@ export default function ProductManagement() {
   const [modifierPage, setModifierPage] = useState(1);
   const [isAddingModifier, setIsAddingModifier] = useState(false);
   const [editingModifier, setEditingModifier] = useState<any>(null);
-  const [selectedModifierForOptions, setSelectedModifierForOptions] = useState<string | null>(null);
+  const [selectedModifierForEdit, setSelectedModifierForEdit] = useState<string | null>(null);
   const modifierIconInputRef = useRef<HTMLInputElement>(null);
+  const modifierEditImageInputRef = useRef<HTMLInputElement>(null);
   const [modifierIconFile, setModifierIconFile] = useState<File | null>(null);
   const [modifierRestaurantId, setModifierRestaurantId] = useState("");
   const [modifierFormError, setModifierFormError] = useState("");
+  const [modifierEditImageFile, setModifierEditImageFile] = useState<File | null>(null);
+  const [modifierEditImagePreview, setModifierEditImagePreview] = useState<string>("");
+  const [modifierSearchQuery, setModifierSearchQuery] = useState("");
+  const [modifierDebouncedSearch, setModifierDebouncedSearch] = useState("");
+  const [modifierTypeFilter, setModifierTypeFilter] = useState<"all" | "single" | "multiple">("all");
+  const [modifierRequiredFilter, setModifierRequiredFilter] = useState<"all" | "required" | "optional">("all");
+  const [modifierActiveFilter, setModifierActiveFilter] = useState<"all" | "active" | "inactive">("all");
 
   useEffect(() => {
     if (isAddingModifier) {
@@ -756,6 +760,13 @@ export default function ProductManagement() {
     nextValue: boolean;
     updates: Record<string, any>;
   }>(null);
+  const [pendingModifierStatusUpdate, setPendingModifierStatusUpdate] = useState<null | {
+    modifier: any;
+    nextValue: boolean;
+  }>(null);
+  const [modifierActiveOverrides, setModifierActiveOverrides] = useState<Record<string, boolean>>(
+    {},
+  );
 
   useEffect(() => {
     const nextTab =
@@ -851,6 +862,19 @@ export default function ProductManagement() {
     return () => clearTimeout(timer);
   }, [categorySearchQuery]);
 
+  // Debounce modifier search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setModifierDebouncedSearch(modifierSearchQuery);
+      setModifierPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [modifierSearchQuery]);
+
+  useEffect(() => {
+    setModifierPage(1);
+  }, [modifierTypeFilter, modifierRequiredFilter, modifierActiveFilter, selectedRestaurantId]);
+
   // API Hooks - Fetch categories for product dropdown
   const { data: categoriesData, isLoading: categoriesLoading } = useCategories({
     page_size: 100, // Get all categories for dropdown
@@ -882,34 +906,128 @@ export default function ProductManagement() {
   })();
 
   // API Hooks - Fetch modifiers for modifier tab with pagination
-  const { data: modifierListResponse, isLoading: modifiersLoading } = useModifiers({
-    page: modifierPage,
-    page_size: 12,
+  const modifierActiveFilterValue =
+    modifierActiveFilter === "active"
+      ? true
+      : modifierActiveFilter === "inactive"
+        ? false
+        : undefined;
+
+  const { data: modifierListResponse, isLoading: modifiersLoading } = useModifiers(
+    {
+      page: modifierPage,
+      page_size: 12,
+      active: modifierActiveFilterValue === true ? true : undefined,
+    },
+    selectedRestaurantId,
+  );
+
+  const modifiersPayload = modifierListResponse as any;
+  const modifiersDataSource =
+    modifiersPayload?.data?.data ??
+    modifiersPayload?.data?.items ??
+    modifiersPayload?.data?.modifiers ??
+    modifiersPayload?.data ??
+    modifiersPayload;
+  const modifiersList = Array.isArray(modifiersDataSource) ? modifiersDataSource : [];
+  const modifiersPagination =
+    modifiersPayload?.pagination ??
+    modifiersPayload?.data?.pagination ??
+    modifiersPayload?.data?.meta?.pagination ??
+    modifiersPayload?.meta?.pagination ??
+    modifiersPayload?.meta ??
+    null;
+
+  useEffect(() => {
+    if (!modifiersList.length) return;
+    setModifierActiveOverrides((prev) => {
+      const next = { ...prev };
+      modifiersList.forEach((modifier) => {
+        if (!modifier?.id) return;
+        const hasActiveProp =
+          Object.prototype.hasOwnProperty.call(modifier, "active") ||
+          Object.prototype.hasOwnProperty.call(modifier, "is_active") ||
+          Object.prototype.hasOwnProperty.call(modifier, "isActive");
+        if (hasActiveProp) {
+          const activeValue =
+            modifier?.active ??
+            modifier?.is_active ??
+            modifier?.isActive ??
+            true;
+          next[String(modifier.id)] = !!activeValue;
+        }
+      });
+      return next;
+    });
+  }, [modifiersList]);
+
+  const filteredModifiers = modifiersList.filter((modifier) => {
+    const name = String(modifier?.name || "").toLowerCase();
+    if (modifierDebouncedSearch && !name.includes(modifierDebouncedSearch.toLowerCase())) {
+      return false;
+    }
+
+    if (modifierTypeFilter !== "all" && modifier?.type !== modifierTypeFilter) {
+      return false;
+    }
+
+    if (modifierRequiredFilter !== "all") {
+      const isRequired = !!modifier?.required;
+      if (modifierRequiredFilter === "required" && !isRequired) return false;
+      if (modifierRequiredFilter === "optional" && isRequired) return false;
+    }
+
+    if (modifierActiveFilter === "inactive") {
+      const overrideValue = modifier?.id ? modifierActiveOverrides[String(modifier.id)] : undefined;
+      const isActive =
+        overrideValue ??
+        modifier?.active ??
+        modifier?.is_active ??
+        modifier?.isActive ??
+        modifier?.enabled ??
+        true;
+      if (isActive) return false;
+    }
+
+    return true;
   });
 
   // Debug: Log modifier data
   useEffect(() => {
     if (modifierListResponse) {
-      console.log('modifierListResponse:', modifierListResponse);
-      console.log('modifierListResponse.data:', modifierListResponse.data);
-      if (modifierListResponse.data && modifierListResponse.data.length > 0) {
-        console.log('First modifier:', modifierListResponse.data[0]);
+      console.log("modifierListResponse:", modifierListResponse);
+      console.log("modifierListResponse.data:", modifiersList);
+      if (modifiersList.length > 0) {
+        console.log("First modifier:", modifiersList[0]);
       }
     }
-  }, [modifierListResponse]);
+  }, [modifierListResponse, modifiersList]);
 
 
   // Modifier mutations
   const createModifierMutation = useCreateModifier();
-  const deleteModifierMutation = useDeleteModifier();
-  const createModifierOptionMutation = useCreateModifierOption();
-  const deleteModifierOptionMutation = useDeleteModifierOption();
+  const updateModifierMutation = useUpdateModifier();
 
-  // Fetch modifier details and options when a modifier is selected for options management
-  const { data: selectedModifierData } = useModifier(selectedModifierForOptions || undefined);
-  const { data: modifierOptionsData, isLoading: optionsLoading } = useModifierOptions(
-    selectedModifierForOptions || undefined
-  );
+  const selectedModifierDetails =
+    selectedModifierForEdit
+      ? modifiersList.find((modifier) => String(modifier.id) === String(selectedModifierForEdit)) ?? null
+      : null;
+
+  useEffect(() => {
+    if (!selectedModifierForEdit) return;
+    const imageValue =
+      selectedModifierDetails?.icon ||
+      selectedModifierDetails?.icon_url ||
+      selectedModifierDetails?.image ||
+      selectedModifierDetails?.image_url;
+    if (imageValue) {
+      const src = String(imageValue);
+      setModifierEditImagePreview(src.startsWith("http") ? src : `${BACKEND_URL}${src}`);
+    } else {
+      setModifierEditImagePreview("");
+    }
+    setModifierEditImageFile(null);
+  }, [selectedModifierForEdit, selectedModifierDetails]);
 
   // Build API filters
   const activeFilterValue =
@@ -1088,6 +1206,61 @@ export default function ProductManagement() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog
+        open={!!pendingModifierStatusUpdate}
+        onOpenChange={(open) => {
+          if (!open && !updateModifierMutation.isPending) setPendingModifierStatusUpdate(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update Modifier Status</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingModifierStatusUpdate
+                ? `Are you sure you want to set ${pendingModifierStatusUpdate.modifier?.name || "this modifier"} as ${pendingModifierStatusUpdate.nextValue ? "Active" : "Inactive"}?`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updateModifierMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!pendingModifierStatusUpdate?.modifier?.id) return;
+                const modifierId = String(pendingModifierStatusUpdate.modifier.id);
+                const previousOverride = modifierActiveOverrides[modifierId];
+                setModifierActiveOverrides((prev) => ({
+                  ...prev,
+                  [modifierId]: pendingModifierStatusUpdate.nextValue,
+                }));
+                updateModifierMutation.mutate(
+                  {
+                    id: pendingModifierStatusUpdate.modifier.id,
+                    data: {
+                      active: pendingModifierStatusUpdate.nextValue,
+                      is_active: pendingModifierStatusUpdate.nextValue,
+                    },
+                  },
+                  {
+                    onError: () => {
+                      setModifierActiveOverrides((prev) => ({
+                        ...prev,
+                        [modifierId]: previousOverride ?? prev[modifierId],
+                      }));
+                    },
+                    onSettled: () => setPendingModifierStatusUpdate(null),
+                  },
+                );
+              }}
+              disabled={updateModifierMutation.isPending}
+            >
+              {updateModifierMutation.isPending ? "Updating..." : "Confirm"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -1247,6 +1420,7 @@ export default function ProductManagement() {
             <Plus className="mr-2 h-4 w-4" />
             Add Modifier
           </Button>
+
         )}
       </div>
 
@@ -1962,14 +2136,102 @@ export default function ProductManagement() {
             variant="outline"
             className="mb-4"
           >
-            🔄 Force Refresh Modifiers Data
+            ðŸ”„ Force Refresh Modifiers Data
           </Button>
+
+          {/* Modifiers Filters */}
+          <Card className="bg-card border-border">
+            <CardContent className="p-4">
+              <div className="flex items-center space-x-4 flex-wrap gap-y-3">
+                {isSuperAdmin && (
+                  <Select
+                    value={selectedRestaurantId || "none"}
+                    onValueChange={(value) => setSelectedRestaurantId(value === "none" ? "" : value)}
+                  >
+                    <SelectTrigger className="w-56 bg-background border-border text-foreground">
+                      <SelectValue placeholder="Select Restaurant" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border-border">
+                      <SelectItem value="none">Select Restaurant</SelectItem>
+                      {restaurantOptions.map((restaurant) => (
+                        <SelectItem key={restaurant.id} value={restaurant.id}>
+                          {restaurant.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Input
+                    placeholder="Search modifiers..."
+                    value={modifierSearchQuery}
+                    onChange={(e) => setModifierSearchQuery(e.target.value)}
+                    className="pl-10 bg-background border-border text-foreground"
+                  />
+                </div>
+                <Select
+                  value={modifierTypeFilter}
+                  onValueChange={(value) =>
+                    setModifierTypeFilter(value as "all" | "single" | "multiple")
+                  }
+                >
+                  <SelectTrigger className="w-40 bg-pos-surface border-pos-secondary text-pos-text">
+                    <SelectValue placeholder="Type" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-pos-surface border-pos-secondary">
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="single">Single</SelectItem>
+                    <SelectItem value="multiple">Multiple</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={modifierRequiredFilter}
+                  onValueChange={(value) =>
+                    setModifierRequiredFilter(value as "all" | "required" | "optional")
+                  }
+                >
+                  <SelectTrigger className="w-40 bg-pos-surface border-pos-secondary text-pos-text">
+                    <SelectValue placeholder="Required" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-pos-surface border-pos-secondary">
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="required">Required</SelectItem>
+                    <SelectItem value="optional">Optional</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={modifierActiveFilter}
+                  onValueChange={(value) =>
+                    setModifierActiveFilter(value as "all" | "active" | "inactive")
+                  }
+                >
+                  <SelectTrigger className="w-40 bg-pos-surface border-pos-secondary text-pos-text">
+                    <SelectValue placeholder="Active" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-pos-surface border-pos-secondary">
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
 
           {modifiersLoading ? (
             <div className="flex justify-center items-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
             </div>
-          ) : !modifierListResponse || !modifierListResponse.data || !Array.isArray(modifierListResponse.data) ? (
+          ) : isSuperAdmin && !selectedRestaurantId ? (
+            <div className="flex justify-center items-center py-12">
+              <div className="text-center">
+                <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">Select a restaurant</h3>
+                <p className="text-muted-foreground">Choose a restaurant to view its modifiers</p>
+              </div>
+            </div>
+          ) : !modifierListResponse ? (
             <Card className="bg-card border-border">
               <CardContent className="p-6">
                 <p className="text-destructive text-center">
@@ -1977,7 +2239,7 @@ export default function ProductManagement() {
                 </p>
               </CardContent>
             </Card>
-          ) : modifierListResponse.data.length === 0 ? (
+          ) : modifiersList.length === 0 ? (
             <Card className="bg-card border-border">
               <CardContent className="p-6">
                 <p className="text-muted-foreground text-center">
@@ -1985,77 +2247,127 @@ export default function ProductManagement() {
                 </p>
               </CardContent>
             </Card>
+          ) : filteredModifiers.length === 0 ? (
+            <Card className="bg-card border-border">
+              <CardContent className="p-6">
+                <p className="text-muted-foreground text-center">
+                  No modifiers match your filters. Try adjusting the filters or search.
+                </p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {modifierListResponse.data.map((modifier) => (
-                  <Card key={modifier.id} className="bg-card border-border">
-                    <CardHeader>
-                      <CardTitle className="text-foreground flex items-center justify-between">
-                        <span>{modifier.name}</span>
-                        <Badge variant={modifier.type === 'single' ? 'default' : 'secondary'}>
-                          {modifier.type}
-                        </Badge>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">Category</span>
-                          <Badge variant="outline">{modifier.category}</Badge>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">Required</span>
-                          <Badge variant={modifier.required ? 'destructive' : 'secondary'}>
-                            {modifier.required ? 'Yes' : 'No'}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1"
-                          onClick={() => setSelectedModifierForOptions(modifier.id)}
-                        >
-                          <Edit className="mr-2 h-4 w-4" />
-                          Manage Options
-                        </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="outline" size="sm" className="text-destructive">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Modifier</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you sure you want to delete "{modifier.name}"? This will also delete all its options. This action cannot be undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => deleteModifierMutation.mutate(modifier.id)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              <Card className="bg-card border-border">
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Image</TableHead>
+                        <TableHead>Active</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredModifiers.map((modifier) => (
+                        <TableRow key={modifier.id}>
+                          <TableCell className="font-medium">{modifier.name}</TableCell>
+                          <TableCell>
+                            <Badge variant={modifier.type === "single" ? "default" : "secondary"}>
+                              {modifier.type || "unknown"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="w-10 h-10 rounded-md overflow-hidden bg-muted flex items-center justify-center">
+                              {(() => {
+                                const imageValue =
+                                  modifier?.icon ||
+                                  modifier?.icon_url ||
+                                  modifier?.image ||
+                                  modifier?.image_url;
+                                if (!imageValue) {
+                                  return <ImageIcon className="h-5 w-5 text-muted-foreground" />;
+                                }
+                                const src = String(imageValue);
+                                const resolvedSrc = src.startsWith("http") ? src : `${BACKEND_URL}${src}`;
+                                return (
+                                  <img
+                                    src={resolvedSrc}
+                                    alt={modifier.name || "Modifier"}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = "none";
+                                      e.currentTarget.parentElement
+                                        ?.querySelector("[data-fallback]")
+                                        ?.classList.remove("hidden");
+                                    }}
+                                  />
+                                );
+                              })()}
+                              <ImageIcon data-fallback className="hidden h-5 w-5 text-muted-foreground" />
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={
+                                  modifier?.id
+                                    ? modifierActiveOverrides[String(modifier.id)] ??
+                                      modifier?.active ??
+                                      modifier?.is_active ??
+                                      modifier?.isActive ??
+                                      true
+                                    : modifier?.active ??
+                                      modifier?.is_active ??
+                                      modifier?.isActive ??
+                                      true
+                                }
+                                onCheckedChange={(checked) => {
+                                  if (!modifier?.id) return;
+                                  setPendingModifierStatusUpdate({
+                                    modifier,
+                                    nextValue: checked,
+                                  });
+                                }}
+                                disabled={updateModifierMutation.isPending || !modifier?.id}
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                {(modifier?.id
+                                  ? modifierActiveOverrides[String(modifier.id)] ??
+                                    modifier?.active ??
+                                    modifier?.is_active ??
+                                    modifier?.isActive ??
+                                    true
+                                  : modifier?.active ?? modifier?.is_active ?? modifier?.isActive ?? true)
+                                  ? "Active"
+                                  : "Inactive"}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSelectedModifierForEdit(modifier.id)}
                               >
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
 
               {/* Pagination */}
-              {modifierListResponse && modifierListResponse.pagination.total_items > 12 && (
+              {modifiersPagination && modifiersPagination.total_items > 12 && (
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-muted-foreground">
-                    Showing {((modifierPage - 1) * 12) + 1} to {Math.min(modifierPage * 12, modifierListResponse.pagination.total_items)} of {modifierListResponse.pagination.total_items} modifiers
+                    Showing {((modifierPage - 1) * 12) + 1} to {Math.min(modifierPage * 12, modifiersPagination.total_items)} of {modifiersPagination.total_items} modifiers
                   </p>
                   <div className="flex items-center space-x-2">
                     <Button
@@ -2067,13 +2379,13 @@ export default function ProductManagement() {
                       Previous
                     </Button>
                     <span className="text-sm text-muted-foreground">
-                      Page {modifierPage} of {modifierListResponse.pagination.total_pages}
+                      Page {modifierPage} of {modifiersPagination.total_pages}
                     </span>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setModifierPage(prev => Math.min(modifierListResponse.pagination.total_pages, prev + 1))}
-                      disabled={modifierPage === modifierListResponse.pagination.total_pages}
+                      onClick={() => setModifierPage(prev => Math.min(modifiersPagination.total_pages, prev + 1))}
+                      disabled={modifierPage === modifiersPagination.total_pages}
                     >
                       Next
                     </Button>
@@ -2249,223 +2561,131 @@ export default function ProductManagement() {
           </DialogContent>
         </Dialog>
 
-        {/* Manage Modifier Options Dialog */}
-        {console.log('selectedModifierForOptions:', selectedModifierForOptions)}
-        {console.log('Dialog open state:', !!selectedModifierForOptions)}
+        {/* Edit Modifier Dialog */}
         <Dialog
-          open={!!selectedModifierForOptions}
+          open={!!selectedModifierForEdit}
           onOpenChange={(open) => {
-            console.log('Dialog onOpenChange called, open:', open);
-            !open && setSelectedModifierForOptions(null);
+            if (!open) {
+              setSelectedModifierForEdit(null);
+              setModifierEditImageFile(null);
+              setModifierEditImagePreview("");
+            }
           }}
         >
           <DialogContent className="bg-card border-border max-w-3xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="text-foreground">
-                Manage Options
-                {selectedModifierData && (
-                  <span className="text-muted-foreground ml-2">
-                    - {selectedModifierData.name}
-                  </span>
-                )}
-              </DialogTitle>
+              <DialogTitle className="text-foreground">Edit Modifier</DialogTitle>
             </DialogHeader>
 
-            {optionsLoading ? (
-              <div className="flex justify-center items-center py-12">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-              </div>
-            ) : !modifierOptionsData?.data ? (
-              <p className="text-destructive text-center py-8">
-                Error loading modifier options. Please try again.
+            {!selectedModifierDetails ? (
+              <p className="text-muted-foreground text-center py-8">
+                Modifier details not available.
               </p>
             ) : (
               <div className="space-y-6">
-                {/* Add New Option Form */}
-                <Card className="bg-muted/50 border-border">
-                  <CardHeader>
-                    <CardTitle className="text-lg">Add New Option</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const formData = new FormData(e.currentTarget);
-                        const data = {
-                          name: formData.get("option_name") as string,
-                          price: parseFloat(formData.get("option_price") as string || "0"),
-                          available: formData.get("option_available") === "on",
-                          sort_order: parseInt(formData.get("option_sort_order") as string || "0"),
-                        };
-
-                        if (selectedModifierForOptions) {
-                          createModifierOptionMutation.mutate(
-                            {
-                              modifierId: selectedModifierForOptions,
-                              data: data,
-                            },
-                            {
-                              onSuccess: () => {
-                                e.currentTarget.reset();
-                              },
-                            }
-                          );
-                        }
-                      }}
-                      className="grid grid-cols-2 gap-4"
-                    >
-                      <div className="space-y-2">
-                        <Label htmlFor="option_name" className="text-foreground">
-                          Option Name *
-                        </Label>
-                        <Input
-                          id="option_name"
-                          name="option_name"
-                          placeholder="e.g., Small, Large, Extra Cheese"
-                          required
-                          className="bg-background border-input text-foreground"
+                <div className="space-y-2">
+                  <Label className="text-foreground">Modifier Image</Label>
+                  <div className="flex items-start gap-4">
+                    <div className="w-24 h-24 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted">
+                      {modifierEditImagePreview ? (
+                        <img
+                          src={modifierEditImagePreview}
+                          alt={selectedModifierDetails?.name || "Modifier"}
+                          className="w-full h-full object-cover"
                         />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="option_price" className="text-foreground">
-                          Additional Price (₹)
-                        </Label>
-                        <Input
-                          id="option_price"
-                          name="option_price"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          defaultValue="0.00"
-                          placeholder="0.00"
-                          className="bg-background border-input text-foreground"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="option_sort_order" className="text-foreground">
-                          Sort Order
-                        </Label>
-                        <Input
-                          id="option_sort_order"
-                          name="option_sort_order"
-                          type="number"
-                          min="0"
-                          defaultValue="0"
-                          className="bg-background border-input text-foreground"
-                        />
-                      </div>
-
-                      <div className="flex items-center space-x-2 pt-8">
-                        <input
-                          type="checkbox"
-                          id="option_available"
-                          name="option_available"
-                          defaultChecked
-                          className="h-4 w-4 rounded border-gray-300"
-                        />
-                        <Label htmlFor="option_available" className="text-foreground cursor-pointer">
-                          Available
-                        </Label>
-                      </div>
-
-                      <div className="col-span-2">
-                        <Button
-                          type="submit"
-                          className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
-                          disabled={createModifierOptionMutation.isPending}
-                        >
-                          {createModifierOptionMutation.isPending ? "Adding..." : "Add Option"}
-                        </Button>
-                      </div>
-                    </form>
-                  </CardContent>
-                </Card>
-
-                {/* Existing Options List */}
-                <div className="space-y-3">
-                  <h3 className="text-lg font-semibold text-foreground">
-                    Existing Options ({modifierOptionsData.data?.length || 0})
-                  </h3>
-
-                  {!modifierOptionsData.data || modifierOptionsData.data.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-8">
-                      No options yet. Add your first option above.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {modifierOptionsData.data
-                        .sort((a, b) => a.sort_order - b.sort_order)
-                        .map((option) => (
-                          <Card key={option.id} className="bg-card border-border">
-                            <CardContent className="p-4">
-                              <div className="flex items-center justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-3">
-                                    <span className="font-medium text-foreground">
-                                      {option.name}
-                                    </span>
-                                    <Badge variant={option.available ? "default" : "secondary"}>
-                                      {option.available ? "Available" : "Unavailable"}
-                                    </Badge>
-                                    <span className="text-muted-foreground text-sm">
-                                      Order: {option.sort_order}
-                                    </span>
-                                  </div>
-                                  <p className="text-sm text-muted-foreground mt-1">
-                                    Price: {formatINR(option.price, 2)}
-                                  </p>
-                                </div>
-
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="text-destructive hover:bg-destructive/10"
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Delete Option</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        Are you sure you want to delete "{option.name}"? This action cannot be undone.
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                      <AlertDialogAction
-                                        onClick={() => {
-                                          if (selectedModifierForOptions) {
-                                            deleteModifierOptionMutation.mutate(option.id);
-                                          }
-                                        }}
-                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                      >
-                                        Delete
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
+                      ) : (
+                        <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                      )}
                     </div>
-                  )}
+                    <div className="flex-1 space-y-2">
+                      <input
+                        ref={modifierEditImageInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setModifierEditImageFile(file);
+                          if (file) {
+                            setModifierEditImagePreview(URL.createObjectURL(file));
+                          }
+                        }}
+                        className="hidden"
+                      />
+                      <div className="flex items-center gap-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => modifierEditImageInputRef.current?.click()}
+                        >
+                          Choose Image
+                        </Button>
+                        <span className="text-sm text-muted-foreground truncate max-w-[280px]">
+                          {modifierEditImageFile?.name || "No file selected"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Only the image can be updated.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Name</Label>
+                    <Input value={selectedModifierDetails?.name || ""} disabled />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Type</Label>
+                    <Input value={selectedModifierDetails?.type || ""} disabled />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Category</Label>
+                    <Input value={selectedModifierDetails?.category || ""} disabled />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Required</Label>
+                    <div className="flex items-center gap-2">
+                      <Switch checked={!!selectedModifierDetails?.required} disabled />
+                      <span className="text-xs text-muted-foreground">
+                        {selectedModifierDetails?.required ? "Yes" : "No"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Min Selections</Label>
+                    <Input value={selectedModifierDetails?.min_selections ?? ""} disabled />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Max Selections</Label>
+                    <Input value={selectedModifierDetails?.max_selections ?? ""} disabled />
+                  </div>
                 </div>
               </div>
             )}
 
             <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setSelectedModifierForOptions(null)}
-              >
+              <Button variant="outline" onClick={() => setSelectedModifierForEdit(null)}>
                 Close
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!selectedModifierForEdit || !modifierEditImageFile) return;
+                  const payload = new FormData();
+                  payload.append("icon", modifierEditImageFile);
+                  updateModifierMutation.mutate(
+                    { id: selectedModifierForEdit, data: payload },
+                    {
+                      onSuccess: () => {
+                        setSelectedModifierForEdit(null);
+                        setModifierEditImageFile(null);
+                        setModifierEditImagePreview("");
+                      },
+                    },
+                  );
+                }}
+                disabled={!modifierEditImageFile || updateModifierMutation.isPending}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                {updateModifierMutation.isPending ? "Saving..." : "Save Image"}
               </Button>
             </DialogFooter>
           </DialogContent>
