@@ -4,6 +4,12 @@
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
+const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, "");
+const joinUrl = (baseUrl: string, endpoint: string) => {
+  const base = normalizeBaseUrl(baseUrl);
+  const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  return `${base}${path}`;
+};
 
 /**
  * Custom error class for API errors
@@ -130,6 +136,52 @@ export async function apiGet<T = any>(endpoint: string, options?: RequestInit): 
 }
 
 /**
+ * Make an authenticated POST request to a specific base URL
+ */
+export async function apiPostTo<T = any>(
+  baseUrl: string,
+  endpoint: string,
+  data?: any,
+  options?: RequestInit
+): Promise<T> {
+  const response = await fetch(joinUrl(baseUrl, endpoint), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+      ...options?.headers,
+    },
+    body: data ? JSON.stringify(data) : undefined,
+    ...options,
+  });
+
+  return handleResponse<T>(response);
+}
+
+/**
+ * Make an authenticated PUT request to a specific base URL
+ */
+export async function apiPutTo<T = any>(
+  baseUrl: string,
+  endpoint: string,
+  data?: any,
+  options?: RequestInit
+): Promise<T> {
+  const response = await fetch(joinUrl(baseUrl, endpoint), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+      ...options?.headers,
+    },
+    body: data ? JSON.stringify(data) : undefined,
+    ...options,
+  });
+
+  return handleResponse<T>(response);
+}
+
+/**
  * Make an authenticated POST request
  */
 export async function apiPost<T = any>(
@@ -161,6 +213,29 @@ export async function apiPut<T = any>(
 ): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+      ...options?.headers,
+    },
+    body: data ? JSON.stringify(data) : undefined,
+    ...options,
+  });
+
+  return handleResponse<T>(response);
+}
+
+/**
+ * Make an authenticated PATCH request to a specific base URL
+ */
+export async function apiPatchTo<T = any>(
+  baseUrl: string,
+  endpoint: string,
+  data?: any,
+  options?: RequestInit
+): Promise<T> {
+  const response = await fetch(joinUrl(baseUrl, endpoint), {
+    method: "PATCH",
     headers: {
       "Content-Type": "application/json",
       ...getAuthHeaders(),
@@ -235,6 +310,29 @@ export async function apiUpload<T = any>(
 }
 
 /**
+ * Upload file with form data to a specific base URL
+ */
+export async function apiUploadTo<T = any>(
+  baseUrl: string,
+  endpoint: string,
+  formData: FormData,
+  options?: RequestInit
+): Promise<T> {
+  const response = await fetch(joinUrl(baseUrl, endpoint), {
+    method: "POST",
+    headers: {
+      ...getAuthHeaders(),
+      // Don't set Content-Type for FormData, browser will set it with boundary
+      ...options?.headers,
+    },
+    body: formData,
+    ...options,
+  });
+
+  return handleResponse<T>(response);
+}
+
+/**
  * Upload file with form data using PUT
  */
 export async function apiUploadPut<T = any>(
@@ -243,6 +341,28 @@ export async function apiUploadPut<T = any>(
   options?: RequestInit
 ): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    method: "PUT",
+    headers: {
+      ...getAuthHeaders(),
+      ...options?.headers,
+    },
+    body: formData,
+    ...options,
+  });
+
+  return handleResponse<T>(response);
+}
+
+/**
+ * Upload file with form data using PUT to a specific base URL
+ */
+export async function apiUploadPutTo<T = any>(
+  baseUrl: string,
+  endpoint: string,
+  formData: FormData,
+  options?: RequestInit
+): Promise<T> {
+  const response = await fetch(joinUrl(baseUrl, endpoint), {
     method: "PUT",
     headers: {
       ...getAuthHeaders(),

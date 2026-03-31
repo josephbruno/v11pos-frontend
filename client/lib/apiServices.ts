@@ -4,7 +4,13 @@
  */
 
 import {
-  apiGet, apiPost, apiPut, apiPatch, apiDelete, apiUpload, apiUploadPut
+  apiGet,
+  apiPost,
+  apiPut,
+  apiPatch,
+  apiDelete,
+  apiUpload,
+  apiUploadPut,
 } from "./apiClient";
 import {
   User, LoginRequest, LoginResponse, Restaurant, Category, Product, Order,
@@ -260,19 +266,24 @@ export async function getCategories(restaurantId: string, filters?: CategoryFilt
  */
 export async function createCategory(categoryData: Partial<Category>) {
   const payload: Record<string, any> = { ...(categoryData as Record<string, any>) };
+  const hasFile = Object.values(payload).some((value) => value instanceof File);
   const imageValue = payload.image;
-  if (imageValue instanceof File) {
+  if (hasFile) {
     const formData = new FormData();
     Object.entries(payload).forEach(([key, value]) => {
       if (value === undefined || value === null) return;
-      if (key === "image" && value instanceof File) {
-        formData.append("image", value);
+      if (value instanceof File) {
+        formData.append(key, value);
         return;
       }
       if (typeof value === "string") {
         const trimmed = value.trim();
         if (!trimmed) return;
         formData.append(key, trimmed);
+        return;
+      }
+      if (typeof value === "object") {
+        formData.append(key, JSON.stringify(value));
         return;
       }
       formData.append(key, String(value));
@@ -303,19 +314,24 @@ export async function getCategoryById(categoryId: string) {
  */
 export async function updateCategory(categoryId: string, categoryData: Partial<Category>) {
   const payload: Record<string, any> = { ...(categoryData as Record<string, any>) };
+  const hasFile = Object.values(payload).some((value) => value instanceof File);
   const imageValue = payload.image;
-  if (imageValue instanceof File) {
+  if (hasFile) {
     const formData = new FormData();
     Object.entries(payload).forEach(([key, value]) => {
       if (value === undefined || value === null) return;
-      if (key === "image" && value instanceof File) {
-        formData.append("image", value);
+      if (value instanceof File) {
+        formData.append(key, value);
         return;
       }
       if (typeof value === "string") {
         const trimmed = value.trim();
         if (!trimmed) return;
         formData.append(key, trimmed);
+        return;
+      }
+      if (typeof value === "object") {
+        formData.append(key, JSON.stringify(value));
         return;
       }
       formData.append(key, String(value));
@@ -509,6 +525,75 @@ export async function createCombo(comboData: any) {
 }
 
 /**
+ * Update an existing combo
+ * PATCH/PUT /api/v1/products/combos/{combo_id}
+ */
+export async function updateCombo(comboId: string, comboData: any) {
+  const endpoint = `/products/combos/${comboId}`;
+
+  if (comboData && typeof comboData === "object" && "append" in comboData) {
+    return apiUploadPut(endpoint, comboData as FormData);
+  }
+
+  try {
+    return await apiPatch(endpoint, comboData);
+  } catch {
+    return apiPut(endpoint, comboData);
+  }
+}
+
+/**
+ * Upsert combo items
+ * POST /api/v1/products/combos/{combo_id}/items
+ */
+export async function upsertComboItems(
+  comboId: string,
+  payload: {
+    items: Array<{
+      product_id: string;
+      quantity: number;
+      required?: boolean;
+      choice_group?: string;
+      choices?: string[];
+      sort_order?: number;
+    }>;
+  },
+) {
+  return apiPost(`/products/combos/${comboId}/items`, payload);
+}
+
+/**
+ * Get combo items
+ * GET /api/v1/products/combos/{combo_id}/items
+ */
+export async function getComboItems(comboId: string) {
+  return apiGet<any>(`/products/combos/${comboId}/items`);
+}
+
+/**
+ * Get combos for a restaurant
+ * GET /api/v1/products/combos/restaurant/{restaurant_id}
+ */
+export async function getCombos(restaurantId: string, filters?: any) {
+  const params = new URLSearchParams();
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined) params.append(key, String(value));
+    });
+  }
+
+  const query = params.toString();
+  const primary = `/products/combos/restaurant/${restaurantId}${query ? `?${query}` : ""}`;
+  try {
+    return await apiGet<any>(primary);
+  } catch {
+    const fallbackParams = new URLSearchParams(params);
+    fallbackParams.set("restaurant_id", restaurantId);
+    return apiGet<any>(`/products/combos?${fallbackParams.toString()}`);
+  }
+}
+
+/**
  * Update a modifier
  */
 export async function updateModifier(modifierId: string, modifierData: any) {
@@ -526,27 +611,179 @@ export async function updateModifier(modifierId: string, modifierData: any) {
  * Get options for a modifier
  */
 export async function getModifierOptions(modifierId: string, filters?: any) {
-  const params = new URLSearchParams();
+  const baseParams = new URLSearchParams();
   if (filters) {
     Object.entries(filters).forEach(([key, value]) => {
-      if (value !== undefined) params.append(key, String(value));
+      if (value === undefined) return;
+      baseParams.append(key, String(value));
     });
   }
-  return apiGet(`/products/modifiers/${modifierId}/options?${params.toString()}`);
+
+  // Primary: /products/modifiers/{modifier_id}/options
+  const primary = `/products/modifiers/${modifierId}/options${baseParams.toString() ? `?${baseParams.toString()}` : ""}`;
+
+  // Secondary: /products/modifiers/options?modifier_id=...
+  const secondaryParams = new URLSearchParams(baseParams);
+  secondaryParams.set("modifier_id", modifierId);
+  const secondary = `/products/modifiers/options?${secondaryParams.toString()}`;
+
+  // Tertiary: legacy /modifiers/options?modifier_id=...
+  const tertiary = `/modifiers/options?${secondaryParams.toString()}`;
+  try {
+    return await apiGet(primary);
+  } catch (error: any) {
+    const status = Number(error?.status);
+    const shouldFallback =
+      error?.name === "ApiError" && (status === 404 || status === 405);
+    if (!shouldFallback) throw error;
+
+    try {
+      return await apiGet(secondary);
+    } catch (fallbackError: any) {
+      const fallbackStatus = Number(fallbackError?.status);
+      const canFallbackFurther =
+        fallbackError?.name === "ApiError" && (fallbackStatus === 404 || fallbackStatus === 405);
+      if (!canFallbackFurther) throw fallbackError;
+
+      return apiGet(tertiary);
+    }
+  }
 }
 
 /**
  * Create a modifier option
  */
 export async function createModifierOption(modifierId: string, optionData: any) {
-  return apiPost(`/products/modifiers/${modifierId}/options`, optionData);
+  const sanitizePayload = (data: any) => {
+    if (!data || typeof data !== "object") return { modifier_id: modifierId };
+    const candidate = data as Record<string, any>;
+    const result: Record<string, any> = {};
+    // allowed fields on /modifiers/options (strict backends may reject unknown keys)
+    [
+      "restaurant_id",
+      "modifier_id",
+      "name",
+      "price",
+      "available",
+      "sort_order",
+    ].forEach((key) => {
+      if (candidate[key] !== undefined) result[key] = candidate[key];
+    });
+    result.modifier_id = String(result.modifier_id || modifierId);
+    return result;
+  };
+  try {
+    return await apiPost(`/products/modifiers/options`, sanitizePayload(optionData));
+  } catch (error: any) {
+    const status = Number(error?.status);
+    const shouldFallback =
+      error?.name === "ApiError" && (status === 404 || status === 405);
+    if (!shouldFallback) throw error;
+
+    try {
+      return await apiPost(`/modifiers/options`, sanitizePayload(optionData));
+    } catch (fallbackError: any) {
+      const fallbackStatus = Number(fallbackError?.status);
+      const canFallbackFurther =
+        fallbackError?.name === "ApiError" && (fallbackStatus === 404 || fallbackStatus === 405);
+      if (!canFallbackFurther) throw fallbackError;
+      return apiPost(`/products/modifiers/${modifierId}/options`, optionData);
+    }
+  }
 }
 
 /**
  * Delete a modifier option
  */
 export async function deleteModifierOption(optionId: string) {
-  return apiDelete(`/products/modifiers/options/${optionId}`);
+  try {
+    return await apiDelete(`/products/modifiers/options/${optionId}`);
+  } catch (error: any) {
+    const status = Number(error?.status);
+    const shouldFallback =
+      error?.name === "ApiError" && (status === 404 || status === 405);
+    if (!shouldFallback) throw error;
+
+    try {
+      return await apiDelete(`/modifiers/options/${optionId}`);
+    } catch (fallbackError: any) {
+      const fallbackStatus = Number(fallbackError?.status);
+      const canFallbackFurther =
+        fallbackError?.name === "ApiError" && (fallbackStatus === 404 || fallbackStatus === 405);
+      if (!canFallbackFurther) throw fallbackError;
+      return apiDelete(`/products/modifiers/options/${optionId}`);
+    }
+  }
+}
+
+/**
+ * Update a modifier option
+ */
+export async function updateModifierOption(optionId: string, optionData: any) {
+  const sanitizePayload = (data: any) => {
+    if (!data || typeof data !== "object") return {};
+    const candidate = data as Record<string, any>;
+    const result: Record<string, any> = {};
+    [
+      "restaurant_id",
+      "modifier_id",
+      "name",
+      "price",
+      "available",
+      "sort_order",
+    ].forEach((key) => {
+      if (candidate[key] !== undefined) result[key] = candidate[key];
+    });
+    return result;
+  };
+  try {
+    return await apiPut(
+      `/products/modifiers/options/${optionId}`,
+      sanitizePayload(optionData),
+    );
+  } catch (error: any) {
+    const status = Number(error?.status);
+    const shouldFallback =
+      error?.name === "ApiError" && (status === 404 || status === 405);
+    if (!shouldFallback) throw error;
+
+    // If this endpoint doesn't exist on a given backend, rethrow (no PATCH fallback by request).
+    throw error;
+  }
+}
+
+/**
+ * List modifier options (optionally filter by restaurant/modifier)
+ * Prefer `/products/modifiers/options` but keep fallbacks for older routes.
+ */
+export async function listModifierOptions(filters?: {
+  restaurant_id?: string;
+  modifier_id?: string;
+  page?: number;
+  page_size?: number;
+  available?: boolean;
+  hidden?: boolean;
+}) {
+  const params = new URLSearchParams();
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined) return;
+      params.append(key, String(value));
+    });
+  }
+  const query = params.toString();
+  const primary = `/products/modifiers/options${query ? `?${query}` : ""}`;
+  const secondary = `/modifiers/options${query ? `?${query}` : ""}`;
+
+  try {
+    return await apiGet(primary);
+  } catch (error: any) {
+    const status = Number(error?.status);
+    const shouldFallback =
+      error?.name === "ApiError" && (status === 404 || status === 405);
+    if (!shouldFallback) throw error;
+    return apiGet(secondary);
+  }
 }
 
 // ==================== Order & Table Services ====================
@@ -557,6 +794,25 @@ export async function deleteModifierOption(optionId: string) {
  */
 export async function getTables(restaurantId: string) {
   return apiGet(`/tables/restaurant/${restaurantId}`);
+}
+
+/**
+ * Create a new table
+ * POST /api/v1/tables
+ */
+export async function createTable(tableData: any) {
+  return apiPost("/tables", tableData);
+}
+
+/**
+ * Update a table
+ */
+export async function updateTable(tableId: string, tableData: any) {
+  try {
+    return await apiPatch(`/tables/${tableId}`, tableData);
+  } catch {
+    return apiPut(`/tables/${tableId}`, tableData);
+  }
 }
 
 /**

@@ -40,6 +40,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/contexts/ToastContext";
+import { getActiveNavHref } from "@/lib/navActive";
 
 interface LayoutProps {
   children: ReactNode;
@@ -82,6 +83,11 @@ export default function Layout({ children }: LayoutProps) {
   };
 
   const closeSidebar = () => setSidebarOpen(false);
+
+  const visibleNavItems = navigationConfig.filter((item) =>
+    item.roles.includes((user?.role as UserRole) || "user"),
+  );
+  const activeNavHref = getActiveNavHref(visibleNavItems, location);
 
   return (
     <div className="min-h-screen bg-background">
@@ -138,42 +144,35 @@ export default function Layout({ children }: LayoutProps) {
 
           {/* Navigation */}
           <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-            {navigationConfig
-              .filter((item) =>
-                item.roles.includes((user?.role as UserRole) || "user"),
-              )
-              .map((item) => {
-                const currentPath = `${location.pathname}${location.search}`;
-                const isActive = item.href.includes("?")
-                  ? currentPath === item.href
-                  : location.pathname === item.href;
-                return (
-                  <Link
-                    key={item.name}
-                    to={item.href}
-                    onClick={closeSidebar}
+            {visibleNavItems.map((item) => {
+              const isActive = item.href === activeNavHref;
+              return (
+                <Link
+                  key={item.name}
+                  to={item.href}
+                  onClick={closeSidebar}
+                  className={cn(
+                    "group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-all duration-200",
+                    isActive
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-lg"
+                      : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                  )}
+                >
+                  <item.icon
                     className={cn(
-                      "group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-all duration-200",
+                      "mr-3 h-5 w-5 transition-colors",
                       isActive
-                        ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-lg"
-                        : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                        ? "text-sidebar-primary-foreground"
+                        : "text-sidebar-foreground group-hover:text-sidebar-accent-foreground",
                     )}
-                  >
-                    <item.icon
-                      className={cn(
-                        "mr-3 h-5 w-5 transition-colors",
-                        isActive
-                          ? "text-sidebar-primary-foreground"
-                          : "text-sidebar-foreground group-hover:text-sidebar-accent-foreground",
-                      )}
-                    />
-                    <div className="flex-1">
-                      <div className="font-medium">{item.name}</div>
-                      <div className="text-xs opacity-75">{item.description}</div>
-                    </div>
-                  </Link>
-                );
-              })}
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium">{item.name}</div>
+                    <div className="text-xs opacity-75">{item.description}</div>
+                  </div>
+                </Link>
+              );
+            })}
           </nav>
 
           {/* User section */}

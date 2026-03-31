@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Plus,
   Search,
   Edit,
-  Trash2,
   QrCode,
   Download,
   Eye,
@@ -42,50 +42,9 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/contexts/ToastContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { createTable, getMyRestaurants, getTables, updateTable } from "@/lib/apiServices";
 import type { QRTable, QRSession, QRSettings } from "@/shared/api";
-
-// Mock data for QR tables
-const mockQRTables: QRTable[] = [
-  {
-    id: "table-1",
-    tableNumber: "T-01",
-    tableName: "Table 1",
-    location: "Main Floor",
-    capacity: 4,
-    qrCodeUrl: "https://yourpos.com/qr-order/TABLE-01-abc123",
-    qrToken: "abc123def456",
-    isActive: true,
-    isOccupied: false,
-    createdAt: new Date("2024-01-01"),
-    lastUsed: new Date("2024-01-20"),
-  },
-  {
-    id: "table-2",
-    tableNumber: "T-02",
-    tableName: "Table 2",
-    location: "Main Floor",
-    capacity: 2,
-    qrCodeUrl: "https://yourpos.com/qr-order/TABLE-02-def456",
-    qrToken: "def456ghi789",
-    isActive: true,
-    isOccupied: true,
-    currentSessionId: "session-123",
-    createdAt: new Date("2024-01-01"),
-    lastUsed: new Date("2024-01-21"),
-  },
-  {
-    id: "table-3",
-    tableNumber: "T-03",
-    tableName: "VIP Table",
-    location: "VIP Section",
-    capacity: 6,
-    qrCodeUrl: "https://yourpos.com/qr-order/TABLE-03-ghi789",
-    qrToken: "ghi789jkl012",
-    isActive: false,
-    isOccupied: false,
-    createdAt: new Date("2024-01-01"),
-  },
-];
 
 const mockQRSettings: QRSettings = {
   id: "settings-1",
@@ -121,29 +80,50 @@ const mockQRSettings: QRSettings = {
   paymentGateways: [],
 };
 
-interface TableFormProps {
-  table?: QRTable;
-  onSave: (table: Partial<QRTable>) => void;
+type EditTableFormValues = {
+  restaurant_id: string;
+  table_number: string;
+  table_name: string;
+  capacity: number;
+  min_capacity: number | "";
+  floor: string;
+  section: string;
+  position_x: number | "";
+  position_y: number | "";
+  image: string;
+  qr_code: string;
+  status: string;
+  is_bookable: boolean;
+  is_outdoor: boolean;
+  is_accessible: boolean;
+  has_power_outlet: boolean;
+  minimum_spend: number | "";
+  description: string;
+  notes: string;
+  is_active: boolean;
+};
+
+interface CreateTableFormProps {
+  onSave: (table: {
+    tableNumber: string;
+    tableName: string;
+    location: string;
+    capacity: number;
+    isActive: boolean;
+  }) => void;
   onCancel: () => void;
 }
 
-function TableForm({ table, onSave, onCancel }: TableFormProps) {
+function CreateTableForm({ onSave, onCancel }: CreateTableFormProps) {
   const [formData, setFormData] = useState({
-    tableNumber: table?.tableNumber || "",
-    tableName: table?.tableName || "",
-    location: table?.location || "Main Floor",
-    capacity: table?.capacity || 4,
-    isActive: table?.isActive ?? true,
+    tableNumber: "",
+    tableName: "",
+    location: "Main Floor",
+    capacity: 4,
+    isActive: true,
   });
 
-  const handleSubmit = () => {
-    const newToken = `${formData.tableNumber.toLowerCase()}-${Math.random().toString(36).substr(2, 9)}`;
-    onSave({
-      ...formData,
-      qrToken: newToken,
-      qrCodeUrl: `https://yourpos.com/qr-order/${formData.tableNumber.toUpperCase()}-${newToken}`,
-    });
-  };
+  const handleSubmit = () => onSave(formData);
 
   return (
     <div className="space-y-6">
@@ -155,9 +135,7 @@ function TableForm({ table, onSave, onCancel }: TableFormProps) {
           <Input
             id="table-number"
             value={formData.tableNumber}
-            onChange={(e) =>
-              setFormData({ ...formData, tableNumber: e.target.value })
-            }
+            onChange={(e) => setFormData((p) => ({ ...p, tableNumber: e.target.value }))}
             className="bg-background border-border text-foreground"
             placeholder="T-01"
           />
@@ -169,9 +147,7 @@ function TableForm({ table, onSave, onCancel }: TableFormProps) {
           <Input
             id="table-name"
             value={formData.tableName}
-            onChange={(e) =>
-              setFormData({ ...formData, tableName: e.target.value })
-            }
+            onChange={(e) => setFormData((p) => ({ ...p, tableName: e.target.value }))}
             className="bg-background border-border text-foreground"
             placeholder="Table 1"
           />
@@ -185,9 +161,7 @@ function TableForm({ table, onSave, onCancel }: TableFormProps) {
           </Label>
           <Select
             value={formData.location}
-            onValueChange={(value) =>
-              setFormData({ ...formData, location: value })
-            }
+            onValueChange={(value) => setFormData((p) => ({ ...p, location: value }))}
           >
             <SelectTrigger className="bg-background border-border text-foreground">
               <SelectValue />
@@ -212,10 +186,10 @@ function TableForm({ table, onSave, onCancel }: TableFormProps) {
             max="20"
             value={formData.capacity}
             onChange={(e) =>
-              setFormData({
-                ...formData,
+              setFormData((p) => ({
+                ...p,
                 capacity: parseInt(e.target.value) || 1,
-              })
+              }))
             }
             className="bg-background border-border text-foreground"
           />
@@ -225,9 +199,7 @@ function TableForm({ table, onSave, onCancel }: TableFormProps) {
       <div className="flex items-center space-x-3 p-4 bg-muted rounded-lg">
         <Switch
           checked={formData.isActive}
-          onCheckedChange={(checked) =>
-            setFormData({ ...formData, isActive: checked })
-          }
+          onCheckedChange={(checked) => setFormData((p) => ({ ...p, isActive: checked }))}
         />
         <div>
           <Label className="text-foreground font-medium">
@@ -250,6 +222,360 @@ function TableForm({ table, onSave, onCancel }: TableFormProps) {
         <Button
           onClick={handleSubmit}
           disabled={!formData.tableNumber}
+          className="bg-primary hover:bg-primary/90 text-primary-foreground"
+        >
+          Create Table
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+interface EditTableFormProps {
+  restaurantId: string;
+  table?: QRTable;
+  onSave: (table: EditTableFormValues) => void;
+  onCancel: () => void;
+}
+
+function EditTableForm({ restaurantId, table, onSave, onCancel }: EditTableFormProps) {
+  const [formData, setFormData] = useState<EditTableFormValues>({
+    restaurant_id: String((table as any)?.restaurant_id ?? restaurantId ?? ""),
+    table_number: String((table as any)?.table_number ?? table?.tableNumber ?? ""),
+    table_name: String((table as any)?.table_name ?? table?.tableName ?? ""),
+    capacity: Number((table as any)?.capacity ?? table?.capacity ?? 4),
+    min_capacity: (table as any)?.min_capacity ?? (table as any)?.minCapacity ?? "",
+    floor: String((table as any)?.floor ?? ""),
+    section: String((table as any)?.section ?? (table as any)?.location ?? table?.location ?? ""),
+    position_x: (table as any)?.position_x ?? (table as any)?.positionX ?? "",
+    position_y: (table as any)?.position_y ?? (table as any)?.positionY ?? "",
+    image: String((table as any)?.image ?? ""),
+    qr_code: String((table as any)?.qr_code ?? (table as any)?.qrCode ?? ""),
+    status: String((table as any)?.status ?? "available"),
+    is_bookable: (table as any)?.is_bookable ?? (table as any)?.isBookable ?? true,
+    is_outdoor: (table as any)?.is_outdoor ?? (table as any)?.isOutdoor ?? false,
+    is_accessible: (table as any)?.is_accessible ?? (table as any)?.isAccessible ?? false,
+    has_power_outlet: (table as any)?.has_power_outlet ?? (table as any)?.hasPowerOutlet ?? false,
+    minimum_spend: (table as any)?.minimum_spend ?? (table as any)?.minimumSpend ?? "",
+    description: String((table as any)?.description ?? ""),
+    notes: String((table as any)?.notes ?? ""),
+    is_active: (table as any)?.is_active ?? table?.isActive ?? true,
+  });
+
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      restaurant_id: String((table as any)?.restaurant_id ?? restaurantId ?? ""),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restaurantId, table?.id]);
+
+  const handleSubmit = () => onSave(formData);
+
+  return (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <Label className="text-foreground">Restaurant ID *</Label>
+        <Input
+          value={formData.restaurant_id}
+          disabled
+          className="bg-background border-border text-foreground"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="table-number" className="text-foreground">
+            Table Number/Identifier *
+          </Label>
+          <Input
+            id="table-number"
+            value={formData.table_number}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, table_number: e.target.value }))
+            }
+            className="bg-background border-border text-foreground"
+            placeholder="T-01"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="table-name" className="text-foreground">
+            Table Name
+          </Label>
+          <Input
+            id="table-name"
+            value={formData.table_name}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, table_name: e.target.value }))
+            }
+            className="bg-background border-border text-foreground"
+            placeholder="Optional name"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="capacity" className="text-foreground">
+            Capacity *
+          </Label>
+          <Input
+            id="capacity"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            value={formData.capacity}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, capacity: Number(e.target.value || 0) }))
+            }
+            className="bg-background border-border text-foreground"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="min-capacity" className="text-foreground">
+            Min Capacity
+          </Label>
+          <Input
+            id="min-capacity"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={String(formData.min_capacity)}
+            onChange={(e) =>
+              setFormData((p) => ({
+                ...p,
+                min_capacity: e.target.value === "" ? "" : Number(e.target.value),
+              }))
+            }
+            className="bg-background border-border text-foreground"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="floor" className="text-foreground">
+            Floor
+          </Label>
+          <Input
+            id="floor"
+            value={formData.floor}
+            onChange={(e) => setFormData((p) => ({ ...p, floor: e.target.value }))}
+            className="bg-background border-border text-foreground"
+            placeholder="e.g. Ground"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="section" className="text-foreground">
+            Section
+          </Label>
+          <Input
+            id="section"
+            value={formData.section}
+            onChange={(e) => setFormData((p) => ({ ...p, section: e.target.value }))}
+            className="bg-background border-border text-foreground"
+            placeholder='e.g. "Patio", "Main Hall"'
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="position-x" className="text-foreground">
+            Position X
+          </Label>
+          <Input
+            id="position-x"
+            type="number"
+            inputMode="numeric"
+            value={String(formData.position_x)}
+            onChange={(e) =>
+              setFormData((p) => ({
+                ...p,
+                position_x: e.target.value === "" ? "" : Number(e.target.value),
+              }))
+            }
+            className="bg-background border-border text-foreground"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="position-y" className="text-foreground">
+            Position Y
+          </Label>
+          <Input
+            id="position-y"
+            type="number"
+            inputMode="numeric"
+            value={String(formData.position_y)}
+            onChange={(e) =>
+              setFormData((p) => ({
+                ...p,
+                position_y: e.target.value === "" ? "" : Number(e.target.value),
+              }))
+            }
+            className="bg-background border-border text-foreground"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="image" className="text-foreground">
+            Image URL
+          </Label>
+          <Input
+            id="image"
+            value={formData.image}
+            onChange={(e) => setFormData((p) => ({ ...p, image: e.target.value }))}
+            className="bg-background border-border text-foreground"
+            placeholder="https://..."
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="qr-code" className="text-foreground">
+            QR Code URL
+          </Label>
+          <Input
+            id="qr-code"
+            value={formData.qr_code}
+            onChange={(e) => setFormData((p) => ({ ...p, qr_code: e.target.value }))}
+            className="bg-background border-border text-foreground"
+            placeholder="https://..."
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label className="text-foreground">Status</Label>
+          <Select
+            value={formData.status}
+            onValueChange={(value) => setFormData((p) => ({ ...p, status: value }))}
+          >
+            <SelectTrigger className="bg-background border-border text-foreground">
+              <SelectValue placeholder="Select status" />
+            </SelectTrigger>
+            <SelectContent className="bg-popover border-border">
+              <SelectItem value="available">Available</SelectItem>
+              <SelectItem value="occupied">Occupied</SelectItem>
+              <SelectItem value="reserved">Reserved</SelectItem>
+              <SelectItem value="cleaning">Cleaning</SelectItem>
+              <SelectItem value="maintenance">Maintenance</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="minimum-spend" className="text-foreground">
+            Minimum Spend
+          </Label>
+          <Input
+            id="minimum-spend"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={String(formData.minimum_spend)}
+            onChange={(e) =>
+              setFormData((p) => ({
+                ...p,
+                minimum_spend: e.target.value === "" ? "" : Number(e.target.value),
+              }))
+            }
+            className="bg-background border-border text-foreground"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="flex items-center justify-between rounded-lg border border-border p-3">
+          <div>
+            <div className="text-sm font-medium text-foreground">Bookable</div>
+            <div className="text-xs text-muted-foreground">Allow online booking</div>
+          </div>
+          <Switch
+            checked={!!formData.is_bookable}
+            onCheckedChange={(checked) => setFormData((p) => ({ ...p, is_bookable: checked }))}
+          />
+        </div>
+        <div className="flex items-center justify-between rounded-lg border border-border p-3">
+          <div>
+            <div className="text-sm font-medium text-foreground">Outdoor</div>
+            <div className="text-xs text-muted-foreground">Outdoor table</div>
+          </div>
+          <Switch
+            checked={!!formData.is_outdoor}
+            onCheckedChange={(checked) => setFormData((p) => ({ ...p, is_outdoor: checked }))}
+          />
+        </div>
+        <div className="flex items-center justify-between rounded-lg border border-border p-3">
+          <div>
+            <div className="text-sm font-medium text-foreground">Accessible</div>
+            <div className="text-xs text-muted-foreground">Wheelchair accessible</div>
+          </div>
+          <Switch
+            checked={!!formData.is_accessible}
+            onCheckedChange={(checked) => setFormData((p) => ({ ...p, is_accessible: checked }))}
+          />
+        </div>
+        <div className="flex items-center justify-between rounded-lg border border-border p-3">
+          <div>
+            <div className="text-sm font-medium text-foreground">Power Outlet</div>
+            <div className="text-xs text-muted-foreground">Has power outlet</div>
+          </div>
+          <Switch
+            checked={!!formData.has_power_outlet}
+            onCheckedChange={(checked) => setFormData((p) => ({ ...p, has_power_outlet: checked }))}
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between rounded-lg border border-border p-3">
+        <div>
+          <div className="text-sm font-medium text-foreground">Active</div>
+          <div className="text-xs text-muted-foreground">Enable this table</div>
+        </div>
+        <Switch
+          checked={!!formData.is_active}
+          onCheckedChange={(checked) => setFormData((p) => ({ ...p, is_active: checked }))}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="description" className="text-foreground">
+          Description
+        </Label>
+        <Textarea
+          id="description"
+          value={formData.description}
+          onChange={(e) => setFormData((p) => ({ ...p, description: e.target.value }))}
+          className="bg-background border-border text-foreground"
+          placeholder="Table description"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="notes" className="text-foreground">
+          Notes
+        </Label>
+        <Textarea
+          id="notes"
+          value={formData.notes}
+          onChange={(e) => setFormData((p) => ({ ...p, notes: e.target.value }))}
+          className="bg-background border-border text-foreground"
+          placeholder="Internal notes"
+        />
+      </div>
+
+      <div className="flex items-center justify-end space-x-2 pt-4 border-t border-border">
+        <Button
+          variant="outline"
+          onClick={onCancel}
+          className="border-border text-muted-foreground hover:text-foreground"
+        >
+          Cancel
+        </Button>
+        <Button
+          onClick={handleSubmit}
+          disabled={!formData.table_number}
           className="bg-primary hover:bg-primary/90 text-primary-foreground"
         >
           {table ? "Update Table" : "Create Table"}
@@ -531,45 +857,321 @@ function QRSettingsForm() {
 }
 
 export default function QRManagement() {
+  const { user } = useAuth();
+  const { addToast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("all");
+  const [selectedStatus, setSelectedStatus] = useState<
+    "all" | "active" | "inactive"
+  >("all");
   const [isAddingTable, setIsAddingTable] = useState(false);
   const [editingTable, setEditingTable] = useState<QRTable | null>(null);
   const [previewTable, setPreviewTable] = useState<QRTable | null>(null);
-  const [tables, setTables] = useState<QRTable[]>(mockQRTables);
+  const [tables, setTables] = useState<QRTable[]>([]);
+  const isSuperAdmin = ["super_admin", "superadmin"].includes(
+    String(user?.role || "").toLowerCase().trim(),
+  );
+  const [selectedRestaurantId, setSelectedRestaurantId] = useState(
+    isSuperAdmin ? "" : String(user?.branchId || ""),
+  );
+  const baseUrl =
+    typeof window !== "undefined" ? window.location.origin : "";
 
-  const filteredTables = tables.filter((table) => {
-    const matchesSearch =
-      table.tableNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      table.tableName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesLocation =
-      selectedLocation === "all" || table.location === selectedLocation;
-    return matchesSearch && matchesLocation;
+  const { data: restaurantsResponse } = useQuery({
+    queryKey: ["my-restaurants", user?.id],
+    queryFn: () => getMyRestaurants(0, 500),
+    enabled: isSuperAdmin,
+    staleTime: 60000,
   });
 
-  const handleSaveTable = (tableData: Partial<QRTable>) => {
-    const newTable: QRTable = {
-      id: editingTable?.id || `table-${Date.now()}`,
-      tableNumber: tableData.tableNumber!,
-      tableName: tableData.tableName || tableData.tableNumber!,
-      location: tableData.location!,
-      capacity: tableData.capacity!,
-      qrCodeUrl: tableData.qrCodeUrl!,
-      qrToken: tableData.qrToken!,
-      isActive: tableData.isActive!,
-      isOccupied: editingTable?.isOccupied || false,
-      currentSessionId: editingTable?.currentSessionId,
-      createdAt: editingTable?.createdAt || new Date(),
-      lastUsed: editingTable?.lastUsed,
+  const restaurantOptions = (() => {
+    const payload = restaurantsResponse as any;
+    const source =
+      payload?.data?.data ??
+      payload?.data?.items ??
+      payload?.data?.restaurants ??
+      payload?.data ??
+      payload;
+    const restaurants = Array.isArray(source)
+      ? source
+      : Array.isArray(source?.items)
+        ? source.items
+        : Array.isArray(source?.restaurants)
+          ? source.restaurants
+          : [];
+
+    return Array.from(
+      new Map(
+        restaurants
+          .filter((restaurant: any) => restaurant?.id && (restaurant?.name || restaurant?.business_name))
+          .map((restaurant: any) => [
+            String(restaurant.id),
+            {
+              id: String(restaurant.id),
+              name: String(restaurant.name || restaurant.business_name),
+            },
+          ]),
+      ).values(),
+    ) as { id: string; name: string }[];
+  })();
+
+  const currentRestaurantName =
+    restaurantOptions.find((restaurant) => restaurant.id === selectedRestaurantId)?.name ||
+    (user as any)?.branchName ||
+    (user as any)?.restaurantName ||
+    "Current Restaurant";
+
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      setSelectedRestaurantId(String(user?.branchId || ""));
+    }
+  }, [isSuperAdmin, user?.branchId]);
+
+  useEffect(() => {
+    if (isSuperAdmin && !selectedRestaurantId && restaurantOptions.length > 0) {
+      setSelectedRestaurantId(restaurantOptions[0].id);
+    }
+  }, [isSuperAdmin, selectedRestaurantId, restaurantOptions]);
+
+  const { data: tablesResponse, refetch: refetchTables } = useQuery({
+    queryKey: ["tables", selectedRestaurantId],
+    queryFn: () => getTables(selectedRestaurantId),
+    enabled: Boolean(selectedRestaurantId),
+    staleTime: 60000,
+  });
+
+  useEffect(() => {
+    if (!selectedRestaurantId) {
+      setTables([]);
+      return;
+    }
+    const payload: any = tablesResponse;
+    const source =
+      payload?.data?.data ??
+      payload?.data?.items ??
+      payload?.data?.tables ??
+      payload?.data ??
+      payload;
+    const items = Array.isArray(source) ? source : [];
+
+    if (!items.length) {
+      setTables([]);
+      return;
+    }
+
+    const normalizedTables = items.map((table: any, index: number) => {
+      const id = String(table.id ?? table.table_id ?? table.tableId ?? "");
+      const restaurant_id = String(
+        table.restaurant_id ?? table.restaurantId ?? selectedRestaurantId ?? "",
+      );
+      const tableNumber = String(
+        table.table_number ??
+          table.tableNumber ??
+          table.table_name ??
+          table.tableName ??
+          table.name ??
+          "",
+      );
+      const safeTableNumber = tableNumber || id || `Table-${index + 1}`;
+      const tableName = String(
+        table.table_name ?? table.tableName ?? table.name ?? safeTableNumber,
+      );
+      const capacity = Number(table.capacity ?? table.seats ?? 0);
+      const section = String(table.section ?? table.location ?? table.area ?? "");
+      const floor = String(table.floor ?? "");
+      const qrToken = String(
+        table.qr_token ??
+          table.qrToken ??
+          table.qr_code_token ??
+          table.qrCodeToken ??
+          table.qr_code ??
+          table.qrCode ??
+          table.qr ??
+          id ??
+          safeTableNumber,
+      );
+      const qrCodeUrl = String(
+        table.qr_code_url ??
+          table.qrCodeUrl ??
+          table.qr_url ??
+          (qrToken ? `${baseUrl}/qr-menu/${qrToken}` : ""),
+      );
+
+      return {
+        id: id || `table-${index + 1}`,
+        restaurant_id: restaurant_id || undefined,
+        tableNumber: safeTableNumber,
+        tableName,
+        location: section || floor || "Main Floor",
+        capacity: capacity || 1,
+        min_capacity: table.min_capacity ?? table.minCapacity ?? undefined,
+        floor: floor || undefined,
+        section: section || undefined,
+        position_x: table.position_x ?? table.positionX ?? undefined,
+        position_y: table.position_y ?? table.positionY ?? undefined,
+        image: table.image ?? undefined,
+        qr_code: table.qr_code ?? table.qrCode ?? undefined,
+        status: table.status ?? undefined,
+        is_bookable: table.is_bookable ?? table.isBookable ?? undefined,
+        is_outdoor: table.is_outdoor ?? table.isOutdoor ?? undefined,
+        is_accessible: table.is_accessible ?? table.isAccessible ?? undefined,
+        has_power_outlet: table.has_power_outlet ?? table.hasPowerOutlet ?? undefined,
+        minimum_spend: table.minimum_spend ?? table.minimumSpend ?? undefined,
+        description: table.description ?? undefined,
+        notes: table.notes ?? undefined,
+        qrCodeUrl,
+        qrToken,
+        isActive: table.is_active ?? table.isActive ?? true,
+        isOccupied: table.is_occupied ?? table.isOccupied ?? false,
+        currentSessionId:
+          table.current_session_id ?? table.currentSessionId ?? undefined,
+        createdAt: table.created_at ? new Date(table.created_at) : new Date(),
+        lastUsed: table.last_used ? new Date(table.last_used) : undefined,
+      } as QRTable;
+    });
+
+    setTables(normalizedTables);
+  }, [tablesResponse, baseUrl, selectedRestaurantId]);
+
+  const filteredTables = tables.filter((table) => {
+    const query = searchQuery.trim().toLowerCase();
+    const matchesSearch =
+      !query ||
+      table.tableNumber.toLowerCase().includes(query) ||
+      table.tableName.toLowerCase().includes(query);
+    const matchesLocation =
+      selectedLocation === "all" || table.location === selectedLocation;
+    const matchesStatus =
+      selectedStatus === "all" ||
+      (selectedStatus === "active" ? table.isActive : !table.isActive);
+    return matchesSearch && matchesLocation && matchesStatus;
+  });
+
+  const createTableMutation = useMutation({
+    mutationFn: createTable,
+    onSuccess: () => {
+      addToast({
+        type: "success",
+        title: "Table Created",
+        description: "Table has been created successfully",
+      });
+      setIsAddingTable(false);
+      refetchTables();
+    },
+    onError: (error: any) => {
+      addToast({
+        type: "error",
+        title: "Failed to Create Table",
+        description: error?.message || "An error occurred while creating the table",
+      });
+    },
+  });
+
+  const updateTableMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => updateTable(id, data),
+    onSuccess: () => {
+      addToast({
+        type: "success",
+        title: "Table Updated",
+        description: "Table has been updated successfully",
+      });
+      setEditingTable(null);
+      refetchTables();
+    },
+    onError: (error: any) => {
+      addToast({
+        type: "error",
+        title: "Failed to Update Table",
+        description: error?.message || "An error occurred while updating the table",
+      });
+    },
+  });
+
+  const handleSaveTable = (tableData: any) => {
+    const restaurantId = String(tableData.restaurant_id || selectedRestaurantId || "").trim();
+    const tableNumber = String(tableData.table_number || "").trim();
+    const tableName = String(tableData.table_name || "").trim();
+    const capacity = Number(tableData.capacity || 0);
+    const minCapacity =
+      tableData.min_capacity === "" || tableData.min_capacity === undefined
+        ? undefined
+        : Number(tableData.min_capacity);
+    const floor = String(tableData.floor || "").trim() || undefined;
+    const section = String(tableData.section || "").trim() || undefined;
+    const positionX =
+      tableData.position_x === "" || tableData.position_x === undefined
+        ? undefined
+        : Number(tableData.position_x);
+    const positionY =
+      tableData.position_y === "" || tableData.position_y === undefined
+        ? undefined
+        : Number(tableData.position_y);
+    const image = String(tableData.image || "").trim() || undefined;
+    const qrCode = String(tableData.qr_code || "").trim() || undefined;
+    const status = String(tableData.status || "").trim() || undefined;
+    const isBookable = tableData.is_bookable ?? true;
+    const isOutdoor = tableData.is_outdoor ?? false;
+    const isAccessible = tableData.is_accessible ?? false;
+    const hasPowerOutlet = tableData.has_power_outlet ?? false;
+    const minimumSpend =
+      tableData.minimum_spend === "" || tableData.minimum_spend === undefined
+        ? undefined
+        : Number(tableData.minimum_spend);
+    const description = String(tableData.description || "").trim() || undefined;
+    const notes = String(tableData.notes || "").trim() || undefined;
+    const isActive = tableData.is_active ?? true;
+
+    if (!restaurantId) {
+      addToast({
+        type: "error",
+        title: "Restaurant Required",
+        description: "Please select a restaurant before creating a table.",
+      });
+      return;
+    }
+    if (!tableNumber) {
+      addToast({
+        type: "error",
+        title: "Table Number Required",
+        description: "Please enter a table number.",
+      });
+      return;
+    }
+    if (!capacity || capacity <= 0) {
+      addToast({
+        type: "error",
+        title: "Capacity Required",
+        description: "Please enter a valid capacity.",
+      });
+      return;
+    }
+
+    const payload: any = {
+      restaurant_id: restaurantId,
+      table_number: tableNumber,
+      table_name: tableName || undefined,
+      capacity,
+      min_capacity: minCapacity,
+      floor,
+      section,
+      location: section || floor || undefined,
+      position_x: positionX,
+      position_y: positionY,
+      image,
+      qr_code: qrCode,
+      status,
+      is_bookable: !!isBookable,
+      is_outdoor: !!isOutdoor,
+      is_accessible: !!isAccessible,
+      has_power_outlet: !!hasPowerOutlet,
+      minimum_spend: minimumSpend,
+      description,
+      notes,
+      is_active: !!isActive,
     };
 
-    if (editingTable) {
-      setTables(tables.map((t) => (t.id === editingTable.id ? newTable : t)));
-      setEditingTable(null);
-    } else {
-      setTables([...tables, newTable]);
-      setIsAddingTable(false);
-    }
+    if (!editingTable?.id) return;
+    updateTableMutation.mutate({ id: editingTable.id, data: payload });
   };
 
   const deleteTable = (tableId: string) => {
@@ -619,8 +1221,74 @@ export default function QRManagement() {
                 Add New Table
               </DialogTitle>
             </DialogHeader>
-            <TableForm
-              onSave={handleSaveTable}
+            <div className="space-y-3">
+              <Label className="text-foreground">Restaurant</Label>
+              {isSuperAdmin ? (
+                <Select
+                  value={selectedRestaurantId || "none"}
+                  onValueChange={(value) =>
+                    setSelectedRestaurantId(value === "none" ? "" : value)
+                  }
+                >
+                  <SelectTrigger className="bg-background border-border text-foreground">
+                    <SelectValue placeholder="Select Restaurant" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border-border">
+                    <SelectItem value="none">Select Restaurant</SelectItem>
+                    {restaurantOptions.map((restaurant) => (
+                      <SelectItem key={restaurant.id} value={restaurant.id}>
+                        {restaurant.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input value={currentRestaurantName} disabled />
+              )}
+            </div>
+            <CreateTableForm
+              onSave={(values) => {
+                const restaurantId = String(selectedRestaurantId || "").trim();
+                const tableNumber = String(values.tableNumber || "").trim();
+                const tableName = String(values.tableName || "").trim();
+                const location = String(values.location || "").trim();
+                const capacity = Number(values.capacity || 0);
+                const isActive = values.isActive ?? true;
+
+                if (!restaurantId) {
+                  addToast({
+                    type: "error",
+                    title: "Restaurant Required",
+                    description: "Please select a restaurant before creating a table.",
+                  });
+                  return;
+                }
+                if (!tableNumber) {
+                  addToast({
+                    type: "error",
+                    title: "Table Number Required",
+                    description: "Please enter a table number.",
+                  });
+                  return;
+                }
+                if (!capacity || capacity <= 0) {
+                  addToast({
+                    type: "error",
+                    title: "Capacity Required",
+                    description: "Please enter a valid capacity.",
+                  });
+                  return;
+                }
+
+                createTableMutation.mutate({
+                  restaurant_id: restaurantId,
+                  table_number: tableNumber,
+                  table_name: tableName || undefined,
+                  capacity,
+                  location: location || undefined,
+                  is_active: !!isActive,
+                });
+              }}
               onCancel={() => setIsAddingTable(false)}
             />
           </DialogContent>
@@ -693,7 +1361,33 @@ export default function QRManagement() {
           {/* Filters */}
           <Card className="bg-card border-border">
             <CardContent className="p-4">
-              <div className="flex items-center space-x-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                {isSuperAdmin ? (
+                  <Select
+                    value={selectedRestaurantId || "none"}
+                    onValueChange={(value) =>
+                      setSelectedRestaurantId(value === "none" ? "" : value)
+                    }
+                  >
+                    <SelectTrigger className="w-full lg:w-60 bg-background border-border text-foreground">
+                      <SelectValue placeholder="Restaurant" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border-border">
+                      <SelectItem value="none">Select Restaurant</SelectItem>
+                      {restaurantOptions.map((restaurant) => (
+                        <SelectItem key={restaurant.id} value={restaurant.id}>
+                          {restaurant.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={currentRestaurantName}
+                    disabled
+                    className="w-full lg:w-60 bg-background border-border text-foreground"
+                  />
+                )}
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                   <Input
@@ -703,22 +1397,39 @@ export default function QRManagement() {
                     className="pl-10 bg-background border-border text-foreground"
                   />
                 </div>
-                <Select
-                  value={selectedLocation}
-                  onValueChange={setSelectedLocation}
-                >
-                  <SelectTrigger className="w-48 bg-background border-border text-foreground">
-                    <SelectValue placeholder="Location" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-popover border-border">
-                    <SelectItem value="all">All Locations</SelectItem>
-                    {locations.map((location) => (
-                      <SelectItem key={location} value={location}>
-                        {location}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:flex">
+                  <Select
+                    value={selectedLocation}
+                    onValueChange={setSelectedLocation}
+                  >
+                    <SelectTrigger className="w-full lg:w-48 bg-background border-border text-foreground">
+                      <SelectValue placeholder="Location" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border-border">
+                      <SelectItem value="all">All Locations</SelectItem>
+                      {locations.map((location) => (
+                        <SelectItem key={location} value={location}>
+                          {location}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={selectedStatus}
+                    onValueChange={(value) =>
+                      setSelectedStatus(value as "all" | "active" | "inactive")
+                    }
+                  >
+                    <SelectTrigger className="w-full lg:w-44 bg-background border-border text-foreground">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border-border">
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -831,7 +1542,12 @@ export default function QRManagement() {
                       )}
                     </Button>
 
-                    <Dialog>
+                    <Dialog
+                      open={Boolean(editingTable)}
+                      onOpenChange={(open) => {
+                        if (!open) setEditingTable(null);
+                      }}
+                    >
                       <DialogTrigger asChild>
                         <Button
                           variant="outline"
@@ -842,28 +1558,22 @@ export default function QRManagement() {
                           <Edit className="h-4 w-4" />
                         </Button>
                       </DialogTrigger>
-                      <DialogContent className="bg-card border-border max-w-2xl">
+                      <DialogContent className="bg-card border-border max-w-2xl max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                           <DialogTitle className="text-card-foreground">
                             Edit Table
                           </DialogTitle>
                         </DialogHeader>
-                        <TableForm
+                        <EditTableForm
                           table={editingTable || undefined}
+                          restaurantId={String((editingTable as any)?.restaurant_id || selectedRestaurantId || "")}
                           onSave={handleSaveTable}
                           onCancel={() => setEditingTable(null)}
                         />
                       </DialogContent>
                     </Dialog>
 
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => deleteTable(table.id)}
-                      className="border-border text-red-500 hover:text-red-500"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {/* Delete option removed as requested */}
                   </div>
                 </CardContent>
               </Card>
@@ -878,11 +1588,17 @@ export default function QRManagement() {
                   No tables found
                 </h3>
                 <p className="text-muted-foreground mb-4">
-                  {searchQuery || selectedLocation !== "all"
+                  {!selectedRestaurantId && isSuperAdmin
+                    ? "Select a restaurant to view its tables"
+                    : searchQuery ||
+                        selectedLocation !== "all" ||
+                        selectedStatus !== "all"
                     ? "Try adjusting your search or filters"
                     : "Create your first QR table to get started"}
                 </p>
-                {!searchQuery && selectedLocation === "all" && (
+                {!selectedRestaurantId && isSuperAdmin ? null : !searchQuery &&
+                  selectedLocation === "all" &&
+                  selectedStatus === "all" && (
                   <Button
                     onClick={() => setIsAddingTable(true)}
                     className="bg-primary hover:bg-primary/90 text-primary-foreground"

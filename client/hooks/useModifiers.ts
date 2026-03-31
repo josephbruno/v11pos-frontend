@@ -13,6 +13,8 @@ import {
   createModifierOption,
   getModifierOptions,
   deleteModifierOption,
+  updateModifierOption,
+  listModifierOptions,
 } from "@/lib/apiServices";
 import {
   ModifierFilters
@@ -144,6 +146,25 @@ export function useModifierOptions(
 }
 
 /**
+ * Hook to fetch modifier options list for a restaurant (optional modifier filter)
+ */
+export function useModifierOptionsList(filters?: {
+  restaurant_id?: string;
+  modifier_id?: string;
+  page?: number;
+  page_size?: number;
+  available?: boolean;
+  hidden?: boolean;
+}) {
+  return useQuery({
+    queryKey: ["modifierOptionsList", filters],
+    queryFn: () => listModifierOptions(filters),
+    enabled: !!filters?.restaurant_id,
+    staleTime: 60000,
+  });
+}
+
+/**
  * Hook to create a new modifier option
  */
 export function useCreateModifierOption() {
@@ -195,6 +216,36 @@ export function useDeleteModifierOption() {
       addToast({
         type: "error",
         title: "Failed to Delete Option",
+        description: error.message || "An error occurred",
+      });
+    },
+  });
+}
+
+/**
+ * Hook to update a modifier option
+ */
+export function useUpdateModifierOption() {
+  const queryClient = useQueryClient();
+  const { addToast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ optionId, data }: { optionId: string; data: any }) =>
+      updateModifierOption(optionId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["modifierOptions"] });
+      queryClient.invalidateQueries({ queryKey: ["modifiers"] });
+      queryClient.invalidateQueries({ queryKey: ["modifierOption", variables.optionId] });
+      addToast({
+        type: "success",
+        title: "Option Updated",
+        description: "Modifier option has been updated successfully",
+      });
+    },
+    onError: (error: any) => {
+      addToast({
+        type: "error",
+        title: "Failed to Update Option",
         description: error.message || "An error occurred",
       });
     },

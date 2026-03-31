@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -19,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -63,6 +65,9 @@ import {
   Settings,
   Download,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/contexts/ToastContext";
+import { createTable, getMyRestaurants, getTables } from "@/lib/apiServices";
 
 // Mock data for table bookings
 const mockBookings = [
@@ -194,7 +199,21 @@ const statusIcons = {
   no_show: XCircle,
 };
 
+const initialNewTableState = {
+  tableNumber: "",
+  tableName: "",
+  capacity: 4,
+  location: "",
+  type: "regular",
+  isActive: true,
+};
+
 export default function TableBooking() {
+  const { user } = useAuth();
+  const { addToast } = useToast();
+  const isSuperAdmin = ["super_admin", "superadmin"].includes(
+    String(user?.role || "").toLowerCase().trim(),
+  );
   const [mounted, setMounted] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -202,6 +221,15 @@ export default function TableBooking() {
   const [isNewBookingOpen, setIsNewBookingOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isNewTableOpen, setIsNewTableOpen] = useState(false);
+  const [tableSearchQuery, setTableSearchQuery] = useState("");
+  const [tableLocationFilter, setTableLocationFilter] = useState("all");
+  const [tableStatusFilter, setTableStatusFilter] = useState<
+    "all" | "active" | "inactive"
+  >("all");
+  const [selectedRestaurantId, setSelectedRestaurantId] = useState(
+    isSuperAdmin ? "" : String(user?.branchId || ""),
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -218,6 +246,156 @@ export default function TableBooking() {
     tableId: "",
     specialRequests: "",
     occasion: "",
+  });
+
+  const [newTable, setNewTable] = useState(initialNewTableState);
+
+  const { data: restaurantsResponse } = useQuery({
+    queryKey: ["my-restaurants", user?.id],
+    queryFn: () => getMyRestaurants(0, 500),
+    enabled: isSuperAdmin,
+    staleTime: 60000,
+  });
+
+  const restaurantOptions = (() => {
+    const payload = restaurantsResponse as any;
+    const source =
+      payload?.data?.data ??
+      payload?.data?.items ??
+      payload?.data?.restaurants ??
+      payload?.data ??
+      payload;
+    const restaurants = Array.isArray(source)
+      ? source
+      : Array.isArray(source?.items)
+        ? source.items
+        : Array.isArray(source?.restaurants)
+          ? source.restaurants
+          : [];
+
+    return Array.from(
+      new Map(
+        restaurants
+          .filter((restaurant: any) => restaurant?.id && (restaurant?.name || restaurant?.business_name))
+          .map((restaurant: any) => [
+            String(restaurant.id),
+            {
+              id: String(restaurant.id),
+              name: String(restaurant.name || restaurant.business_name),
+            },
+          ]),
+      ).values(),
+    ) as { id: string; name: string }[];
+  })();
+
+  const currentRestaurantName =
+    restaurantOptions.find((restaurant) => restaurant.id === selectedRestaurantId)?.name ||
+    (user as any)?.branchName ||
+    (user as any)?.restaurantName ||
+    "Current Restaurant";
+
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      setSelectedRestaurantId(String(user?.branchId || ""));
+    }
+  }, [isSuperAdmin, user?.branchId]);
+
+  useEffect(() => {
+    if (isSuperAdmin && !selectedRestaurantId && restaurantOptions.length > 0) {
+      setSelectedRestaurantId(restaurantOptions[0].id);
+    }
+  }, [isSuperAdmin, selectedRestaurantId, restaurantOptions]);
+
+  useEffect(() => {
+    if (isNewTableOpen) {
+      setNewTable(initialNewTableState);
+    }
+  }, [isNewTableOpen]);
+
+  const { data: tablesResponse, refetch: refetchTables } = useQuery({
+    queryKey: ["tables", selectedRestaurantId],
+    queryFn: () => getTables(selectedRestaurantId),
+    enabled: Boolean(selectedRestaurantId),
+    staleTime: 60000,
+  });
+
+  const tablesDataSource = (() => {
+    const payload: any = tablesResponse;
+    const source =
+      payload?.data?.data ??
+      payload?.data?.items ??
+      payload?.data?.tables ??
+      payload?.data ??
+      payload;
+    const items = Array.isArray(source) ? source : [];
+    if (!items.length) {
+      return mockTables.map((table) => ({
+        ...table,
+        isActive: true,
+        tableName: (table as any).tableName ?? "",
+      }));
+    }
+    return items.map((table: any) => ({
+      id: String(table.id ?? table.table_id ?? table.tableId ?? ""),
+      tableNumber:
+        String(table.table_number ?? table.tableNumber ?? table.table_name ?? table.tableName ?? table.name ?? ""),
+      tableName: String(table.table_name ?? table.tableName ?? ""),
+      capacity: Number(table.capacity ?? table.seats ?? 0),
+      location: String(table.location ?? table.area ?? ""),
+      type: String(table.type ?? table.table_type ?? "regular"),
+      isActive: table.is_active ?? table.isActive ?? true,
+    }));
+  })();
+
+  const tableLocations = Array.from(
+    new Set(
+      tablesDataSource
+        .map((table: any) => String(table.location || "").trim())
+        .filter(Boolean),
+    ),
+  );
+
+  const filteredTables = tablesDataSource.filter((table: any) => {
+    const query = tableSearchQuery.trim().toLowerCase();
+    const matchesSearch =
+      !query ||
+      String(table.tableNumber || "").toLowerCase().includes(query) ||
+      String(table.tableName || "").toLowerCase().includes(query);
+    const matchesLocation =
+      tableLocationFilter === "all" ||
+      String(table.location || "") === tableLocationFilter;
+    const matchesStatus =
+      tableStatusFilter === "all" ||
+      (tableStatusFilter === "active" ? table.isActive : !table.isActive);
+    return matchesSearch && matchesLocation && matchesStatus;
+  });
+
+  const createTableMutation = useMutation({
+    mutationFn: createTable,
+    onSuccess: () => {
+      addToast({
+        type: "success",
+        title: "Table Created",
+        description: "Table has been created successfully",
+      });
+      setIsNewTableOpen(false);
+      setNewTable({
+        tableNumber: "",
+        tableName: "",
+        capacity: 4,
+        location: "",
+        type: "regular",
+        isActive: true,
+      });
+      refetchTables();
+    },
+    onError: (error: any) => {
+      addToast({
+        type: "error",
+        title: "Failed to Create Table",
+        description: error?.message || "An error occurred while creating the table",
+      });
+    },
   });
 
   const filteredBookings = mockBookings.filter((booking) => {
@@ -258,6 +436,46 @@ export default function TableBooking() {
       specialRequests: "",
       occasion: "",
     });
+  };
+
+  const handleCreateTable = () => {
+    const restaurantId = String(selectedRestaurantId || "").trim();
+    if (!restaurantId) {
+      addToast({
+        type: "error",
+        title: "Restaurant Required",
+        description: "Please select a restaurant before creating a table.",
+      });
+      return;
+    }
+    if (!newTable.tableNumber.trim()) {
+      addToast({
+        type: "error",
+        title: "Table Number Required",
+        description: "Please enter a table number.",
+      });
+      return;
+    }
+    if (!newTable.capacity || newTable.capacity <= 0) {
+      addToast({
+        type: "error",
+        title: "Capacity Required",
+        description: "Please enter a valid capacity.",
+      });
+      return;
+    }
+
+    const payload = {
+      restaurant_id: restaurantId,
+      table_number: newTable.tableNumber.trim(),
+      table_name: newTable.tableName.trim() || undefined,
+      capacity: Number(newTable.capacity),
+      location: newTable.location.trim() || undefined,
+      type: newTable.type,
+      is_active: newTable.isActive,
+    };
+
+    createTableMutation.mutate(payload);
   };
 
   if (!mounted) {
@@ -445,10 +663,10 @@ export default function TableBooking() {
                       <SelectValue placeholder="Select table" />
                     </SelectTrigger>
                     <SelectContent>
-                      {mockTables.map((table) => (
+                      {tablesDataSource.map((table: any) => (
                         <SelectItem key={table.id} value={table.id}>
                           {table.tableNumber} - {table.capacity} seats (
-                          {table.location})
+                          {table.location || "Unspecified"})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -753,16 +971,213 @@ export default function TableBooking() {
 
         {/* Table Management */}
         <TabsContent value="tables" className="space-y-6">
+          <Card className="bg-card border-border">
+            <CardContent className="p-4">
+              <div className="flex items-center space-x-4 flex-wrap gap-y-3">
+                {isSuperAdmin && (
+                  <Select
+                    value={selectedRestaurantId || "none"}
+                    onValueChange={(value) =>
+                      setSelectedRestaurantId(value === "none" ? "" : value)
+                    }
+                  >
+                    <SelectTrigger className="w-56 bg-background border-border text-foreground">
+                      <SelectValue placeholder="Select Restaurant" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border-border">
+                      <SelectItem value="none">Select Restaurant</SelectItem>
+                      {restaurantOptions.map((restaurant) => (
+                        <SelectItem key={restaurant.id} value={restaurant.id}>
+                          {restaurant.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search tables..."
+                    value={tableSearchQuery}
+                    onChange={(e) => setTableSearchQuery(e.target.value)}
+                    className="pl-10 bg-background border-border text-foreground"
+                  />
+                </div>
+                <Select
+                  value={tableLocationFilter}
+                  onValueChange={setTableLocationFilter}
+                >
+                  <SelectTrigger className="w-48 bg-background border-border text-foreground">
+                    <SelectValue placeholder="Location" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border-border">
+                    <SelectItem value="all">All Locations</SelectItem>
+                    {tableLocations.map((location) => (
+                      <SelectItem key={location} value={location}>
+                        {location}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={tableStatusFilter}
+                  onValueChange={(value) =>
+                    setTableStatusFilter(value as "all" | "active" | "inactive")
+                  }
+                >
+                  <SelectTrigger className="w-40 bg-background border-border text-foreground">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border-border">
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader>
-              <CardTitle>Table Configuration</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Table Configuration</CardTitle>
+                <Dialog open={isNewTableOpen} onOpenChange={setIsNewTableOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="bg-primary hover:bg-primary/90">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Table
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-xl">
+                    <DialogHeader>
+                      <DialogTitle>Create Table</DialogTitle>
+                      <DialogDescription>
+                        Add a new table for this restaurant.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-2">
+                        <Label className="text-foreground">Restaurant</Label>
+                        <Input
+                          value={
+                            selectedRestaurantId
+                              ? currentRestaurantName
+                              : ""
+                          }
+                          placeholder="Select restaurant from filters"
+                          disabled
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="table-number">Table Number *</Label>
+                        <Input
+                          id="table-number"
+                          value={newTable.tableNumber}
+                          onChange={(e) =>
+                            setNewTable((prev) => ({
+                              ...prev,
+                              tableNumber: e.target.value,
+                            }))
+                          }
+                          placeholder="Table 1"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="table-name">Table Name</Label>
+                        <Input
+                          id="table-name"
+                          value={newTable.tableName}
+                          onChange={(e) =>
+                            setNewTable((prev) => ({
+                              ...prev,
+                              tableName: e.target.value,
+                            }))
+                          }
+                          placeholder="Window Side"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="table-capacity">Capacity *</Label>
+                        <Input
+                          id="table-capacity"
+                          type="number"
+                          min="1"
+                          value={newTable.capacity}
+                          onChange={(e) =>
+                            setNewTable((prev) => ({
+                              ...prev,
+                              capacity: parseInt(e.target.value || "0", 10),
+                            }))
+                          }
+                          placeholder="4"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="table-location">Location</Label>
+                        <Input
+                          id="table-location"
+                          value={newTable.location}
+                          onChange={(e) =>
+                            setNewTable((prev) => ({
+                              ...prev,
+                              location: e.target.value,
+                            }))
+                          }
+                          placeholder="Main Dining"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="table-type">Type</Label>
+                        <Select
+                          value={newTable.type}
+                          onValueChange={(value) =>
+                            setNewTable((prev) => ({ ...prev, type: value }))
+                          }
+                        >
+                          <SelectTrigger id="table-type">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="regular">Regular</SelectItem>
+                            <SelectItem value="vip">VIP</SelectItem>
+                            <SelectItem value="outdoor">Outdoor</SelectItem>
+                            <SelectItem value="private">Private</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-3 pt-6">
+                        <Switch
+                          checked={newTable.isActive}
+                          onCheckedChange={(checked) =>
+                            setNewTable((prev) => ({ ...prev, isActive: checked }))
+                          }
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          Active
+                        </span>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => setIsNewTableOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button onClick={handleCreateTable}>
+                        Create Table
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
               <CardDescription>
                 Manage table layout and availability
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {mockTables.map((table) => (
+                {filteredTables.map((table: any) => (
                   <div key={table.id} className="p-4 border rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <h3 className="font-semibold">{table.tableNumber}</h3>
@@ -774,8 +1189,10 @@ export default function TableBooking() {
                     </div>
                     <div className="space-y-1 text-sm text-muted-foreground">
                       <p>Capacity: {table.capacity} guests</p>
-                      <p>Location: {table.location}</p>
-                      <p className="text-green-600">Available</p>
+                      <p>Location: {table.location || "Unspecified"}</p>
+                      <p className={table.isActive ? "text-green-600" : "text-red-600"}>
+                        {table.isActive ? "Active" : "Inactive"}
+                      </p>
                     </div>
                     <div className="flex space-x-2 mt-3">
                       <Button variant="outline" size="sm">

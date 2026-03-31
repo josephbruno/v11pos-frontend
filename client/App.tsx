@@ -45,7 +45,7 @@ import { createRoot } from "react-dom/client";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { UserRole } from "./lib/navigation";
@@ -71,6 +71,7 @@ import SuperAdminSettings from "./pages/SuperAdminSettings";
 import TableBooking from "./pages/TableBooking";
 import CustomerBooking from "./pages/CustomerBooking";
 import ProductManagement from "./pages/ProductManagement";
+import ModifierOptionsManagement from "./pages/ModifierOptionsManagement";
 import ComboManagement from "./pages/ComboManagement";
 import TaxManagement from "./pages/TaxManagement";
 import CustomerManagement from "./pages/CustomerManagement";
@@ -86,6 +87,26 @@ import ForgotPassword from "./pages/ForgotPassword";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
+
+function getRoleBasePath(role?: string) {
+  const normalized = String(role || "").toLowerCase().trim();
+  return normalized === "super_admin" ? "/super-admin" : "/admin";
+}
+
+function RolePreservingRedirect({ suffix }: { suffix?: string }) {
+  const { user } = useAuth();
+  const location = useLocation();
+  const base = getRoleBasePath(user?.role);
+  const normalizedSuffix = suffix
+    ? suffix.startsWith("/")
+      ? suffix
+      : `/${suffix}`
+    : "";
+
+  return (
+    <Navigate to={`${base}${normalizedSuffix}${location.search}${location.hash}`} replace />
+  );
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -146,17 +167,18 @@ function LayoutWrapper({ children }: { children: React.ReactNode }) {
 
 function AppRoutes() {
   const { user } = useAuth();
+  const defaultAppPath = getRoleBasePath(user?.role);
 
   return (
     <AnimatePresence mode="wait">
       <Routes>
         <Route
           path="/login"
-          element={user ? <Navigate to="/" replace /> : <Login />}
+          element={user ? <Navigate to={defaultAppPath} replace /> : <Login />}
         />
         <Route
           path="/forgot-password"
-          element={user ? <Navigate to="/" replace /> : <ForgotPassword />}
+          element={user ? <Navigate to={defaultAppPath} replace /> : <ForgotPassword />}
         />
         {/* Public QR Menu Routes */}
         <Route path="/qr-menu/:tableToken" element={<QRMenuLanding />} />
@@ -168,10 +190,18 @@ function AppRoutes() {
           path="/"
           element={
             <ProtectedRoute>
+              <RolePreservingRedirect />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user"]}>
               <LayoutWrapper>
                 <Dashboard />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
@@ -190,6 +220,56 @@ function AppRoutes() {
             <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
                 <CategoryConfiguration />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/super-admin/products"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <ProductManagement />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/super-admin/modifier-options"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <ModifierOptionsManagement />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/super-admin/combos"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <ComboManagement />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/super-admin/tables"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <QRManagement />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/super-admin/users"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <UserManagement />
               </LayoutWrapper>
             </RoleProtectedRoute>
           }
@@ -274,30 +354,32 @@ function AppRoutes() {
             </RoleProtectedRoute>
           }
         />
+
+        {/* Admin scoped routes */}
         <Route
-          path="/order"
+          path="/admin/order"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user"]}>
               <LayoutWrapper>
                 <OrderPanel />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
-          path="/queue"
+          path="/admin/queue"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user"]}>
               <LayoutWrapper>
                 <OrderQueue />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
-          path="/analytics"
+          path="/admin/analytics"
           element={
-            <RoleProtectedRoute allowedRoles={["super_admin", "admin", "supervisor"]}>
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor"]}>
               <LayoutWrapper>
                 <Analytics />
               </LayoutWrapper>
@@ -305,9 +387,9 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/reports"
+          path="/admin/reports"
           element={
-            <RoleProtectedRoute allowedRoles={["super_admin", "admin", "supervisor"]}>
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor"]}>
               <LayoutWrapper>
                 <Reports />
               </LayoutWrapper>
@@ -315,9 +397,19 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/products"
+          path="/admin/categories"
           element={
-            <RoleProtectedRoute allowedRoles={["super_admin", "admin", "supervisor"]}>
+            <RoleProtectedRoute allowedRoles={["admin"]}>
+              <LayoutWrapper>
+                <CategoryConfiguration />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/products"
+          element={
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor"]}>
               <LayoutWrapper>
                 <ProductManagement />
               </LayoutWrapper>
@@ -325,9 +417,19 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/combos"
+          path="/admin/modifier-options"
           element={
-            <RoleProtectedRoute allowedRoles={["super_admin", "admin", "supervisor"]}>
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user"]}>
+              <LayoutWrapper>
+                <ModifierOptionsManagement />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/combos"
+          element={
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor"]}>
               <LayoutWrapper>
                 <ComboManagement />
               </LayoutWrapper>
@@ -335,9 +437,9 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/tax"
+          path="/admin/tax"
           element={
-            <RoleProtectedRoute allowedRoles={["super_admin", "admin"]}>
+            <RoleProtectedRoute allowedRoles={["admin"]}>
               <LayoutWrapper>
                 <TaxManagement />
               </LayoutWrapper>
@@ -345,9 +447,9 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/customers"
+          path="/admin/customers"
           element={
-            <RoleProtectedRoute allowedRoles={["super_admin", "admin", "supervisor"]}>
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor"]}>
               <LayoutWrapper>
                 <CustomerManagement />
               </LayoutWrapper>
@@ -355,9 +457,9 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/qr-management"
+          path="/admin/qr-management"
           element={
-            <RoleProtectedRoute allowedRoles={["super_admin", "admin", "supervisor"]}>
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor"]}>
               <LayoutWrapper>
                 <QRManagement />
               </LayoutWrapper>
@@ -365,19 +467,29 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/table-booking"
+          path="/admin/tables"
           element={
-            <ProtectedRoute>
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor"]}>
               <LayoutWrapper>
-                <TableBooking />
+                <QRManagement />
               </LayoutWrapper>
-            </ProtectedRoute>
+            </RoleProtectedRoute>
           }
         />
         <Route
-          path="/users"
+          path="/admin/table-booking"
           element={
-            <RoleProtectedRoute allowedRoles={["super_admin", "admin"]}>
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user"]}>
+              <LayoutWrapper>
+                <TableBooking />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/users"
+          element={
+            <RoleProtectedRoute allowedRoles={["admin"]}>
               <LayoutWrapper>
                 <UserManagement />
               </LayoutWrapper>
@@ -385,13 +497,191 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/settings"
+          path="/admin/settings"
           element={
-            <RoleProtectedRoute allowedRoles={["super_admin", "admin"]}>
+            <RoleProtectedRoute allowedRoles={["admin"]}>
               <LayoutWrapper>
                 <Settings />
               </LayoutWrapper>
             </RoleProtectedRoute>
+          }
+        />
+
+        {/* Extra super-admin scoped routes for common pages */}
+        <Route
+          path="/super-admin/order"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <OrderPanel />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/super-admin/queue"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <OrderQueue />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/super-admin/reports"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <Reports />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/super-admin/tax"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <TaxManagement />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/super-admin/customers"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <CustomerManagement />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/super-admin/qr-management"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <QRManagement />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/super-admin/table-booking"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <TableBooking />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+
+        {/* Legacy (unscoped) routes now redirect by role */}
+        <Route
+          path="/order"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/order" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/queue"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/queue" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/analytics"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/analytics" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/reports" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/products"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/products" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/combos"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/combos" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tax"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/tax" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/customers"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/customers" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/qr-management"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/qr-management" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tables"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/tables" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/table-booking"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/table-booking" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/users"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/users" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/settings" />
+            </ProtectedRoute>
           }
         />
         <Route path="*" element={<NotFound />} />

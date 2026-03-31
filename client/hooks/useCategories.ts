@@ -102,15 +102,7 @@ export function useUpdateCategory() {
       data
     }: {
       id: string;
-      data: {
-        restaurant_id?: string;
-        name?: string;
-        slug?: string;
-        description?: string;
-        active?: boolean;
-        sort_order?: number;
-        image?: File | null;
-      }
+      data: Partial<Category> & { image?: File | null };
     }) => updateCategory(id, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["category", variables.id] });

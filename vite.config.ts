@@ -14,35 +14,24 @@ export default defineConfig(({ mode }) => ({
     chunkSizeWarningLimit: 1600,
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Group all React-related libraries together to avoid context issues
-          'react-vendor': [
-            'react', 
-            'react-dom', 
-            'react/jsx-runtime',
-            'react-router-dom'
-          ],
-          // UI components
-          'ui-vendor': [
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-select',
-            '@radix-ui/react-tabs',
-            '@radix-ui/react-switch',
-            '@radix-ui/react-label',
-            '@radix-ui/react-alert-dialog',
-            '@radix-ui/react-toast',
-            '@radix-ui/react-slot',
-            '@radix-ui/react-checkbox',
-            '@radix-ui/react-separator',
-            '@radix-ui/react-popover',
-          ],
-          // State management
-          'query-vendor': ['@tanstack/react-query'],
-          // Animation
-          'animation-vendor': ['framer-motion'],
-          // Charts
-          'charts': ['recharts'],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
+              return 'react-vendor';
+            }
+            if (id.includes('@radix-ui')) {
+              return 'ui-vendor';
+            }
+            if (id.includes('@tanstack/react-query')) {
+              return 'query-vendor';
+            }
+            if (id.includes('framer-motion')) {
+              return 'animation-vendor';
+            }
+            if (id.includes('recharts')) {
+              return 'charts';
+            }
+          }
         },
       },
     },

@@ -41,6 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/contexts/ToastContext";
+import { getActiveNavHref } from "@/lib/navActive";
 
 interface SuperAdminLayoutProps {
   children: ReactNode;
@@ -93,9 +94,13 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
 
   const closeSidebar = () => setSidebarOpen(false);
 
+  const visibleNavItems = navigationConfig.filter((item) =>
+    item.roles.includes("super_admin"),
+  );
+  const activeNavHref = getActiveNavHref(visibleNavItems, location);
+
   // Group navigation by category
-  const groupedNavigation = navigationConfig
-    .filter((item) => item.roles.includes("super_admin"))
+  const groupedNavigation = visibleNavItems
     .reduce(
       (acc, item) => {
         const category = item.category || "other";
@@ -184,10 +189,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
                 </h3>
                 <div className="space-y-1">
                   {items.map((item) => {
-                    const currentPath = `${location.pathname}${location.search}`;
-                    const isActive = item.href.includes("?")
-                      ? currentPath === item.href
-                      : location.pathname === item.href;
+                    const isActive = item.href === activeNavHref;
                     return (
                       <Link
                         key={item.name}

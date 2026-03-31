@@ -1,19 +1,19 @@
 ﻿import { useState, useEffect, useRef } from "react";
-import {
-  Plus,
-  Search,
-  Filter,
-  Edit,
-  Trash2,
-  Package,
-  DollarSign,
-  AlertTriangle,
-  Star,
-  MoreVertical,
-  ImageIcon,
-  Save,
-  X,
-} from "lucide-react";
+	import {
+	  Plus,
+	  Search,
+	  CheckCircle2,
+	  Edit,
+	  Trash2,
+	  Package,
+	  DollarSign,
+	  AlertTriangle,
+	  Star,
+	  ImageIcon,
+	  Save,
+	  X,
+	  XCircle,
+	} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,9 +77,24 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { getImageCropConfig, validateImageFile } from "@/lib/imageCropConfig";
 import { useAuth } from "@/contexts/AuthContext";
-import { getMyRestaurants } from "@/lib/apiServices";
+import { getMyRestaurants, getProducts } from "@/lib/apiServices";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
+const normalizeDoubleProtocolUrl = (url: string) =>
+  url
+    .replace(/^https?:\/\/https:\/\//i, "https://")
+    .replace(/^https?:\/\/http:\/\//i, "http://");
+
+const resolveProductImageSrc = (image?: string) => {
+  if (!image) return "";
+  const cleaned = normalizeDoubleProtocolUrl(image);
+  if (/^https?:\/\//i.test(cleaned)) return cleaned;
+
+  const base = String(BACKEND_URL || "").replace(/\/$/, "");
+  const path = cleaned.startsWith("/") ? cleaned : `/${cleaned}`;
+  return `${base}${path}`;
+};
 
 interface Product {
   id: string;
@@ -87,19 +102,54 @@ interface Product {
   name: string;
   slug: string;
   description: string;
+  short_description?: string | null;
   price: number;
   category: string;
+  subcategory_id?: string | null;
   stock: number;
   minStock: number;
+  min_stock?: number;
+  track_inventory?: boolean;
+  allow_backorder?: boolean;
+  stock_unit?: string | null;
+  reorder_point?: number | null;
+  reorder_quantity?: number | null;
   available: boolean;
   is_published: boolean;
   featured: boolean;
   image?: string;
+  thumbnail?: string | null;
+  images?: any;
+  video_url?: string | null;
   cost: number;
+  compare_at_price?: number | null;
+  min_price?: number | null;
+  max_price?: number | null;
+  price_varies?: boolean;
+  tax_rate?: number | null;
+  tax_inclusive?: boolean;
   margin: number;
   tags: string[];
   modifiers: string[];
   sku?: string;
+  barcode?: string | null;
+  department?: string | null;
+  kitchen_station?: string | null;
+  preparation_time?: number | null;
+  is_veg?: boolean;
+  calories?: number | null;
+  spice_level?: string | null;
+  ingredients?: string | null;
+  available_for_delivery?: boolean;
+  available_for_takeaway?: boolean;
+  available_for_dine_in?: boolean;
+  available_from_time?: string | null;
+  available_to_time?: string | null;
+  has_variants?: boolean;
+  variant_options?: any;
+  requires_customization?: boolean;
+  badge_text?: string | null;
+  badge_color?: string | null;
 }
 
 interface Category {
@@ -121,6 +171,8 @@ interface Modifier {
 interface RestaurantOption {
   id: string;
   name: string;
+  sortKey?: number;
+  hasDate?: boolean;
 }
 
 function formatINR(amount: number, maximumFractionDigits = 0) {
@@ -133,8 +185,9 @@ function formatINR(amount: number, maximumFractionDigits = 0) {
 
 type ProductFormProps = {
   product?: Product;
-  onSave: (product: Partial<Product>) => void;
+  onSave: (product: Record<string, any>) => void;
   onCancel: () => void;
+  existingProducts?: Product[];
   imagePreview: string;
   setImagePreview: (preview: string) => void;
   imageFile: File | null;
@@ -149,6 +202,7 @@ function ProductForm({
   product,
   onSave,
   onCancel,
+  existingProducts,
   imagePreview,
   setImagePreview,
   imageFile,
@@ -157,11 +211,26 @@ function ProductForm({
   defaultRestaurantId,
   restaurantOptions,
   userBranchId,
-}: ProductFormProps) {
-  const isEditMode = !!product;
-  const imageInputRef = useRef<HTMLInputElement>(null);
+	}: ProductFormProps) {
+	  const isEditMode = !!product;
+	  const imageInputRef = useRef<HTMLInputElement>(null);
+	  const thumbnailInputRef = useRef<HTMLInputElement>(null);
+	  const videoInputRef = useRef<HTMLInputElement>(null);
+	  const getRestaurantName = (restaurantId: string) =>
+	    restaurantOptions.find((r) => String(r.id) === String(restaurantId))?.name || "";
   const sanitizeProductName = (value: string) =>
-    value.replace(/[^A-Za-z\s]/g, "").replace(/\s{2,}/g, " ");
+    value
+      .replace(/[^A-Za-z\s]/g, "")
+      .replace(/\s+/g, " ")
+      .replace(/^\s+/, "")
+      .slice(0, 200);
+  const buildSlug = (name: string) =>
+    name
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-");
 
   const [formData, setFormData] = useState({
     restaurant_id: product?.restaurant_id || (isSuperAdmin ? "" : (defaultRestaurantId || "")),
@@ -169,10 +238,67 @@ function ProductForm({
     price: product?.price || 0,
     category: product?.category || "",
     image: product?.image || "",
+    subcategory_id: product?.subcategory_id || "",
+    sku: product?.sku || "",
+    barcode: product?.barcode || "",
+    cost: product?.cost || 0,
+    compare_at_price: product?.compare_at_price ?? "",
+    min_price: product?.min_price ?? "",
+    max_price: product?.max_price ?? "",
+    price_varies: product?.price_varies ?? false,
+    tax_rate: product?.tax_rate ?? "",
+    tax_inclusive: product?.tax_inclusive ?? false,
+    stock: product?.stock ?? 0,
+    min_stock: (product as any)?.min_stock ?? product?.minStock ?? 5,
+    track_inventory: product?.track_inventory ?? true,
+    allow_backorder: product?.allow_backorder ?? false,
+    stock_unit: product?.stock_unit ?? "",
+    reorder_point: product?.reorder_point ?? "",
+    reorder_quantity: product?.reorder_quantity ?? "",
+    description: product?.description || "",
+    short_description: product?.short_description ?? "",
+    thumbnail: product?.thumbnail ?? "",
+    images: product?.images ? JSON.stringify(product.images, null, 2) : "",
+    video_url: product?.video_url ?? "",
+    department: product?.department ?? "kitchen",
+    kitchen_station: product?.kitchen_station ?? "",
+    preparation_time: product?.preparation_time ?? 15,
+    is_veg: product?.is_veg ?? false,
+    calories: product?.calories ?? "",
+    spice_level: product?.spice_level ?? "",
+    ingredients: product?.ingredients ?? "",
+    available: product?.available ?? true,
+    is_published: product?.is_published ?? true,
+    featured: product?.featured ?? false,
+    available_for_delivery: product?.available_for_delivery ?? true,
+    available_for_takeaway: product?.available_for_takeaway ?? true,
+    available_for_dine_in: product?.available_for_dine_in ?? true,
+    available_from_time: product?.available_from_time ?? "",
+    available_to_time: product?.available_to_time ?? "",
+    has_variants: product?.has_variants ?? false,
+    variant_options: product?.variant_options ? JSON.stringify(product.variant_options, null, 2) : "",
+    requires_customization: product?.requires_customization ?? false,
+    badge_text: product?.badge_text ?? "",
+    badge_color: product?.badge_color ?? "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPriceFocused, setIsPriceFocused] = useState(false);
+  const [isTaxRateFocused, setIsTaxRateFocused] = useState(false);
+  const [isPreparationTimeFocused, setIsPreparationTimeFocused] = useState(false);
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+  const [thumbnailPreview, setThumbnailPreview] = useState<string>(
+    product?.thumbnail ? resolveProductImageSrc(product.thumbnail) : "",
+  );
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoPreview, setVideoPreview] = useState<string>(
+    (() => {
+      const url = String(product?.video_url || "").trim();
+      if (!url) return "";
+      const resolved = resolveProductImageSrc(url);
+      return /\.(mp4|webm|ogg)(\?.*)?$/i.test(resolved) ? resolved : "";
+    })(),
+  );
 
   useEffect(() => {
     if (!product && !isSuperAdmin) {
@@ -203,12 +329,30 @@ function ProductForm({
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.name.trim()) {
+    const trimmedName = formData.name.trim();
+    if (!trimmedName) {
       newErrors.name = "Product name is required";
-    } else if (formData.name.length < 3) {
+    } else if (trimmedName.length < 3) {
       newErrors.name = "Product name must be at least 3 characters";
-    } else if (!/^[A-Za-z\s]+$/.test(formData.name.trim())) {
+    } else if (trimmedName.length > 200) {
+      newErrors.name = "Product name must be 200 characters or less";
+    } else if (!/^[A-Za-z][A-Za-z\s]*$/.test(trimmedName)) {
+      newErrors.name = "Product name must start with a letter and contain letters/spaces only";
+    } else if (!/^[A-Za-z\s]+$/.test(trimmedName)) {
       newErrors.name = "Product name can contain letters and spaces only";
+    }
+    if (!newErrors.name && formData.restaurant_id) {
+      const normalizedName = trimmedName.toLowerCase();
+      const currentId = product?.id;
+      const duplicateExists = (existingProducts || []).some((p) => {
+        if (!p?.restaurant_id) return false;
+        if (p.restaurant_id !== formData.restaurant_id) return false;
+        if (currentId && p.id === currentId) return false;
+        return String(p.name || "").trim().toLowerCase() === normalizedName;
+      });
+      if (duplicateExists) {
+        newErrors.name = "Product name must be unique for this restaurant";
+      }
     }
 
     if (!isEditMode) {
@@ -227,6 +371,16 @@ function ProductForm({
 
     if (!imagePreview && !imageFile) {
       newErrors.image = "Product image is required";
+    }
+
+    if (isEditMode) {
+      if (formData.images && typeof formData.images === "string") {
+        try {
+          JSON.parse(formData.images);
+        } catch {
+          newErrors.images = "Images must be valid JSON";
+        }
+      }
     }
 
     setErrors(newErrors);
@@ -260,6 +414,33 @@ function ProductForm({
     }
   };
 
+  const handleThumbnailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validation = validateImageFile(file, "product");
+    if (!validation.valid) {
+      setErrors((prev) => ({ ...prev, thumbnail: validation.error || "Invalid thumbnail file" }));
+      return;
+    }
+
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.thumbnail;
+      return next;
+    });
+    setThumbnailFile(file);
+    setThumbnailPreview(URL.createObjectURL(file));
+  };
+
+  const handleVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setVideoFile(file);
+    setVideoPreview(URL.createObjectURL(file));
+  };
+
   const handleSubmit = async () => {
     if (!validateForm()) {
       return;
@@ -268,7 +449,44 @@ function ProductForm({
     setIsSubmitting(true);
 
     try {
-      onSave(formData);
+      const trimmedName = formData.name.trim();
+      if (trimmedName && formData.restaurant_id) {
+        try {
+          const nameLookupResponse = await getProducts(formData.restaurant_id, {
+            search: trimmedName,
+            page_size: 50,
+          });
+          const payload = nameLookupResponse as any;
+          const source =
+            payload?.data?.data ??
+            payload?.data?.items ??
+            payload?.data?.products ??
+            payload?.data ??
+            payload;
+          const matches = Array.isArray(source) ? source : [];
+          const normalized = trimmedName.toLowerCase();
+          const currentId = product?.id;
+          const duplicateExists = matches.some((p: any) => {
+            if (currentId && String(p?.id) === String(currentId)) return false;
+            return String(p?.name || "").trim().toLowerCase() === normalized;
+          });
+          if (duplicateExists) {
+            setErrors((prev) => ({
+              ...prev,
+              name: "Product name must be unique for this restaurant",
+            }));
+            return;
+          }
+        } catch {
+          // If lookup fails, fall back to server-side validation on submit.
+        }
+      }
+
+      onSave({
+        ...formData,
+        thumbnail_file: thumbnailFile,
+        video_file: videoFile,
+      });
     } catch (error) {
       console.error("Error submitting form:", error);
     } finally {
@@ -281,128 +499,282 @@ function ProductForm({
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="restaurant" className="text-pos-text">
-            Restaurant
-          </Label>
-          {isSuperAdmin ? (
-            <Select
-              value={formData.restaurant_id || "none"}
-              disabled={isEditMode}
-              onValueChange={(value) => {
-                const nextRestaurantId = value === "none" ? "" : value;
-                setFormData({ ...formData, restaurant_id: nextRestaurantId, category: "" });
-                setErrors((prev) => {
-                  const next = { ...prev };
-                  if (!nextRestaurantId) next.restaurant_id = "Restaurant is required";
-                  else delete next.restaurant_id;
-                  delete next.category;
-                  return next;
-                });
-              }}
-            >
-              <SelectTrigger className={`bg-pos-surface border-2 border-pos-secondary text-pos-text ${errors.restaurant_id ? "border-destructive" : ""}`}>
-                <SelectValue placeholder="Select a restaurant" />
-              </SelectTrigger>
-              <SelectContent className="bg-pos-surface border-pos-secondary">
-                <SelectItem value="none">Select Restaurant</SelectItem>
-                {restaurantOptions.map((restaurant) => (
-                  <SelectItem key={restaurant.id} value={restaurant.id}>
-                    {restaurant.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Input
-              id="restaurant"
-              value={userBranchId || "Current Restaurant"}
-              disabled
-              className="bg-pos-secondary border-2 border-pos-secondary text-pos-text"
-            />
-          )}
-          {errors.restaurant_id && <p className="text-xs text-destructive">{errors.restaurant_id}</p>}
-        </div>
+	        {!isEditMode ? (
+	          <>
+	            {isSuperAdmin ? (
+	              <div className="space-y-2">
+	                <Label htmlFor="restaurant" className="text-pos-text">
+	                  Restaurant
+	                </Label>
+	                <Select
+	                  value={formData.restaurant_id || "none"}
+	                  disabled={isEditMode}
+	                  onValueChange={(value) => {
+	                    const nextRestaurantId = value === "none" ? "" : value;
+	                    setFormData({ ...formData, restaurant_id: nextRestaurantId, category: "" });
+	                    setErrors((prev) => {
+	                      const next = { ...prev };
+	                      if (!nextRestaurantId) next.restaurant_id = "Restaurant is required";
+	                      else delete next.restaurant_id;
+	                      delete next.category;
+	                      return next;
+	                    });
+	                  }}
+	                >
+	                  <SelectTrigger
+	                    className={`bg-pos-surface border-2 border-pos-secondary text-pos-text ${errors.restaurant_id ? "border-destructive" : ""}`}
+	                  >
+	                    <SelectValue placeholder="Select a restaurant" />
+	                  </SelectTrigger>
+	                  <SelectContent className="bg-pos-surface border-pos-secondary">
+	                    <SelectItem value="none">Select Restaurant</SelectItem>
+	                    {restaurantOptions.map((restaurant) => (
+	                      <SelectItem key={restaurant.id} value={restaurant.id}>
+	                        {restaurant.name}
+	                      </SelectItem>
+	                    ))}
+	                  </SelectContent>
+	                </Select>
+	                {errors.restaurant_id && (
+	                  <p className="text-xs text-destructive">{errors.restaurant_id}</p>
+	                )}
+	              </div>
+	            ) : null}
+	
+	            <div className="space-y-2">
+	              <Label htmlFor="category" className="text-pos-text">
+	                Category
+	              </Label>
+              <Select
+                value={formData.category}
+                onValueChange={(value) => {
+                  setFormData({ ...formData, category: value });
+                  if (errors.category) setErrors({ ...errors, category: "" });
+                }}
+                disabled={isEditMode || !formData.restaurant_id}
+              >
+                <SelectTrigger
+	                  className={`bg-pos-surface border-2 border-pos-secondary text-pos-text ${errors.category ? "border-destructive" : ""}`}
+	                >
+	                  <SelectValue placeholder={formData.restaurant_id ? "Select a category" : "Select restaurant first"} />
+	                </SelectTrigger>
+                <SelectContent className="bg-pos-surface border-pos-secondary">
+                  {formCategories.map((cat: any) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.category && <p className="text-xs text-destructive">{errors.category}</p>}
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="name" className="text-foreground">
-            Product Name
-          </Label>
-          <Input
-            id="name"
-            value={formData.name}
-            onChange={(e) => {
-              setFormData({ ...formData, name: sanitizeProductName(e.target.value) });
-              if (errors.name) setErrors({ ...errors, name: "" });
-            }}
-            className={`bg-background border-2 border-border text-foreground ${errors.name ? "border-destructive" : ""
-              }`}
-            placeholder="Enter product name"
-          />
-          {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="name" className="text-foreground">
+                Product Name
+              </Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => {
+                  setFormData({ ...formData, name: sanitizeProductName(e.target.value) });
+                  if (errors.name) setErrors({ ...errors, name: "" });
+                }}
+                className={`bg-background border-2 border-border text-foreground ${errors.name ? "border-destructive" : ""}`}
+                placeholder="Enter product name"
+              />
+              {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="category" className="text-pos-text">
-            Category
-          </Label>
-          <Select
-            value={formData.category}
-            onValueChange={(value) => {
-              setFormData({ ...formData, category: value });
-              if (errors.category) setErrors({ ...errors, category: "" });
-            }}
-            disabled={isEditMode || !formData.restaurant_id}
-          >
-            <SelectTrigger className={`bg-pos-surface border-2 border-pos-secondary text-pos-text ${errors.category ? "border-destructive" : ""
-              }`}>
-              <SelectValue placeholder={formData.restaurant_id ? "Select a category" : "Select restaurant first"} />
-            </SelectTrigger>
-            <SelectContent className="bg-pos-surface border-pos-secondary">
-              {formCategories.map((cat: any) => (
-                <SelectItem key={cat.id} value={cat.id}>
-                  {cat.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {errors.category && <p className="text-xs text-destructive">{errors.category}</p>}
-        </div>
+	            <div className="space-y-2">
+	              <Label htmlFor="price" className="text-pos-text">
+	                Price
+	              </Label>
+	              <Input
+                id="price"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={displayedPriceValue}
+                onFocus={() => setIsPriceFocused(true)}
+                onBlur={(e) => {
+                  setIsPriceFocused(false);
+                  if (!e.target.value) {
+                    setFormData((prev) => ({ ...prev, price: 0 }));
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.ctrlKey || e.metaKey || e.altKey) return;
+                  const allowed = [
+                    "Backspace",
+                    "Delete",
+                    "Tab",
+                    "Enter",
+                    "Escape",
+                    "ArrowLeft",
+                    "ArrowRight",
+                    "ArrowUp",
+                    "ArrowDown",
+                    "Home",
+                    "End",
+                  ];
+                  if (allowed.includes(e.key)) return;
+                  if (/^\d$/.test(e.key)) return;
+                  e.preventDefault();
+                }}
+                onChange={(e) => {
+                  const digitsOnly = String(e.target.value || "").replace(/\D/g, "");
+                  const nextPrice = digitsOnly ? parseInt(digitsOnly, 10) || 0 : 0;
+                  setFormData({
+                    ...formData,
+                    price: nextPrice,
+                  });
+                  if (errors.price) setErrors({ ...errors, price: "" });
+                }}
+	                className={`bg-pos-surface border-2 border-pos-secondary text-pos-text ${errors.price ? "border-destructive" : ""}`}
+	                placeholder="Enter price"
+	              />
+              {errors.price && <p className="text-xs text-destructive">{errors.price}</p>}
+            </div>
+          </>
+	        ) : (
+	          <>
+	            {isSuperAdmin ? (
+	              <div className="space-y-2">
+	                <Label htmlFor="restaurant" className="text-pos-text">
+	                  Restaurant
+	                </Label>
+	                <Select
+	                  value={formData.restaurant_id || "none"}
+	                  disabled={isEditMode}
+	                  onValueChange={(value) => {
+	                    const nextRestaurantId = value === "none" ? "" : value;
+	                    setFormData({ ...formData, restaurant_id: nextRestaurantId, category: "" });
+	                    setErrors((prev) => {
+	                      const next = { ...prev };
+	                      if (!nextRestaurantId) next.restaurant_id = "Restaurant is required";
+	                      else delete next.restaurant_id;
+	                      delete next.category;
+	                      return next;
+	                    });
+	                  }}
+	                >
+	                  <SelectTrigger
+		                    className={`bg-pos-surface border-2 border-pos-secondary text-pos-text ${errors.restaurant_id ? "border-destructive" : ""}`}
+		                  >
+		                    <SelectValue placeholder="Select a restaurant" />
+		                  </SelectTrigger>
+	                  <SelectContent className="bg-pos-surface border-pos-secondary">
+	                    <SelectItem value="none">Select Restaurant</SelectItem>
+	                    {restaurantOptions.map((restaurant) => (
+	                      <SelectItem key={restaurant.id} value={restaurant.id}>
+	                        {restaurant.name}
+	                      </SelectItem>
+	                    ))}
+	                  </SelectContent>
+	                </Select>
+	                {errors.restaurant_id && (
+	                  <p className="text-xs text-destructive">{errors.restaurant_id}</p>
+	                )}
+	              </div>
+	            ) : null}
+	
+	            <div className="space-y-2">
+	              <Label htmlFor="name" className="text-foreground">
+	                Product Name
+	              </Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => {
+                  setFormData({ ...formData, name: sanitizeProductName(e.target.value) });
+                  if (errors.name) setErrors({ ...errors, name: "" });
+                }}
+	                  className={`bg-background border-2 border-border text-foreground ${errors.name ? "border-destructive" : ""}`}
+	                  placeholder="Enter product name"
+	                />
+              {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="price" className="text-pos-text">
-            Price
-          </Label>
-          <Input
-            id="price"
-            type="number"
-            step="1"
-            min="0"
-            value={displayedPriceValue}
-            onFocus={() => setIsPriceFocused(true)}
-            onBlur={(e) => {
-              setIsPriceFocused(false);
-              if (!e.target.value) {
-                setFormData((prev) => ({ ...prev, price: 0 }));
-              }
-            }}
-            onChange={(e) => {
-              const nextPrice = e.target.value ? parseInt(e.target.value, 10) || 0 : 0;
-              setFormData({
-                ...formData,
-                price: nextPrice,
-              });
-              if (errors.price) setErrors({ ...errors, price: "" });
-            }}
-            className={`bg-pos-surface border-2 border-pos-secondary text-pos-text ${errors.price ? "border-destructive" : ""
-              }`}
-            placeholder="Enter price"
-          />
-          {errors.price && <p className="text-xs text-destructive">{errors.price}</p>}
-        </div>
-      </div>
+            <div className="space-y-2">
+              <Label htmlFor="category" className="text-pos-text">
+                Category
+              </Label>
+              <Select
+                value={formData.category}
+                onValueChange={(value) => {
+                  setFormData({ ...formData, category: value });
+                  if (errors.category) setErrors({ ...errors, category: "" });
+                }}
+                disabled={isEditMode || !formData.restaurant_id}
+              >
+                <SelectTrigger
+	                  className={`bg-pos-surface border-2 border-pos-secondary text-pos-text ${errors.category ? "border-destructive" : ""}`}
+	                >
+	                  <SelectValue placeholder={formData.restaurant_id ? "Select a category" : "Select restaurant first"} />
+	                </SelectTrigger>
+                <SelectContent className="bg-pos-surface border-pos-secondary">
+                  {formCategories.map((cat: any) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.category && <p className="text-xs text-destructive">{errors.category}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="price" className="text-pos-text">
+                Price
+              </Label>
+              <Input
+                id="price"
+                type="number"
+                step="1"
+                min="0"
+                value={displayedPriceValue}
+                onFocus={() => setIsPriceFocused(true)}
+                onBlur={(e) => {
+                  setIsPriceFocused(false);
+                  if (!e.target.value) {
+                    setFormData((prev) => ({ ...prev, price: 0 }));
+                  }
+                }}
+                onChange={(e) => {
+                  const nextPrice = e.target.value ? parseInt(e.target.value, 10) || 0 : 0;
+                  setFormData({
+                    ...formData,
+                    price: nextPrice,
+                  });
+                  if (errors.price) setErrors({ ...errors, price: "" });
+                }}
+	                className={`bg-pos-surface border-2 border-pos-secondary text-pos-text ${errors.price ? "border-destructive" : ""}`}
+	                placeholder="Enter price"
+	              />
+	              {errors.price && <p className="text-xs text-destructive">{errors.price}</p>}
+	            </div>
+
+	            {!isSuperAdmin && (
+	              <div className="space-y-2">
+	                <Label htmlFor="barcode" className="text-pos-text">
+	                  Barcode
+	                </Label>
+	                <Input
+	                  id="barcode"
+	                  value={formData.barcode}
+	                  onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+	                  className="bg-pos-surface border-2 border-pos-secondary text-pos-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-0 focus-visible:border-primary"
+	                  placeholder="Optional"
+	                />
+	              </div>
+	            )}
+	          </>
+	        )}
+	      </div>
 
       {/* Image Upload Section */}
+      {!isEditMode && (
       <div className="space-y-2">
         <Label htmlFor="image" className="text-foreground">
           Product Image
@@ -442,11 +814,410 @@ function ProductForm({
             <p className="text-xs text-muted-foreground">
               Upload a product image (max 2MB, JPG, PNG, GIF). Image will be cropped to {cropWidth}x{cropHeight}px.
             </p>
-            {imagePreview && <p className="text-xs text-green-600">âœ“ Image ready for upload</p>}
+            {imagePreview && <p className="text-xs text-green-600">✓ Image ready for upload</p>}
             {errors.image && <p className="text-xs text-destructive">{errors.image}</p>}
           </div>
         </div>
       </div>
+      )}
+
+	      {isEditMode && (
+	        <div className="space-y-6">
+	          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+	            {isSuperAdmin && (
+	              <div className="space-y-2">
+	                <Label htmlFor="barcode" className="text-pos-text">
+	                  Barcode
+	                </Label>
+	                <Input
+	                  id="barcode"
+	                  value={formData.barcode}
+	                  onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+	                  className="bg-pos-surface border-2 border-pos-secondary text-pos-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-0 focus-visible:border-primary"
+	                  placeholder="Optional"
+	                />
+	              </div>
+	            )}
+	
+	            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+	              <div className="flex items-center justify-between gap-2 border-2 border-pos-secondary rounded-md px-3 h-11 bg-pos-surface">
+	                <Label htmlFor="tax_inclusive" className="text-pos-text">
+                  Tax Inclusive
+                </Label>
+                <Switch
+                  id="tax_inclusive"
+                  checked={!!formData.tax_inclusive}
+                  onCheckedChange={(checked) => setFormData({ ...formData, tax_inclusive: checked })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-2 border-2 border-pos-secondary rounded-md px-3 h-11 bg-pos-surface">
+                <Label htmlFor="tax_rate" className="text-pos-text">
+                  Tax Rate (%)
+                </Label>
+                <Input
+                  id="tax_rate"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={
+                    isTaxRateFocused && Number(formData.tax_rate) === 0
+                      ? ""
+                      : (formData.tax_rate as any)
+                  }
+                  onChange={(e) => setFormData({ ...formData, tax_rate: e.target.value })}
+                  onFocus={() => setIsTaxRateFocused(true)}
+                  onBlur={() => setIsTaxRateFocused(false)}
+                  disabled={!formData.tax_inclusive}
+                  className="h-9 w-28 border-0 bg-transparent pl-0 pr-7 py-0 text-right text-pos-text focus-visible:ring-0 focus-visible:ring-offset-0"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="description" className="text-pos-text">
+                Description
+              </Label>
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+	                className="bg-pos-surface border-2 border-pos-secondary text-pos-text"
+	                rows={4}
+	                placeholder="Optional"
+	              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="short_description" className="text-pos-text">
+                Short Description
+              </Label>
+              <Textarea
+                id="short_description"
+                value={formData.short_description as any}
+                onChange={(e) => setFormData({ ...formData, short_description: e.target.value })}
+	                className="bg-pos-surface border-2 border-pos-secondary text-pos-text"
+	                rows={4}
+	                placeholder="Optional"
+	              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="thumbnail" className="text-pos-text">
+                Thumbnail
+              </Label>
+              <div className="flex items-start gap-4">
+                <div className="w-24 h-24 border-2 border-dashed border-pos-secondary rounded-md flex items-center justify-center overflow-hidden bg-muted">
+                  {thumbnailPreview ? (
+                    <img src={thumbnailPreview} alt="Thumbnail preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <ImageIcon className="h-10 w-10 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="flex-1 space-y-2">
+                  <input
+                    ref={thumbnailInputRef}
+                    id="thumbnail"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleThumbnailChange}
+                    className="hidden"
+                  />
+                  <div className="flex items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-2 border-pos-secondary"
+                      onClick={() => thumbnailInputRef.current?.click()}
+                    >
+                      Select Thumbnail
+                    </Button>
+                    <span className="text-sm text-muted-foreground truncate max-w-[240px]">
+                      {thumbnailFile?.name || "No file selected"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Max 2MB (JPG/PNG/GIF).</p>
+                  {errors.thumbnail && <p className="text-xs text-destructive">{errors.thumbnail}</p>}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="video_url" className="text-pos-text">
+                Video
+              </Label>
+              <div className="space-y-2">
+                <input
+                  ref={videoInputRef}
+                  id="video_url"
+                  type="file"
+                  accept="video/*"
+                  onChange={handleVideoChange}
+                  className="hidden"
+                />
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-2 border-pos-secondary"
+                    onClick={() => videoInputRef.current?.click()}
+                  >
+                    Select Video
+                  </Button>
+                  <span className="text-sm text-muted-foreground truncate max-w-[240px]">
+                    {videoFile?.name || (formData.video_url ? "Existing video" : "No file selected")}
+                  </span>
+                </div>
+                {videoPreview && (
+                  <video
+                    src={videoPreview}
+                    controls
+                    className="w-full max-w-[360px] rounded-md border border-pos-secondary"
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="images" className="text-pos-text">
+                Images (JSON)
+              </Label>
+              <Textarea
+                id="images"
+                value={formData.images as any}
+                onChange={(e) => setFormData({ ...formData, images: e.target.value })}
+	                className={`bg-pos-surface border-2 border-pos-secondary text-pos-text ${errors.images ? "border-destructive" : ""}`}
+	                rows={4}
+	                placeholder='Optional. Example: {"gallery": ["url1", "url2"]}'
+	              />
+              {errors.images && <p className="text-xs text-destructive">{errors.images}</p>}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex items-center justify-between gap-2 border-2 border-pos-secondary rounded-md px-3 h-11 bg-pos-surface">
+              <Label htmlFor="preparation_time" className="text-pos-text">
+                Preparation Time (min)
+              </Label>
+              <Input
+                id="preparation_time"
+                type="number"
+                step="1"
+                min="0"
+                value={
+                  isPreparationTimeFocused && formData.preparation_time === 0
+                    ? ""
+                    : (formData.preparation_time as any)
+                }
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    preparation_time: e.target.value === "" ? 0 : (parseInt(e.target.value || "0", 10) || 0),
+                  })
+                }
+                onFocus={() => setIsPreparationTimeFocused(true)}
+                onBlur={() => setIsPreparationTimeFocused(false)}
+                className="h-9 w-28 border-0 bg-transparent pl-0 pr-7 py-0 text-right text-pos-text focus-visible:ring-0 focus-visible:ring-offset-0"
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-2 border-pos-secondary rounded-md px-3 h-11 bg-pos-surface">
+              <Label htmlFor="is_veg" className="text-pos-text">
+                Is Veg
+              </Label>
+              <Switch
+                id="is_veg"
+                checked={!!formData.is_veg}
+                onCheckedChange={(checked) => setFormData({ ...formData, is_veg: checked })}
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="ingredients" className="text-pos-text">
+                Ingredients
+              </Label>
+              <Textarea
+                id="ingredients"
+                value={formData.ingredients as any}
+                onChange={(e) => setFormData({ ...formData, ingredients: e.target.value })}
+	                className="bg-pos-surface border-2 border-pos-secondary text-pos-text"
+	                rows={3}
+	                placeholder="Optional"
+	              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex items-center justify-between gap-2 border-2 border-pos-secondary rounded-md px-3 h-11 bg-pos-surface">
+              <Label htmlFor="available" className="text-pos-text">
+                Available
+              </Label>
+              <Switch
+                id="available"
+                checked={!!formData.available}
+                onCheckedChange={(checked) => setFormData({ ...formData, available: checked })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-2 border-pos-secondary rounded-md px-3 h-11 bg-pos-surface">
+              <Label htmlFor="is_published" className="text-pos-text">
+                Published
+              </Label>
+              <Switch
+                id="is_published"
+                checked={!!formData.is_published}
+                onCheckedChange={(checked) => setFormData({ ...formData, is_published: checked })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-2 border-pos-secondary rounded-md px-3 h-11 bg-pos-surface">
+              <Label htmlFor="featured" className="text-pos-text">
+                Featured
+              </Label>
+              <Switch
+                id="featured"
+                checked={!!formData.featured}
+                onCheckedChange={(checked) => setFormData({ ...formData, featured: checked })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-2 border-pos-secondary rounded-md px-3 h-11 bg-pos-surface">
+              <Label htmlFor="available_for_delivery" className="text-pos-text">
+                Delivery
+              </Label>
+              <Switch
+                id="available_for_delivery"
+                checked={!!formData.available_for_delivery}
+                onCheckedChange={(checked) => setFormData({ ...formData, available_for_delivery: checked })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-2 border-pos-secondary rounded-md px-3 h-11 bg-pos-surface">
+              <Label htmlFor="available_for_takeaway" className="text-pos-text">
+                Takeaway
+              </Label>
+              <Switch
+                id="available_for_takeaway"
+                checked={!!formData.available_for_takeaway}
+                onCheckedChange={(checked) => setFormData({ ...formData, available_for_takeaway: checked })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-2 border-pos-secondary rounded-md px-3 h-11 bg-pos-surface">
+              <Label htmlFor="available_for_dine_in" className="text-pos-text">
+                Dine In
+              </Label>
+              <Switch
+                id="available_for_dine_in"
+                checked={!!formData.available_for_dine_in}
+                onCheckedChange={(checked) => setFormData({ ...formData, available_for_dine_in: checked })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="available_from_time" className="text-pos-text">
+                Available From
+              </Label>
+              <Input
+                id="available_from_time"
+                type="time"
+                value={formData.available_from_time as any}
+                onChange={(e) => setFormData({ ...formData, available_from_time: e.target.value })}
+	                className="bg-pos-surface border-2 border-pos-secondary text-pos-text"
+	              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="available_to_time" className="text-pos-text">
+                Available To
+              </Label>
+              <Input
+                id="available_to_time"
+                type="time"
+                value={formData.available_to_time as any}
+                onChange={(e) => setFormData({ ...formData, available_to_time: e.target.value })}
+	                className="bg-pos-surface border-2 border-pos-secondary text-pos-text"
+	              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="badge_text" className="text-pos-text">
+                Badge Text
+              </Label>
+              <Input
+                id="badge_text"
+                value={formData.badge_text as any}
+                onChange={(e) => setFormData({ ...formData, badge_text: e.target.value })}
+	                className="bg-pos-surface border-2 border-pos-secondary text-pos-text"
+	                placeholder="Optional"
+	              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="badge_color" className="text-pos-text">
+                Badge Color
+              </Label>
+              <Input
+                id="badge_color"
+                type="color"
+                value={(formData.badge_color as any) || "#000000"}
+                onChange={(e) => setFormData({ ...formData, badge_color: e.target.value })}
+	                className="bg-pos-surface border-2 border-pos-secondary text-pos-text h-11 p-1"
+	              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isEditMode && (
+        <div className="pt-2 border-t border-pos-secondary">
+          <Label htmlFor="image" className="text-foreground">
+            Product Image
+          </Label>
+          <div className="flex items-start gap-4 mt-2">
+            <div className="w-32 h-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted">
+              {imagePreview ? (
+                <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+              ) : (
+                <ImageIcon className="h-12 w-12 text-muted-foreground" />
+              )}
+            </div>
+            <div className="flex-1 space-y-2">
+              <input
+                ref={imageInputRef}
+                id="image"
+                type="file"
+                accept="image/*"
+                onChange={handleImageChange}
+                className="hidden"
+              />
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-2 border-border"
+                  onClick={() => imageInputRef.current?.click()}
+                >
+                  Select Image
+                </Button>
+                <span className="text-sm text-muted-foreground truncate max-w-[280px]">
+                  {imageFile?.name || "No file selected"}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Upload a product image (max 2MB, JPG, PNG, GIF). Image will be cropped to {cropWidth}x{cropHeight}px.
+              </p>
+              {imagePreview && <p className="text-xs text-green-600">✓ Image ready for upload</p>}
+              {errors.image && <p className="text-xs text-destructive">{errors.image}</p>}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center justify-end space-x-2 pt-4 border-t border-pos-secondary">
         <Button
@@ -686,9 +1457,9 @@ function CategoryForm({
 export default function ProductManagement() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
-  const isSuperAdmin = ["super_admin", "superadmin"].includes(
-    String(user?.role || "").toLowerCase().trim(),
-  );
+  const userRole = String(user?.role || "").toLowerCase().trim();
+  const isSuperAdmin = ["super_admin", "superadmin"].includes(userRole);
+  const canManageModifiers = isSuperAdmin || ["admin", "supervisor"].includes(userRole);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -698,7 +1469,6 @@ export default function ProductManagement() {
   const [selectedAvailabilityFilter, setSelectedAvailabilityFilter] = useState<
     "all" | "available" | "unavailable"
   >("all");
-  const [selectedStockFilter, setSelectedStockFilter] = useState<"all" | "low-stock">("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [addProductFormKey, setAddProductFormKey] = useState(0);
@@ -706,20 +1476,22 @@ export default function ProductManagement() {
   const [selectedRestaurantId, setSelectedRestaurantId] = useState(
     isSuperAdmin ? "" : (user?.branchId || ""),
   );
+  const effectiveRestaurantId = isSuperAdmin ? selectedRestaurantId : (user?.branchId || selectedRestaurantId || "");
 
   // Image state at parent level to persist across dialog re-renders
   const [imagePreview, setImagePreview] = useState<string>("");
   const [imageFile, setImageFile] = useState<File | null>(null);
 
-  // Category management state
-  const tabParam = searchParams.get("tab");
-  const singleViewTab =
-    tabParam === "products" || tabParam === "modifiers" ? tabParam : null;
-  const initialTab =
-    tabParam === "products" || tabParam === "categories" || tabParam === "modifiers"
-      ? tabParam
-      : "products";
-  const [activeTab, setActiveTab] = useState(initialTab);
+	  // Category management state
+	  const tabParam = searchParams.get("tab");
+	  const singleViewTab =
+	    isSuperAdmin && (tabParam === "products" || tabParam === "modifiers") ? tabParam : null;
+	  const initialTab =
+	    (isSuperAdmin && (tabParam === "products" || tabParam === "categories" || tabParam === "modifiers")) ||
+	    (!isSuperAdmin && canManageModifiers && (tabParam === "products" || tabParam === "modifiers"))
+	      ? tabParam
+	      : "products";
+	  const [activeTab, setActiveTab] = useState(initialTab);
   const [categorySearchQuery, setCategorySearchQuery] = useState("");
   const [categoryDebouncedSearch, setCategoryDebouncedSearch] = useState("");
   const [categoryPage, setCategoryPage] = useState(1);
@@ -744,6 +1516,9 @@ export default function ProductManagement() {
   const [modifierDebouncedSearch, setModifierDebouncedSearch] = useState("");
   const [modifierTypeFilter, setModifierTypeFilter] = useState<"all" | "single" | "multiple">("all");
   const [modifierRequiredFilter, setModifierRequiredFilter] = useState<"all" | "required" | "optional">("all");
+  const [modifierAvailabilityFilter, setModifierAvailabilityFilter] = useState<
+    "all" | "available" | "unavailable"
+  >("all");
   const [modifierActiveFilter, setModifierActiveFilter] = useState<"all" | "active" | "inactive">("all");
 
   useEffect(() => {
@@ -764,18 +1539,26 @@ export default function ProductManagement() {
     modifier: any;
     nextValue: boolean;
   }>(null);
+  const [pendingModifierAvailabilityUpdate, setPendingModifierAvailabilityUpdate] = useState<null | {
+    modifier: any;
+    nextValue: boolean;
+  }>(null);
   const [modifierActiveOverrides, setModifierActiveOverrides] = useState<Record<string, boolean>>(
     {},
   );
+  const [modifierAvailableOverrides, setModifierAvailableOverrides] = useState<Record<string, boolean>>(
+    {},
+  );
 
-  useEffect(() => {
-    const nextTab =
-      tabParam === "products" || tabParam === "categories" || tabParam === "modifiers"
-        ? tabParam
-        : "products";
-    if (nextTab !== activeTab) setActiveTab(nextTab);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabParam]);
+	  useEffect(() => {
+	    const nextTab =
+	      (isSuperAdmin && (tabParam === "products" || tabParam === "categories" || tabParam === "modifiers")) ||
+	      (!isSuperAdmin && canManageModifiers && (tabParam === "products" || tabParam === "modifiers"))
+	        ? tabParam
+	        : "products";
+	    if (nextTab !== activeTab) setActiveTab(nextTab);
+	    // eslint-disable-next-line react-hooks/exhaustive-deps
+	  }, [tabParam, isSuperAdmin, canManageModifiers]);
 
   const buildProductSlug = (name: string) =>
     name
@@ -785,7 +1568,7 @@ export default function ProductManagement() {
       .replace(/\s+/g, "-")
       .replace(/-+/g, "-");
 
-  const { data: restaurantsResponse } = useQuery({
+  const { data: restaurantsResponse, isLoading: restaurantsLoading } = useQuery({
     queryKey: ["my-restaurants", user?.id],
     queryFn: () => getMyRestaurants(0, 500),
     enabled: isSuperAdmin,
@@ -800,7 +1583,7 @@ export default function ProductManagement() {
       payload?.data?.restaurants ??
       payload?.data ??
       payload;
-    const restaurants = Array.isArray(source)
+    const restaurants: any[] = Array.isArray(source)
       ? source
       : Array.isArray(source?.items)
         ? source.items
@@ -808,19 +1591,52 @@ export default function ProductManagement() {
           ? source.restaurants
           : [];
 
-    return Array.from(
-      new Map(
-        restaurants
-          .filter((restaurant: any) => restaurant?.id && (restaurant?.name || restaurant?.business_name))
-          .map((restaurant: any) => [
-            String(restaurant.id),
-            {
-              id: String(restaurant.id),
-              name: String(restaurant.name || restaurant.business_name),
-            },
-          ]),
-      ).values(),
-    ) as RestaurantOption[];
+    const toSortKey = (restaurant: any) => {
+      const raw =
+        restaurant?.created_at ??
+        restaurant?.createdAt ??
+        restaurant?.updated_at ??
+        restaurant?.updatedAt ??
+        restaurant?.added_at ??
+        restaurant?.addedAt ??
+        null;
+      const ms = raw ? Date.parse(String(raw)) : NaN;
+      return {
+        hasDate: Number.isFinite(ms),
+        sortKey: Number.isFinite(ms) ? ms : undefined,
+      };
+    };
+
+    const byId = new Map<string, RestaurantOption>();
+    restaurants
+      .filter((restaurant: any) => restaurant?.id && (restaurant?.name || restaurant?.business_name))
+      .forEach((restaurant: any, index: number) => {
+        const id = String(restaurant.id);
+        const dateInfo = toSortKey(restaurant);
+        const next: RestaurantOption = {
+          id,
+          name: String(restaurant.name || restaurant.business_name),
+          hasDate: dateInfo.hasDate,
+          sortKey: dateInfo.sortKey ?? index,
+        };
+        const existing = byId.get(id);
+        if (!existing || (next.sortKey ?? -Infinity) > (existing.sortKey ?? -Infinity)) {
+          byId.set(id, next);
+        }
+      });
+
+    return Array.from(byId.values()).sort((a, b) => {
+      if (!!a.hasDate && !!b.hasDate) {
+        const diff = (b.sortKey ?? -Infinity) - (a.sortKey ?? -Infinity);
+        if (diff !== 0) return diff;
+      } else if (!!a.hasDate !== !!b.hasDate) {
+        return a.hasDate ? -1 : 1;
+      } else {
+        const diff = (b.sortKey ?? -Infinity) - (a.sortKey ?? -Infinity);
+        if (diff !== 0) return diff;
+      }
+      return a.name.localeCompare(b.name);
+    });
   })();
 
   useEffect(() => {
@@ -851,7 +1667,7 @@ export default function ProductManagement() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedPublishFilter, selectedAvailabilityFilter, selectedStockFilter]);
+  }, [selectedPublishFilter, selectedAvailabilityFilter]);
 
   // Debounce category search query
   useEffect(() => {
@@ -873,12 +1689,18 @@ export default function ProductManagement() {
 
   useEffect(() => {
     setModifierPage(1);
-  }, [modifierTypeFilter, modifierRequiredFilter, modifierActiveFilter, selectedRestaurantId]);
+  }, [
+    modifierTypeFilter,
+    modifierRequiredFilter,
+    modifierAvailabilityFilter,
+    modifierActiveFilter,
+    selectedRestaurantId,
+  ]);
 
   // API Hooks - Fetch categories for product dropdown
   const { data: categoriesData, isLoading: categoriesLoading } = useCategories({
     page_size: 100, // Get all categories for dropdown
-  }, selectedRestaurantId);
+  }, effectiveRestaurantId);
 
   // API Hooks - Fetch categories for category tab with pagination
   const { data: categoryListResponse, isLoading: categoryListLoading } = useCategories({
@@ -905,6 +1727,24 @@ export default function ProductManagement() {
     return Array.isArray(source) ? source : [];
   })();
 
+  const categoryListPayload = categoryListResponse as any;
+  const categoryListItems: any[] = (() => {
+    const source =
+      categoryListPayload?.data?.data ??
+      categoryListPayload?.data?.items ??
+      categoryListPayload?.data?.categories ??
+      categoryListPayload?.data ??
+      categoryListPayload;
+    return Array.isArray(source) ? source : [];
+  })();
+  const categoryListPagination =
+    categoryListPayload?.pagination ??
+    categoryListPayload?.data?.pagination ??
+    categoryListPayload?.data?.meta?.pagination ??
+    categoryListPayload?.meta?.pagination ??
+    categoryListPayload?.meta ??
+    null;
+
   // API Hooks - Fetch modifiers for modifier tab with pagination
   const modifierActiveFilterValue =
     modifierActiveFilter === "active"
@@ -913,13 +1753,21 @@ export default function ProductManagement() {
         ? false
         : undefined;
 
+  const modifierAvailabilityFilterValue =
+    modifierAvailabilityFilter === "available"
+      ? true
+      : modifierAvailabilityFilter === "unavailable"
+        ? false
+        : undefined;
+
   const { data: modifierListResponse, isLoading: modifiersLoading } = useModifiers(
     {
-      page: modifierPage,
-      page_size: 12,
-      active: modifierActiveFilterValue === true ? true : undefined,
+      page: isSuperAdmin ? modifierPage : 1,
+      page_size: isSuperAdmin ? 12 : 500,
+      active: modifierActiveFilterValue,
+      available: modifierAvailabilityFilterValue,
     },
-    selectedRestaurantId,
+    effectiveRestaurantId,
   );
 
   const modifiersPayload = modifierListResponse as any;
@@ -961,10 +1809,59 @@ export default function ProductManagement() {
     });
   }, [modifiersList]);
 
+  useEffect(() => {
+    if (!modifiersList.length) return;
+    setModifierAvailableOverrides((prev) => {
+      const next = { ...prev };
+      modifiersList.forEach((modifier) => {
+        if (!modifier?.id) return;
+        const hasAvailableProp =
+          Object.prototype.hasOwnProperty.call(modifier, "available") ||
+          Object.prototype.hasOwnProperty.call(modifier, "is_available") ||
+          Object.prototype.hasOwnProperty.call(modifier, "isAvailable");
+        if (hasAvailableProp) {
+          const availableValue =
+            modifier?.available ??
+            modifier?.is_available ??
+            modifier?.isAvailable ??
+            true;
+          next[String(modifier.id)] = !!availableValue;
+        }
+      });
+      return next;
+    });
+  }, [modifiersList]);
+
   const filteredModifiers = modifiersList.filter((modifier) => {
     const name = String(modifier?.name || "").toLowerCase();
     if (modifierDebouncedSearch && !name.includes(modifierDebouncedSearch.toLowerCase())) {
       return false;
+    }
+
+    const overrideValue = modifier?.id ? modifierActiveOverrides[String(modifier.id)] : undefined;
+    const isActive =
+      overrideValue ??
+      modifier?.active ??
+      modifier?.is_active ??
+      modifier?.isActive ??
+      modifier?.enabled ??
+      true;
+
+    if (modifierAvailabilityFilter !== "all") {
+      const availableOverride = modifier?.id
+        ? modifierAvailableOverrides[String(modifier.id)]
+        : undefined;
+      const availableValue =
+        availableOverride ??
+        modifier?.available ??
+        modifier?.is_available ??
+        modifier?.isAvailable ??
+        modifier?.is_available_for_sale ??
+        modifier?.enabled ??
+        true;
+      const isAvailable = !!availableValue;
+      if (modifierAvailabilityFilter === "available" && !isAvailable) return false;
+      if (modifierAvailabilityFilter === "unavailable" && isAvailable) return false;
     }
 
     if (modifierTypeFilter !== "all" && modifier?.type !== modifierTypeFilter) {
@@ -977,17 +1874,8 @@ export default function ProductManagement() {
       if (modifierRequiredFilter === "optional" && isRequired) return false;
     }
 
-    if (modifierActiveFilter === "inactive") {
-      const overrideValue = modifier?.id ? modifierActiveOverrides[String(modifier.id)] : undefined;
-      const isActive =
-        overrideValue ??
-        modifier?.active ??
-        modifier?.is_active ??
-        modifier?.isActive ??
-        modifier?.enabled ??
-        true;
-      if (isActive) return false;
-    }
+    if (modifierActiveFilter === "active" && !isActive) return false;
+    if (modifierActiveFilter === "inactive" && isActive) return false;
 
     return true;
   });
@@ -1056,7 +1944,10 @@ export default function ProductManagement() {
   };
 
   // API Hooks - Fetch products
-  const { data: productsResponse, isLoading: productsLoading } = useProducts(filters, selectedRestaurantId);
+  const { data: productsResponse, isLoading: productsLoading } = useProducts(
+    filters,
+    isSuperAdmin ? effectiveRestaurantId : undefined,
+  );
   // Ensure we handle both paginated and non-paginated responses if needed
   const apiProducts = (() => {
     const payload = productsResponse as any;
@@ -1094,24 +1985,59 @@ export default function ProductManagement() {
     name: product.name,
     slug: product.slug,
     description: product.description || "",
+    short_description: product.short_description ?? null,
     price: Number(product.price || 0), // API returns rupees
     category: product.category_id || "",
+    subcategory_id: product.subcategory_id ?? null,
     stock: product.stock,
     minStock: product.min_stock || 5,
+    min_stock: product.min_stock || 5,
+    track_inventory: product.track_inventory ?? true,
+    allow_backorder: product.allow_backorder ?? false,
+    stock_unit: product.stock_unit ?? null,
+    reorder_point: product.reorder_point ?? null,
+    reorder_quantity: product.reorder_quantity ?? null,
     available: product.available,
     is_published: !!product.is_published,
     featured: product.featured,
     cost: Number(product.cost || 0),
+    compare_at_price: product.compare_at_price ?? null,
+    min_price: product.min_price ?? null,
+    max_price: product.max_price ?? null,
+    price_varies: product.price_varies ?? false,
+    tax_rate: product.tax_rate ?? null,
+    tax_inclusive: product.tax_inclusive ?? false,
     margin: product.cost && product.price ?
       ((product.price - product.cost) / product.price) * 100 : 0,
     tags: product.tags || [],
     modifiers: [],
     image: product.image || undefined,
+    thumbnail: product.thumbnail ?? null,
+    images: product.images ?? null,
+    video_url: product.video_url ?? null,
     sku: product.sku,
+    barcode: product.barcode ?? null,
+    department: product.department ?? null,
+    kitchen_station: product.kitchen_station ?? null,
+    preparation_time: product.preparation_time ?? null,
+    is_veg: product.is_veg ?? false,
+    calories: product.calories ?? null,
+    spice_level: product.spice_level ?? null,
+    ingredients: product.ingredients ?? null,
+    available_for_delivery: product.available_for_delivery ?? true,
+    available_for_takeaway: product.available_for_takeaway ?? true,
+    available_for_dine_in: product.available_for_dine_in ?? true,
+    available_from_time: product.available_from_time ?? null,
+    available_to_time: product.available_to_time ?? null,
+    has_variants: product.has_variants ?? false,
+    variant_options: product.variant_options ?? null,
+    requires_customization: product.requires_customization ?? false,
+    badge_text: product.badge_text ?? null,
+    badge_color: product.badge_color ?? null,
   }));
 
   const buildProductUpdatePayload = (product: Product, updates: Record<string, any>) => ({
-    restaurant_id: product.restaurant_id || selectedRestaurantId,
+    restaurant_id: product.restaurant_id || effectiveRestaurantId,
     name: product.name,
     slug: product.slug,
     price: Number(product.price || 0),
@@ -1136,7 +2062,6 @@ export default function ProductManagement() {
   // Mock modifiers removed - now using real API data from useModifiers hook
 
   // Filtering is now done by API, so we use products directly
-  // But keep client-side filtering for low-stock status
   const filteredProducts = products.filter((product) => {
     if (activeFilterValue !== undefined && product.is_published !== activeFilterValue) {
       return false;
@@ -1146,9 +2071,6 @@ export default function ProductManagement() {
       product.available !== availabilityFilterValue
     ) {
       return false;
-    }
-    if (selectedStockFilter === "low-stock") {
-      return product.stock <= product.minStock;
     }
     return true;
   });
@@ -1261,6 +2183,61 @@ export default function ProductManagement() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog
+        open={!!pendingModifierAvailabilityUpdate}
+        onOpenChange={(open) => {
+          if (!open && !updateModifierMutation.isPending) setPendingModifierAvailabilityUpdate(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update Modifier Availability</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingModifierAvailabilityUpdate
+                ? `Are you sure you want to set ${pendingModifierAvailabilityUpdate.modifier?.name || "this modifier"} as ${pendingModifierAvailabilityUpdate.nextValue ? "Available" : "Unavailable"}?`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updateModifierMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!pendingModifierAvailabilityUpdate?.modifier?.id) return;
+                const modifierId = String(pendingModifierAvailabilityUpdate.modifier.id);
+                const previousOverride = modifierAvailableOverrides[modifierId];
+                setModifierAvailableOverrides((prev) => ({
+                  ...prev,
+                  [modifierId]: pendingModifierAvailabilityUpdate.nextValue,
+                }));
+                updateModifierMutation.mutate(
+                  {
+                    id: pendingModifierAvailabilityUpdate.modifier.id,
+                    data: {
+                      available: pendingModifierAvailabilityUpdate.nextValue,
+                      is_available: pendingModifierAvailabilityUpdate.nextValue,
+                    },
+                  },
+                  {
+                    onError: () => {
+                      setModifierAvailableOverrides((prev) => ({
+                        ...prev,
+                        [modifierId]: previousOverride ?? prev[modifierId],
+                      }));
+                    },
+                    onSettled: () => setPendingModifierAvailabilityUpdate(null),
+                  },
+                );
+              }}
+              disabled={updateModifierMutation.isPending}
+            >
+              {updateModifierMutation.isPending ? "Updating..." : "Confirm"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -1298,6 +2275,7 @@ export default function ProductManagement() {
               </DialogHeader>
               <ProductForm
                 key={`add-product-${addProductFormKey}`}
+                existingProducts={products}
                 imagePreview={imagePreview}
                 setImagePreview={setImagePreview}
                 imageFile={imageFile}
@@ -1426,12 +2404,12 @@ export default function ProductManagement() {
 
       <Tabs
         value={activeTab}
-        onValueChange={(value) => {
-          if (singleViewTab) return;
-          setActiveTab(value);
-          setSearchParams(
-            (prev) => {
-              const next = new URLSearchParams(prev);
+	        onValueChange={(value) => {
+	          if (singleViewTab || !isSuperAdmin) return;
+	          setActiveTab(value);
+	          setSearchParams(
+	            (prev) => {
+	              const next = new URLSearchParams(prev);
               next.set("tab", value);
               return next;
             },
@@ -1439,29 +2417,28 @@ export default function ProductManagement() {
           );
         }}
       >
-        {!singleViewTab && (
-          <TabsList className="bg-muted border-border">
-          <TabsTrigger
-            value="products"
-            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-          >
+	        {isSuperAdmin && !singleViewTab && (
+	          <TabsList className="bg-muted border-border">
+	            <TabsTrigger
+	              value="products"
+	              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+	            >
             <Package className="mr-2 h-4 w-4" />
             Products
-          </TabsTrigger>
-          <TabsTrigger
-            value="categories"
-            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-          >
-            <Filter className="mr-2 h-4 w-4" />
-            Categories
-          </TabsTrigger>
-          <TabsTrigger
-            value="modifiers"
-            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Modifiers
-          </TabsTrigger>
+	            </TabsTrigger>
+	            <TabsTrigger
+	              value="categories"
+	              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+	            >
+	              Categories
+	            </TabsTrigger>
+	            <TabsTrigger
+	              value="modifiers"
+	              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+	            >
+	              <Plus className="mr-2 h-4 w-4" />
+	              Modifiers
+	            </TabsTrigger>
           </TabsList>
         )}
 
@@ -1470,17 +2447,16 @@ export default function ProductManagement() {
           {/* Filters */}
           <Card className="bg-card border-border">
             <CardContent className="p-4">
-              <div className="flex items-center space-x-4 flex-wrap gap-y-3">
+              <div className="flex items-center gap-4 overflow-x-auto">
                 {isSuperAdmin && (
                   <Select
                     value={selectedRestaurantId || "none"}
                     onValueChange={(value) => setSelectedRestaurantId(value === "none" ? "" : value)}
                   >
-                    <SelectTrigger className="w-56 bg-background border-border text-foreground">
+                    <SelectTrigger className="w-56 shrink-0 bg-background border-border text-foreground">
                       <SelectValue placeholder="Select Restaurant" />
                     </SelectTrigger>
                     <SelectContent className="bg-popover border-border">
-                      <SelectItem value="none">Select Restaurant</SelectItem>
                       {restaurantOptions.map((restaurant) => (
                         <SelectItem key={restaurant.id} value={restaurant.id}>
                           {restaurant.name}
@@ -1489,7 +2465,7 @@ export default function ProductManagement() {
                     </SelectContent>
                   </Select>
                 )}
-                <div className="flex-1 relative">
+                <div className="relative flex-1 min-w-[320px]">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                   <Input
                     placeholder="Search products..."
@@ -1502,7 +2478,7 @@ export default function ProductManagement() {
                   value={selectedCategory}
                   onValueChange={setSelectedCategory}
                 >
-                  <SelectTrigger className="w-48 bg-background border-border text-foreground">
+                  <SelectTrigger className="w-56 shrink-0 bg-background border-border text-foreground">
                     <SelectValue placeholder="Category" />
                   </SelectTrigger>
                   <SelectContent className="bg-popover border-border">
@@ -1520,7 +2496,7 @@ export default function ProductManagement() {
                     setSelectedPublishFilter(value as "all" | "active" | "inactive")
                   }
                 >
-                  <SelectTrigger className="w-44 bg-pos-surface border-pos-secondary text-pos-text">
+                  <SelectTrigger className="w-44 shrink-0 bg-pos-surface border-pos-secondary text-pos-text">
                     <SelectValue placeholder="Active" />
                   </SelectTrigger>
                   <SelectContent className="bg-pos-surface border-pos-secondary">
@@ -1535,7 +2511,7 @@ export default function ProductManagement() {
                     setSelectedAvailabilityFilter(value as "all" | "available" | "unavailable")
                   }
                 >
-                  <SelectTrigger className="w-44 bg-pos-surface border-pos-secondary text-pos-text">
+                  <SelectTrigger className="w-44 shrink-0 bg-pos-surface border-pos-secondary text-pos-text">
                     <SelectValue placeholder="Available" />
                   </SelectTrigger>
                   <SelectContent className="bg-pos-surface border-pos-secondary">
@@ -1544,36 +2520,24 @@ export default function ProductManagement() {
                     <SelectItem value="unavailable">Unavailable</SelectItem>
                   </SelectContent>
                 </Select>
-                <Select
-                  value={selectedStockFilter}
-                  onValueChange={(value) => setSelectedStockFilter(value as "all" | "low-stock")}
-                >
-                  <SelectTrigger className="w-40 bg-pos-surface border-pos-secondary text-pos-text">
-                    <SelectValue placeholder="Stock" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-pos-surface border-pos-secondary">
-                    <SelectItem value="all">All Stock</SelectItem>
-                    <SelectItem value="low-stock">Low Stock</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
             </CardContent>
           </Card>
 
           {/* Products Grid */}
-          {productsLoading || categoriesLoading ? (
+          {productsLoading || categoriesLoading || (isSuperAdmin && restaurantsLoading) ? (
             <div className="flex justify-center items-center py-12">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
                 <p className="text-muted-foreground">Loading products...</p>
               </div>
             </div>
-          ) : isSuperAdmin && !selectedRestaurantId ? (
+          ) : isSuperAdmin && !effectiveRestaurantId ? (
             <div className="flex justify-center items-center py-12">
               <div className="text-center">
                 <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Select a restaurant</h3>
-                <p className="text-muted-foreground">Choose a restaurant to view its products</p>
+                <h3 className="text-lg font-semibold mb-2">No restaurant available</h3>
+                <p className="text-muted-foreground">No restaurants found for this account</p>
               </div>
             </div>
           ) : filteredProducts.length === 0 ? (
@@ -1670,10 +2634,11 @@ export default function ProductManagement() {
                           <div className="flex items-center justify-end gap-2">
                             <Dialog
                               open={editingProduct?.id === product.id}
-                              onOpenChange={(open) => {
+                                  onOpenChange={(open) => {
+                                if (open && !product.is_published) return;
                                 if (open) {
                                   setEditingProduct(product);
-                                  setImagePreview(product.image ? `${BACKEND_URL}${product.image}` : "");
+                                  setImagePreview(resolveProductImageSrc(product.image));
                                   setImageFile(null);
                                 } else {
                                   setEditingProduct(null);
@@ -1686,20 +2651,24 @@ export default function ProductManagement() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="border-pos-secondary text-pos-text-muted hover:text-pos-text"
+                                  disabled={!product.is_published}
+                                  title={!product.is_published ? "Inactive products can't be edited" : undefined}
+                                  className="border-pos-secondary text-pos-text-muted hover:text-pos-text disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   <Edit className="mr-2 h-4 w-4" />
                                   Edit
                                 </Button>
                               </DialogTrigger>
-                              <DialogContent className="bg-pos-surface border-pos-secondary max-w-2xl">
+                              <DialogContent className="bg-pos-surface border-pos-secondary w-[95vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
                                 <DialogHeader>
                                   <DialogTitle className="text-pos-text">
                                     Edit Product
                                   </DialogTitle>
                                 </DialogHeader>
+                                <div className="min-h-0 overflow-y-auto pr-1">
                                 <ProductForm
                                   product={product}
+                                  existingProducts={products}
                                   imagePreview={imagePreview}
                                   setImagePreview={setImagePreview}
                                   imageFile={imageFile}
@@ -1709,16 +2678,74 @@ export default function ProductManagement() {
                                   restaurantOptions={restaurantOptions}
                                   userBranchId={user?.branchId || ""}
                                   onSave={(updatedData) => {
+                                    const toOptionalString = (value: any) => {
+                                      if (value === undefined || value === null) return undefined;
+                                      const trimmed = String(value).trim();
+                                      return trimmed ? trimmed : undefined;
+                                    };
+                                    const toOptionalNumber = (value: any) => {
+                                      if (value === undefined || value === null || value === "") return undefined;
+                                      const parsed = Number(value);
+                                      return Number.isFinite(parsed) ? parsed : undefined;
+                                    };
+                                    const toOptionalJson = (value: any) => {
+                                      if (value === undefined || value === null || value === "") return undefined;
+                                      if (typeof value === "string") {
+                                        const trimmed = value.trim();
+                                        if (!trimmed) return undefined;
+                                        try {
+                                          return JSON.parse(trimmed);
+                                        } catch {
+                                          return undefined;
+                                        }
+                                      }
+                                      return value;
+                                    };
+
                                     const apiData: any = {
-                                        restaurant_id: product.restaurant_id || updatedData.restaurant_id,
-                                        name: updatedData.name,
-                                        slug: buildProductSlug(String(updatedData.name || "")),
-                                        price: Number(updatedData.price || 0),
-                                        category_id: product.category || updatedData.category,
-                                      };
+                                      restaurant_id: product.restaurant_id || updatedData.restaurant_id,
+                                      name: updatedData.name,
+                                      slug: buildProductSlug(String(updatedData.name || "")),
+                                      price: Number(updatedData.price || 0),
+                                      category_id: product.category || (updatedData as any).category,
+                                      barcode: toOptionalString((updatedData as any).barcode),
+                                      tax_rate: (updatedData as any).tax_inclusive
+                                        ? toOptionalNumber((updatedData as any).tax_rate)
+                                        : undefined,
+                                      tax_inclusive: !!(updatedData as any).tax_inclusive,
+
+                                      description: (updatedData as any).description,
+                                      short_description: toOptionalString((updatedData as any).short_description),
+                                      thumbnail: toOptionalString((updatedData as any).thumbnail),
+                                      images: toOptionalJson((updatedData as any).images),
+                                      video_url: toOptionalString((updatedData as any).video_url),
+                                      preparation_time: toOptionalNumber((updatedData as any).preparation_time),
+                                      is_veg: !!(updatedData as any).is_veg,
+                                      ingredients: toOptionalString((updatedData as any).ingredients),
+
+                                      available: !!(updatedData as any).available,
+                                      is_published: !!(updatedData as any).is_published,
+                                      featured: !!(updatedData as any).featured,
+                                      available_for_delivery: !!(updatedData as any).available_for_delivery,
+                                      available_for_takeaway: !!(updatedData as any).available_for_takeaway,
+                                      available_for_dine_in: !!(updatedData as any).available_for_dine_in,
+                                      available_from_time: toOptionalString((updatedData as any).available_from_time),
+                                      available_to_time: toOptionalString((updatedData as any).available_to_time),
+
+                                      badge_text: toOptionalString((updatedData as any).badge_text),
+                                      badge_color: toOptionalString((updatedData as any).badge_color),
+                                    };
 
                                     if (imageFile) {
                                       apiData.image = imageFile;
+                                    }
+                                    const nextThumbnail = (updatedData as any).thumbnail_file;
+                                    if (nextThumbnail instanceof File) {
+                                      apiData.thumbnail = nextThumbnail;
+                                    }
+                                    const nextVideo = (updatedData as any).video_file;
+                                    if (nextVideo instanceof File) {
+                                      apiData.video_url = nextVideo;
                                     }
 
                                     updateMutation.mutate({ id: product.id, data: apiData });
@@ -1728,6 +2755,7 @@ export default function ProductManagement() {
                                     setEditingProduct(null);
                                   }}
                                 />
+                                </div>
                               </DialogContent>
                             </Dialog>
                           </div>
@@ -1739,45 +2767,35 @@ export default function ProductManagement() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredProducts.map((product) => {
-                const stockStatus = getStockStatus(product);
-                return (
-                  <Card
-                    key={product.id}
-                    className="bg-pos-surface border-pos-secondary"
-                  >
-                    <CardHeader className="pb-2">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <CardTitle className="text-lg text-pos-text flex items-center">
-                            {product.name}
-                            {product.featured && (
-                              <Star className="ml-2 h-4 w-4 text-pos-warning fill-current" />
-                            )}
-                          </CardTitle>
-                          <p className="text-sm text-pos-text-muted mt-1 line-clamp-2">
-                            {product.description}
-                          </p>
-                        </div>
-                        <div className="flex items-center space-x-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0"
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="aspect-video bg-pos-secondary rounded-md flex items-center justify-center overflow-hidden">
-                        {product.image ? (
-                          <img
-                            src={product.image.startsWith("http") ? product.image : `${BACKEND_URL}${product.image}`}
-                            alt={product.name}
-                            className="w-full h-full object-cover"
+	            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+	              {filteredProducts.map((product) => {
+	                const stockStatus = getStockStatus(product);
+	                return (
+	                  <Card
+	                    key={product.id}
+	                    className="bg-pos-surface border-pos-secondary"
+	                  >
+	                    <CardHeader className="pb-1">
+	                      <div className="flex items-start justify-between">
+	                        <div className="flex-1">
+	                          <CardTitle className="text-base text-pos-text flex items-center">
+	                            {product.name}
+	                            {product.featured && (
+	                              <Star className="ml-2 h-4 w-4 text-pos-warning fill-current" />
+	                            )}
+	                          </CardTitle>
+	                          {null}
+	                        </div>
+	                        <div />
+	                      </div>
+	                    </CardHeader>
+	                    <CardContent className="space-y-3 pt-0">
+	                      <div className="h-28 bg-pos-secondary rounded-md flex items-center justify-center overflow-hidden">
+	                        {product.image ? (
+	                          <img
+	                            src={product.image.startsWith("http") ? product.image : `${BACKEND_URL}${product.image}`}
+	                            alt={product.name}
+	                            className="w-full h-full object-cover"
                             onError={(e) => {
                               e.currentTarget.style.display = 'none';
                               e.currentTarget.nextElementSibling?.classList.remove('hidden');
@@ -1787,23 +2805,33 @@ export default function ProductManagement() {
                         <ImageIcon className={`h-8 w-8 text-pos-text-muted ${product.image ? 'hidden' : ''}`} />
                       </div>
 
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-pos-text-muted text-sm">Active</span>
-                            <Switch
-                              checked={product.is_published}
-                              onCheckedChange={(checked) => {
-                                confirmAndUpdateProduct({
-                                  product,
-                                  fieldLabel: "Active",
-                                  nextValue: checked,
-                                  updates: { is_published: checked },
-                                });
-                              }}
-                              disabled={updateMutation.isPending}
-                            />
-                          </div>
+	                        <div className="space-y-3">
+	                        <div className="grid grid-cols-2 gap-3">
+	                          <div className="flex items-center justify-between gap-2">
+	                            <span className="text-pos-text-muted text-sm">Active</span>
+	                            <Button
+	                              variant="ghost"
+	                              size="icon"
+	                              className="h-10 w-10"
+	                              onClick={() => {
+	                                confirmAndUpdateProduct({
+	                                  product,
+	                                  fieldLabel: "Active",
+	                                  nextValue: !product.is_published,
+	                                  updates: { is_published: !product.is_published },
+	                                });
+	                              }}
+	                              disabled={updateMutation.isPending}
+	                              title={product.is_published ? "Active" : "Inactive"}
+	                              aria-label={product.is_published ? "Active" : "Inactive"}
+	                            >
+	                              {product.is_published ? (
+	                                <CheckCircle2 className="h-7 w-7 text-green-600" />
+	                              ) : (
+	                                <XCircle className="h-7 w-7 text-destructive" />
+	                              )}
+	                            </Button>
+	                          </div>
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-pos-text-muted text-sm">Available</span>
                             <Switch
@@ -1819,52 +2847,21 @@ export default function ProductManagement() {
                               disabled={updateMutation.isPending}
                             />
                           </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-pos-text-muted text-sm">
-                            Price
-                          </span>
-                          <span className="text-pos-text font-bold text-lg">
-                            {formatINR(product.price)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-pos-text-muted text-sm">
-                            Cost
-                          </span>
-                          <span className="text-pos-text">{formatINR(product.cost)}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-pos-text-muted text-sm">
-                            Margin
-                          </span>
-                          <span className="text-pos-success">
-                            {product.margin.toFixed(1)}%
-                          </span>
-                        </div>
-                      </div>
+	                        </div>
+	                        <div className="flex items-center justify-between">
+	                          <span className="text-pos-text-muted text-sm">
+	                            Price
+	                          </span>
+	                          <span className="text-pos-text font-bold text-base">
+	                            {formatINR(product.price)}
+	                          </span>
+	                        </div>
+	                      </div>
 
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-pos-text-muted text-sm">
-                            Stock:
-                          </span>
-                          <span className="text-pos-text font-medium">
-                            {product.stock}
-                          </span>
-                          <div
-                            className={`w-2 h-2 rounded-full ${stockStatus.color}`}
-                          ></div>
-                        </div>
-                        {product.stock <= product.minStock && (
-                          <AlertTriangle className="h-4 w-4 text-pos-warning" />
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap gap-1">
-                        <Badge variant="secondary" className="text-xs">
-                          {
-                            categories.find((c) => c.id === product.category)
+	                      <div className="flex flex-wrap gap-1">
+	                        <Badge variant="secondary" className="text-xs">
+	                          {
+	                            categories.find((c) => c.id === product.category)
                               ?.name
                           }
                         </Badge>
@@ -1879,11 +2876,11 @@ export default function ProductManagement() {
                         <Dialog
                           open={editingProduct?.id === product.id}
                           onOpenChange={(open) => {
+                            if (open && !product.is_published) return;
                             if (open) {
                               // Set the editing product and initialize image preview
                               setEditingProduct(product);
-                              // Concatenate BACKEND_URL with image path if image exists
-                              setImagePreview(product.image ? `${BACKEND_URL}${product.image}` : "");
+                              setImagePreview(resolveProductImageSrc(product.image));
                               setImageFile(null);
                             } else {
                               // Reset when dialog closes
@@ -1897,20 +2894,24 @@ export default function ProductManagement() {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="flex-1 border-pos-secondary text-pos-text-muted hover:text-pos-text"
+                              disabled={!product.is_published}
+                              title={!product.is_published ? "Inactive products can't be edited" : undefined}
+                              className="flex-1 border-pos-secondary text-pos-text-muted hover:text-pos-text disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <Edit className="mr-2 h-4 w-4" />
                               Edit
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="bg-pos-surface border-pos-secondary max-w-2xl">
+                          <DialogContent className="bg-pos-surface border-pos-secondary w-[95vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
                             <DialogHeader>
                               <DialogTitle className="text-pos-text">
                                 Edit Product
                               </DialogTitle>
                             </DialogHeader>
+                            <div className="min-h-0 overflow-y-auto pr-1">
                             <ProductForm
                               product={product}
+                              existingProducts={products}
                               imagePreview={imagePreview}
                               setImagePreview={setImagePreview}
                               imageFile={imageFile}
@@ -1920,18 +2921,75 @@ export default function ProductManagement() {
                               restaurantOptions={restaurantOptions}
                               userBranchId={user?.branchId || ""}
                               onSave={(updatedData) => {
-                                // Build API data object
+                                const toOptionalString = (value: any) => {
+                                  if (value === undefined || value === null) return undefined;
+                                  const trimmed = String(value).trim();
+                                  return trimmed ? trimmed : undefined;
+                                };
+                                const toOptionalNumber = (value: any) => {
+                                  if (value === undefined || value === null || value === "") return undefined;
+                                  const parsed = Number(value);
+                                  return Number.isFinite(parsed) ? parsed : undefined;
+                                };
+                                const toOptionalJson = (value: any) => {
+                                  if (value === undefined || value === null || value === "") return undefined;
+                                  if (typeof value === "string") {
+                                    const trimmed = value.trim();
+                                    if (!trimmed) return undefined;
+                                    try {
+                                      return JSON.parse(trimmed);
+                                    } catch {
+                                      return undefined;
+                                    }
+                                  }
+                                  return value;
+                                };
+
                                 const apiData: any = {
                                   restaurant_id: product.restaurant_id || updatedData.restaurant_id,
                                   name: updatedData.name,
                                   slug: buildProductSlug(String(updatedData.name || "")),
                                   price: Number(updatedData.price || 0),
-                                  category_id: product.category || updatedData.category,
+                                  category_id: product.category || (updatedData as any).category,
+                                  barcode: toOptionalString((updatedData as any).barcode),
+                                  tax_rate: (updatedData as any).tax_inclusive
+                                    ? toOptionalNumber((updatedData as any).tax_rate)
+                                    : undefined,
+                                  tax_inclusive: !!(updatedData as any).tax_inclusive,
+
+                                  description: (updatedData as any).description,
+                                  short_description: toOptionalString((updatedData as any).short_description),
+                                  thumbnail: toOptionalString((updatedData as any).thumbnail),
+                                  images: toOptionalJson((updatedData as any).images),
+                                  video_url: toOptionalString((updatedData as any).video_url),
+                                  preparation_time: toOptionalNumber((updatedData as any).preparation_time),
+                                  is_veg: !!(updatedData as any).is_veg,
+                                  ingredients: toOptionalString((updatedData as any).ingredients),
+
+                                  available: !!(updatedData as any).available,
+                                  is_published: !!(updatedData as any).is_published,
+                                  featured: !!(updatedData as any).featured,
+                                  available_for_delivery: !!(updatedData as any).available_for_delivery,
+                                  available_for_takeaway: !!(updatedData as any).available_for_takeaway,
+                                  available_for_dine_in: !!(updatedData as any).available_for_dine_in,
+                                  available_from_time: toOptionalString((updatedData as any).available_from_time),
+                                  available_to_time: toOptionalString((updatedData as any).available_to_time),
+
+                                  badge_text: toOptionalString((updatedData as any).badge_text),
+                                  badge_color: toOptionalString((updatedData as any).badge_color),
                                 };
 
                                 // Only include image if a new image file was selected
                                 if (imageFile) {
                                   apiData.image = imageFile;
+                                }
+                                const nextThumbnail = (updatedData as any).thumbnail_file;
+                                if (nextThumbnail instanceof File) {
+                                  apiData.thumbnail = nextThumbnail;
+                                }
+                                const nextVideo = (updatedData as any).video_file;
+                                if (nextVideo instanceof File) {
+                                  apiData.video_url = nextVideo;
                                 }
 
                                 updateMutation.mutate({ id: product.id, data: apiData });
@@ -1943,6 +3001,7 @@ export default function ProductManagement() {
                                 setEditingProduct(null);
                               }}
                             />
+                            </div>
                           </DialogContent>
                         </Dialog>
                       </div>
@@ -1979,8 +3038,8 @@ export default function ProductManagement() {
           )}
         </TabsContent>
 
-        {/* Categories Tab */}
-        <TabsContent value="categories" className="space-y-6">
+	        {isSuperAdmin && (
+	        <TabsContent value="categories" className="space-y-6">
           {/* Search */}
           <Card className="bg-card border-border">
             <CardContent className="p-4">
@@ -2009,7 +3068,7 @@ export default function ProductManagement() {
                 </p>
               </CardContent>
             </Card>
-          ) : categoryListResponse.data?.length === 0 ? (
+          ) : categoryListItems.length === 0 ? (
             <Card className="bg-card border-border">
               <CardContent className="p-6">
                 <p className="text-muted-foreground text-center">
@@ -2020,7 +3079,7 @@ export default function ProductManagement() {
           ) : (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {categoryListResponse.data?.map((category) => (
+                {categoryListItems.map((category) => (
                   <Card key={category.id} className="bg-card border-border">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-lg text-foreground">{category.name}</CardTitle>
@@ -2092,10 +3151,16 @@ export default function ProductManagement() {
               </div>
 
               {/* Pagination */}
-              {categoryListResponse && categoryListResponse.pagination.total > 12 && (
+              {categoryListPagination &&
+                Number((categoryListPagination as any).total ?? (categoryListPagination as any).total_items ?? 0) > 12 && (
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-muted-foreground">
-                    Showing {((categoryPage - 1) * 12) + 1} to {Math.min(categoryPage * 12, categoryListResponse.pagination.total)} of {categoryListResponse.pagination.total} categories
+                    Showing {((categoryPage - 1) * 12) + 1} to{" "}
+                    {Math.min(
+                      categoryPage * 12,
+                      Number((categoryListPagination as any).total ?? (categoryListPagination as any).total_items ?? 0),
+                    )}{" "}
+                    of {Number((categoryListPagination as any).total ?? (categoryListPagination as any).total_items ?? 0)} categories
                   </p>
                   <div className="flex items-center space-x-2">
                     <Button
@@ -2107,13 +3172,15 @@ export default function ProductManagement() {
                       Previous
                     </Button>
                     <span className="text-sm text-muted-foreground">
-                      Page {categoryPage} of {categoryListResponse.pagination.total_pages}
+                      Page {categoryPage} of {Number((categoryListPagination as any).total_pages ?? 1)}
                     </span>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setCategoryPage(prev => Math.min(categoryListResponse.pagination.total_pages, prev + 1))}
-                      disabled={categoryPage === categoryListResponse.pagination.total_pages}
+                      onClick={() =>
+                        setCategoryPage(prev => Math.min(Number((categoryListPagination as any).total_pages ?? 1), prev + 1))
+                      }
+                      disabled={categoryPage === Number((categoryListPagination as any).total_pages ?? 1)}
                     >
                       Next
                     </Button>
@@ -2122,33 +3189,22 @@ export default function ProductManagement() {
               )}
             </div>
           )}
-        </TabsContent>
+	        </TabsContent>
+	        )}
 
-        {/* Modifiers Tab */}
-        <TabsContent value="modifiers" className="space-y-6">
-          {/* Debug button to force cache refresh */}
-          <Button
-            onClick={() => {
-              console.log('Invalidating modifiers cache...');
-              queryClient.invalidateQueries({ queryKey: ['modifiers'] });
-              console.log('Cache invalidated, refetching...');
-            }}
-            variant="outline"
-            className="mb-4"
-          >
-            ðŸ”„ Force Refresh Modifiers Data
-          </Button>
-
+	        {/* Modifiers Tab */}
+	        {canManageModifiers && (
+	        <TabsContent value="modifiers" className="space-y-6">
           {/* Modifiers Filters */}
           <Card className="bg-card border-border">
             <CardContent className="p-4">
-              <div className="flex items-center space-x-4 flex-wrap gap-y-3">
+              <div className="flex items-center gap-4 overflow-x-auto">
                 {isSuperAdmin && (
                   <Select
                     value={selectedRestaurantId || "none"}
                     onValueChange={(value) => setSelectedRestaurantId(value === "none" ? "" : value)}
                   >
-                    <SelectTrigger className="w-56 bg-background border-border text-foreground">
+                    <SelectTrigger className="w-56 shrink-0 bg-background border-border text-foreground">
                       <SelectValue placeholder="Select Restaurant" />
                     </SelectTrigger>
                     <SelectContent className="bg-popover border-border">
@@ -2161,7 +3217,7 @@ export default function ProductManagement() {
                     </SelectContent>
                   </Select>
                 )}
-                <div className="flex-1 relative">
+                <div className="relative flex-1 min-w-[320px]">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                   <Input
                     placeholder="Search modifiers..."
@@ -2170,34 +3226,53 @@ export default function ProductManagement() {
                     className="pl-10 bg-background border-border text-foreground"
                   />
                 </div>
+                {isSuperAdmin && (
+                  <Select
+                    value={modifierTypeFilter}
+                    onValueChange={(value) =>
+                      setModifierTypeFilter(value as "all" | "single" | "multiple")
+                    }
+                  >
+                    <SelectTrigger className="w-44 shrink-0 bg-background border-border text-foreground">
+                      <SelectValue placeholder="Type" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border-border">
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="single">Single</SelectItem>
+                      <SelectItem value="multiple">Multiple</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                {isSuperAdmin && (
+                  <Select
+                    value={modifierRequiredFilter}
+                    onValueChange={(value) =>
+                      setModifierRequiredFilter(value as "all" | "required" | "optional")
+                    }
+                  >
+                    <SelectTrigger className="w-44 shrink-0 bg-background border-border text-foreground">
+                      <SelectValue placeholder="Required" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border-border">
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="required">Required</SelectItem>
+                      <SelectItem value="optional">Optional</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
                 <Select
-                  value={modifierTypeFilter}
+                  value={modifierAvailabilityFilter}
                   onValueChange={(value) =>
-                    setModifierTypeFilter(value as "all" | "single" | "multiple")
+                    setModifierAvailabilityFilter(value as "all" | "available" | "unavailable")
                   }
                 >
-                  <SelectTrigger className="w-40 bg-pos-surface border-pos-secondary text-pos-text">
-                    <SelectValue placeholder="Type" />
+                  <SelectTrigger className="w-44 shrink-0 bg-background border-border text-foreground">
+                    <SelectValue placeholder="Available" />
                   </SelectTrigger>
-                  <SelectContent className="bg-pos-surface border-pos-secondary">
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="single">Single</SelectItem>
-                    <SelectItem value="multiple">Multiple</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={modifierRequiredFilter}
-                  onValueChange={(value) =>
-                    setModifierRequiredFilter(value as "all" | "required" | "optional")
-                  }
-                >
-                  <SelectTrigger className="w-40 bg-pos-surface border-pos-secondary text-pos-text">
-                    <SelectValue placeholder="Required" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-pos-surface border-pos-secondary">
+                  <SelectContent className="bg-popover border-border">
                     <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="required">Required</SelectItem>
-                    <SelectItem value="optional">Optional</SelectItem>
+                    <SelectItem value="available">Available</SelectItem>
+                    <SelectItem value="unavailable">Unavailable</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select
@@ -2206,10 +3281,10 @@ export default function ProductManagement() {
                     setModifierActiveFilter(value as "all" | "active" | "inactive")
                   }
                 >
-                  <SelectTrigger className="w-40 bg-pos-surface border-pos-secondary text-pos-text">
+                  <SelectTrigger className="w-44 shrink-0 bg-background border-border text-foreground">
                     <SelectValue placeholder="Active" />
                   </SelectTrigger>
-                  <SelectContent className="bg-pos-surface border-pos-secondary">
+                  <SelectContent className="bg-popover border-border">
                     <SelectItem value="all">All</SelectItem>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="inactive">Inactive</SelectItem>
@@ -2257,114 +3332,240 @@ export default function ProductManagement() {
             </Card>
           ) : (
             <div className="space-y-6">
-              <Card className="bg-card border-border">
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Image</TableHead>
-                        <TableHead>Active</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredModifiers.map((modifier) => (
-                        <TableRow key={modifier.id}>
-                          <TableCell className="font-medium">{modifier.name}</TableCell>
-                          <TableCell>
-                            <Badge variant={modifier.type === "single" ? "default" : "secondary"}>
-                              {modifier.type || "unknown"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="w-10 h-10 rounded-md overflow-hidden bg-muted flex items-center justify-center">
-                              {(() => {
-                                const imageValue =
-                                  modifier?.icon ||
-                                  modifier?.icon_url ||
-                                  modifier?.image ||
-                                  modifier?.image_url;
-                                if (!imageValue) {
-                                  return <ImageIcon className="h-5 w-5 text-muted-foreground" />;
-                                }
-                                const src = String(imageValue);
-                                const resolvedSrc = src.startsWith("http") ? src : `${BACKEND_URL}${src}`;
-                                return (
-                                  <img
-                                    src={resolvedSrc}
-                                    alt={modifier.name || "Modifier"}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = "none";
-                                      e.currentTarget.parentElement
-                                        ?.querySelector("[data-fallback]")
-                                        ?.classList.remove("hidden");
-                                    }}
-                                  />
-                                );
-                              })()}
-                              <ImageIcon data-fallback className="hidden h-5 w-5 text-muted-foreground" />
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Switch
-                                checked={
-                                  modifier?.id
+              {isSuperAdmin ? (
+                <Card className="bg-card border-border">
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Image</TableHead>
+                          <TableHead>Active</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredModifiers.map((modifier) => (
+                          <TableRow key={modifier.id}>
+                            <TableCell className="font-medium">{modifier.name}</TableCell>
+                            <TableCell>
+                              <Badge variant={modifier.type === "single" ? "default" : "secondary"}>
+                                {modifier.type || "unknown"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="w-10 h-10 rounded-md overflow-hidden bg-muted flex items-center justify-center">
+                                {(() => {
+                                  const imageValue =
+                                    modifier?.icon ||
+                                    modifier?.icon_url ||
+                                    modifier?.image ||
+                                    modifier?.image_url;
+                                  if (!imageValue) {
+                                    return <ImageIcon className="h-5 w-5 text-muted-foreground" />;
+                                  }
+                                  const src = String(imageValue);
+                                  const resolvedSrc = src.startsWith("http") ? src : `${BACKEND_URL}${src}`;
+                                  return (
+                                    <img
+                                      src={resolvedSrc}
+                                      alt={modifier.name || "Modifier"}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = "none";
+                                        e.currentTarget.parentElement
+                                          ?.querySelector("[data-fallback]")
+                                          ?.classList.remove("hidden");
+                                      }}
+                                    />
+                                  );
+                                })()}
+                                <ImageIcon data-fallback className="hidden h-5 w-5 text-muted-foreground" />
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Switch
+                                  checked={
+                                    modifier?.id
+                                      ? modifierActiveOverrides[String(modifier.id)] ??
+                                        modifier?.active ??
+                                        modifier?.is_active ??
+                                        modifier?.isActive ??
+                                        true
+                                      : modifier?.active ??
+                                        modifier?.is_active ??
+                                        modifier?.isActive ??
+                                        true
+                                  }
+                                  onCheckedChange={(checked) => {
+                                    if (!modifier?.id) return;
+                                    setPendingModifierStatusUpdate({
+                                      modifier,
+                                      nextValue: checked,
+                                    });
+                                  }}
+                                  disabled={updateModifierMutation.isPending || !modifier?.id}
+                                />
+                                <span className="text-xs text-muted-foreground">
+                                  {(modifier?.id
                                     ? modifierActiveOverrides[String(modifier.id)] ??
                                       modifier?.active ??
                                       modifier?.is_active ??
                                       modifier?.isActive ??
                                       true
-                                    : modifier?.active ??
-                                      modifier?.is_active ??
-                                      modifier?.isActive ??
-                                      true
-                                }
-                                onCheckedChange={(checked) => {
+                                    : modifier?.active ?? modifier?.is_active ?? modifier?.isActive ?? true)
+                                    ? "Active"
+                                    : "Inactive"}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setSelectedModifierForEdit(modifier.id)}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(240px,1fr))]">
+                  {filteredModifiers.map((modifier) => {
+                    const typeLabel = String(modifier?.type || "unknown");
+                    const imageValue =
+                      modifier?.icon ||
+                      modifier?.icon_url ||
+                      modifier?.image ||
+                      modifier?.image_url;
+                    const src = imageValue ? String(imageValue) : "";
+                    const resolvedSrc =
+                      src && (src.startsWith("http") ? src : `${BACKEND_URL}${src}`);
+                    const isActive =
+                      (modifier?.id ? modifierActiveOverrides[String(modifier.id)] : undefined) ??
+                      modifier?.active ??
+                      modifier?.is_active ??
+                      modifier?.isActive ??
+                      modifier?.enabled ??
+                      true;
+                    const isAvailable =
+                      (modifier?.id ? modifierAvailableOverrides[String(modifier.id)] : undefined) ??
+                      modifier?.available ??
+                      modifier?.is_available ??
+                      modifier?.isAvailable ??
+                      modifier?.is_available_for_sale ??
+                      true;
+
+                    return (
+                      <Card key={modifier.id} className="bg-card border-border">
+                        <CardContent className="p-4 space-y-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-bold text-foreground truncate">
+                                {modifier?.name || "-"}
+                              </div>
+                              <div className="mt-1 text-xs text-muted-foreground truncate">
+                                {typeLabel}
+                              </div>
+                            </div>
+                            <div className="w-10 h-10 rounded-md overflow-hidden bg-muted flex items-center justify-center shrink-0">
+                              {resolvedSrc ? (
+                                <img
+                                  src={resolvedSrc}
+                                  alt={modifier?.name || "Modifier"}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = "none";
+                                  }}
+                                />
+                              ) : (
+                                <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-foreground">
+                                {isActive ? "Active" : "Inactive"}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                className="h-8 w-8 p-0 transition-none hover:bg-transparent"
+                                disabled={updateModifierMutation.isPending || !modifier?.id}
+                                onClick={() => {
                                   if (!modifier?.id) return;
                                   setPendingModifierStatusUpdate({
+                                    modifier,
+                                    nextValue: !isActive,
+                                  });
+                                }}
+                                aria-label={isActive ? "Set inactive" : "Set active"}
+                              >
+                                {isActive ? (
+                                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                                ) : (
+                                  <XCircle className="h-5 w-5 text-muted-foreground" />
+                                )}
+                              </Button>
+                            </div>
+
+                            <div className="ml-auto flex items-center gap-2 justify-end">
+                              <span className="text-sm text-foreground">Available</span>
+                              <Switch
+                                checked={!!isAvailable}
+                                disabled={updateModifierMutation.isPending || !modifier?.id}
+                                onCheckedChange={(checked) => {
+                                  if (!modifier?.id) return;
+                                  setPendingModifierAvailabilityUpdate({
                                     modifier,
                                     nextValue: checked,
                                   });
                                 }}
-                                disabled={updateModifierMutation.isPending || !modifier?.id}
                               />
-                              <span className="text-xs text-muted-foreground">
-                                {(modifier?.id
-                                  ? modifierActiveOverrides[String(modifier.id)] ??
-                                    modifier?.active ??
-                                    modifier?.is_active ??
-                                    modifier?.isActive ??
-                                    true
-                                  : modifier?.active ?? modifier?.is_active ?? modifier?.isActive ?? true)
-                                  ? "Active"
-                                  : "Inactive"}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-4 flex-nowrap">
+                            <div className="min-w-0 flex items-baseline gap-2 whitespace-nowrap">
+                              <span className="text-xs text-muted-foreground">Required</span>
+                              <span className="text-sm font-semibold text-foreground truncate">
+                                {modifier?.required ? "Yes" : "No"}
                               </span>
                             </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setSelectedModifierForEdit(modifier.id)}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
+                            <div className="flex items-baseline gap-2 whitespace-nowrap">
+                              <span className="text-xs text-muted-foreground">Type</span>
+                              <span className="text-sm text-foreground">{typeLabel}</span>
                             </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
+                          </div>
+
+                          <Button
+                            variant="outline"
+                            className="w-full justify-center bg-muted/40 hover:bg-muted/60 h-11"
+                            onClick={() => setSelectedModifierForEdit(modifier.id)}
+                            disabled={!modifier?.id}
+                          >
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Pagination */}
-              {modifiersPagination && modifiersPagination.total_items > 12 && (
+              {isSuperAdmin && modifiersPagination && modifiersPagination.total_items > 12 && (
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-muted-foreground">
                     Showing {((modifierPage - 1) * 12) + 1} to {Math.min(modifierPage * 12, modifiersPagination.total_items)} of {modifiersPagination.total_items} modifiers
@@ -2394,7 +3595,8 @@ export default function ProductManagement() {
               )}
             </div>
           )}
-        </TabsContent>
+	        </TabsContent>
+	        )}
       </Tabs>
 
       {/* Add/Edit Modifier Dialog */}
@@ -2503,12 +3705,12 @@ export default function ProductManagement() {
                   <Label htmlFor="modifier-type" className="text-foreground">
                     Type *
                   </Label>
-                  <select
-                    id="modifier-type"
-                    name="type"
-                    required
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  >
+	                  <select
+	                    id="modifier-type"
+	                    name="type"
+	                    required
+	                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+	                  >
                     <option value="single">single</option>
                     <option value="multiple">multiple</option>
                   </select>

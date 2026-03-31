@@ -63,13 +63,44 @@ export interface Category {
   restaurant_id: string;
   name: string;
   slug: string;
+  parent_id?: string | null;
   description?: string;
   image_url?: string;
   image?: string | File; // For compatibility and uploads
+  icon?: string | null;
+  banner_image?: string | null;
+  thumbnail?: string | null;
+
+  // Display & Styling
   is_active: boolean;
   active: boolean; // For compatibility
   sort_order: number;
   sort_order_alias?: number;
+  is_featured?: boolean;
+  display_type?: string | null;
+  items_per_row?: number | null;
+  color?: string | null;
+  background_color?: string | null;
+  text_color?: string | null;
+
+  // Visibility
+  show_in_menu?: boolean;
+  show_in_homepage?: boolean;
+  show_in_pos?: boolean;
+
+  // Availability
+  available_for_delivery?: boolean;
+  available_for_takeaway?: boolean;
+  available_for_dine_in?: boolean;
+  available_from_time?: string | null;
+  available_to_time?: string | null;
+  available_days?: Record<string, boolean> | null;
+
+  // SEO & Meta
+  seo_title?: string | null;
+  seo_description?: string | null;
+  seo_keywords?: string | null;
+
   product_count?: number; // compatibility
   productCount?: number; // compatibility
 }
@@ -183,6 +214,7 @@ export interface OrderFilters {
 
 export interface ModifierFilters {
   active?: boolean;
+  available?: boolean;
   page?: number;
   page_size?: number;
 }
@@ -198,30 +230,33 @@ export type OrderListResponse = PaginatedResponse<Order>;
 
 // ==================== Combo Types ====================
 
-export interface ComboItem {
-  productId: string;
+export interface ComboItemInput {
+  product_id: string;
   quantity: number;
-  required: boolean;
-  substituteOptions: string[];
+  required?: boolean;
+  choice_group?: string;
+  choices?: string[];
+  sort_order?: number;
+  // Backward compatibility with older payloads
+  substitute_options?: string[];
 }
 
-export interface ComboModifier {
+export interface Combo {
   id: string;
   name: string;
-  options: string[];
-}
-
-export interface ComboProduct {
-  id: string;
-  name: string;
-  description: string;
-  basePrice: number;
-  discountType: 'fixed' | 'percentage';
-  discountValue: number;
-  items: ComboItem[];
+  slug: string;
+  description?: string;
+  price: number;
+  category_id: string;
+  image?: string;
   available: boolean;
-  category: string;
+  featured: boolean;
   tags: string[];
+  valid_from?: string;
+  valid_until?: string;
+  max_quantity_per_order?: number;
+  restaurant_id: string;
+  items?: ComboItemInput[];
 }
 
 // ==================== Customer Types ====================
@@ -264,10 +299,26 @@ export interface Customer {
 
 export interface QRTable {
   id: string;
+  restaurant_id?: string;
   tableNumber: string;
   tableName: string;
   location: string;
   capacity: number;
+  min_capacity?: number;
+  floor?: string;
+  section?: string;
+  position_x?: number;
+  position_y?: number;
+  image?: string;
+  qr_code?: string;
+  status?: "available" | "occupied" | "reserved" | "cleaning" | "maintenance" | string;
+  is_bookable?: boolean;
+  is_outdoor?: boolean;
+  is_accessible?: boolean;
+  has_power_outlet?: boolean;
+  minimum_spend?: number;
+  description?: string;
+  notes?: string;
   qrCodeUrl: string;
   qrToken: string;
   isActive: boolean;
@@ -468,10 +519,16 @@ export interface Modifier {
 
 export interface ModifierOption {
   id: string;
+  restaurant_id?: string;
   modifier_id: string;
   name: string;
-  price_adjustment: number;
-  price?: number; // compatibility
-  is_available: boolean;
-  available: boolean; // compatibility
+  price?: number;
+  price_adjustment?: number; // compatibility
+  available?: boolean;
+  is_available?: boolean; // compatibility
+  hidden?: boolean;
+  is_hidden?: boolean; // compatibility
+  sort_order?: number;
+  created_at?: string;
+  updated_at?: string;
 }
