@@ -19,6 +19,7 @@ import {
     Network,
     Shield,
     Globe,
+    LayoutGrid,
 } from "lucide-react";
 
 export type UserRole = "super_admin" | "admin" | "supervisor" | "user";
@@ -103,6 +104,22 @@ export const navigationConfig: NavItem[] = [
         href: "/super-admin/tables",
         icon: Calendar,
         description: "Table Management",
+        roles: ["super_admin"],
+        category: "configuration",
+    },
+    {
+        name: "Home Banners",
+        href: "/super-admin/homebanners",
+        icon: Globe,
+        description: "Homepage Banner Management",
+        roles: ["super_admin"],
+        category: "configuration",
+    },
+    {
+        name: "Row Management",
+        href: "/super-admin/row-management",
+        icon: LayoutGrid,
+        description: "Homepage Rows & Sections",
         roles: ["super_admin"],
         category: "configuration",
     },
@@ -238,6 +255,20 @@ export const navigationConfig: NavItem[] = [
         href: "/admin/customers",
         icon: Heart,
         description: "Customer & Loyalty",
+        roles: ["admin", "supervisor"],
+    },
+    {
+        name: "Home Banners",
+        href: "/admin/homebanners",
+        icon: Globe,
+        description: "Homepage Banners",
+        roles: ["admin", "supervisor"],
+    },
+    {
+        name: "Row Management",
+        href: "/admin/row-management",
+        icon: LayoutGrid,
+        description: "Homepage Rows & Sections",
         roles: ["admin", "supervisor"],
     },
     {

@@ -2551,114 +2551,117 @@ export default function ProductManagement() {
           ) : isSuperAdmin ? (
             <Card className="bg-card border-border">
               <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead className="w-16">Image</TableHead>
-                      <TableHead>Active</TableHead>
-                      <TableHead>Available</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredProducts.map((product) => (
-                      <TableRow key={product.id}>
-                        <TableCell className="font-medium text-foreground">{product.name}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {categories.find((c) => c.id === product.category)?.name || "-"}
-                        </TableCell>
-                        <TableCell className="text-foreground">{formatINR(product.price)}</TableCell>
-                        <TableCell>
-                          <div className="w-10 h-10 rounded-md overflow-hidden bg-muted flex items-center justify-center">
-                            {product.image ? (
-                              <img
-                                src={product.image.startsWith("http") ? product.image : `${BACKEND_URL}${product.image}`}
-                                alt={product.name}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = "none";
-                                  e.currentTarget.parentElement
-                                    ?.querySelector("[data-fallback]")
-                                    ?.classList.remove("hidden");
-                                }}
+                <div className="rounded-md border border-border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="min-w-[260px]">Name</TableHead>
+                        <TableHead className="min-w-[200px]">Category</TableHead>
+                        <TableHead className="w-[110px] text-right">Price</TableHead>
+                        <TableHead className="w-[80px] text-center">Image</TableHead>
+                        <TableHead className="w-[150px] text-center">Active</TableHead>
+                        <TableHead className="w-[160px] text-center">Available</TableHead>
+                        <TableHead className="w-[180px] text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredProducts.map((product) => (
+                        <TableRow key={product.id}>
+                          <TableCell className="font-medium text-foreground">{product.name}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {categories.find((c) => c.id === product.category)?.name || "-"}
+                          </TableCell>
+                          <TableCell className="text-foreground text-right tabular-nums">
+                            {formatINR(product.price)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <div className="inline-flex w-10 h-10 rounded-md overflow-hidden bg-muted items-center justify-center">
+                              {product.image ? (
+                                <img
+                                  src={product.image.startsWith("http") ? product.image : `${BACKEND_URL}${product.image}`}
+                                  alt={product.name}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = "none";
+                                    e.currentTarget.parentElement
+                                      ?.querySelector("[data-fallback]")
+                                      ?.classList.remove("hidden");
+                                  }}
+                                />
+                              ) : null}
+                              <ImageIcon
+                                data-fallback
+                                className={`h-5 w-5 text-muted-foreground ${product.image ? "hidden" : ""}`}
                               />
-                            ) : null}
-                            <ImageIcon
-                              data-fallback
-                              className={`h-5 w-5 text-muted-foreground ${product.image ? "hidden" : ""}`}
-                            />
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Switch
-                              checked={product.is_published}
-                              onCheckedChange={(checked) => {
-                                confirmAndUpdateProduct({
-                                  product,
-                                  fieldLabel: "Active",
-                                  nextValue: checked,
-                                  updates: { is_published: checked },
-                                });
-                              }}
-                              disabled={updateMutation.isPending}
-                            />
-                            <span className="text-xs text-muted-foreground">
-                              {product.is_published ? "Active" : "Inactive"}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Switch
-                              checked={product.available}
-                              onCheckedChange={(checked) => {
-                                confirmAndUpdateProduct({
-                                  product,
-                                  fieldLabel: "Available",
-                                  nextValue: checked,
-                                  updates: { available: checked },
-                                });
-                              }}
-                              disabled={updateMutation.isPending}
-                            />
-                            <span className="text-xs text-muted-foreground">
-                              {product.available ? "Available" : "Unavailable"}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <Dialog
-                              open={editingProduct?.id === product.id}
-                                  onOpenChange={(open) => {
-                                if (open && !product.is_published) return;
-                                if (open) {
-                                  setEditingProduct(product);
-                                  setImagePreview(resolveProductImageSrc(product.image));
-                                  setImageFile(null);
-                                } else {
-                                  setEditingProduct(null);
-                                  setImagePreview("");
-                                  setImageFile(null);
-                                }
-                              }}
-                            >
-                              <DialogTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={!product.is_published}
-                                  title={!product.is_published ? "Inactive products can't be edited" : undefined}
-                                  className="border-pos-secondary text-pos-text-muted hover:text-pos-text disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  <Edit className="mr-2 h-4 w-4" />
-                                  Edit
-                                </Button>
-                              </DialogTrigger>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-center gap-2 whitespace-nowrap">
+                              <Switch
+                                checked={product.is_published}
+                                onCheckedChange={(checked) => {
+                                  confirmAndUpdateProduct({
+                                    product,
+                                    fieldLabel: "Active",
+                                    nextValue: checked,
+                                    updates: { is_published: checked },
+                                  });
+                                }}
+                                disabled={updateMutation.isPending}
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                {product.is_published ? "Active" : "Inactive"}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-center gap-2 whitespace-nowrap">
+                              <Switch
+                                checked={product.available}
+                                onCheckedChange={(checked) => {
+                                  confirmAndUpdateProduct({
+                                    product,
+                                    fieldLabel: "Available",
+                                    nextValue: checked,
+                                    updates: { available: checked },
+                                  });
+                                }}
+                                disabled={updateMutation.isPending}
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                {product.available ? "Available" : "Unavailable"}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-2">
+                              <Dialog
+                                open={editingProduct?.id === product.id}
+                                    onOpenChange={(open) => {
+                                  if (open && !product.is_published) return;
+                                  if (open) {
+                                    setEditingProduct(product);
+                                    setImagePreview(resolveProductImageSrc(product.image));
+                                    setImageFile(null);
+                                  } else {
+                                    setEditingProduct(null);
+                                    setImagePreview("");
+                                    setImageFile(null);
+                                  }
+                                }}
+                              >
+                                <DialogTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={!product.is_published}
+                                    title={!product.is_published ? "Inactive products can't be edited" : undefined}
+                                    className="border-pos-secondary text-pos-text-muted hover:text-pos-text disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </Button>
+                                </DialogTrigger>
                               <DialogContent className="bg-pos-surface border-pos-secondary w-[95vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
                                 <DialogHeader>
                                   <DialogTitle className="text-pos-text">
@@ -2762,8 +2765,9 @@ export default function ProductManagement() {
                         </TableCell>
                       </TableRow>
                     ))}
-                  </TableBody>
-                </Table>
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
           ) : (

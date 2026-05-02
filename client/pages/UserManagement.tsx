@@ -521,6 +521,36 @@ export default function UserManagement() {
     resetUserFilters();
   };
 
+  const handleOpenEditUser = (targetUser: User) => {
+    if (targetUser.status === "inactive") return;
+
+    if (typeof document !== "undefined") {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    }
+
+    const filtersSnapshot = {
+      searchQuery,
+      selectedRole,
+      selectedStatus,
+      selectedRestaurant,
+      currentPage,
+    };
+
+    setEditingUser(targetUser);
+
+    // Defensive: keep filters unchanged when opening the edit modal.
+    setTimeout(() => {
+      setSearchQuery(filtersSnapshot.searchQuery);
+      setSelectedRole(filtersSnapshot.selectedRole);
+      setSelectedStatus(filtersSnapshot.selectedStatus);
+      setSelectedRestaurant(filtersSnapshot.selectedRestaurant);
+      setCurrentPage(filtersSnapshot.currentPage);
+    }, 0);
+  };
+
+  const isAnyModalOpen =
+    !!editingUser || isAddingUser || isAddingRole || isAddingSchedule;
+
   const handleCreateUser = async (newUser: any) => {
     if (authUser?.role === "super_admin") {
       try {
@@ -762,10 +792,12 @@ export default function UserManagement() {
 
     if (authUser?.role === "super_admin") {
       try {
+        const nextPassword = String((updatedUser as any).password ?? "").trim();
         await updateUser(editingUser.id, {
           full_name: updatedUser.name,
           username: updatedUser.username,
           email: updatedUser.email,
+          ...(nextPassword ? { password: nextPassword } : {}),
           ...(updatedUser.phone ? { phone: updatedUser.phone } : {}),
           restaurant_id: (updatedUser as any).restaurantId || undefined,
           role: updatedUser.role ? mapRoleForApi(updatedUser.role as User["role"]) : undefined,
@@ -1022,10 +1054,8 @@ export default function UserManagement() {
           if (!normalizedValue) return "Please select a role.";
           return "";
         case "password":
-          if (!user) {
-            return validatePassword(normalizedValue, formData.username);
-          }
-          return "";
+          if (user && !normalizedValue) return "";
+          return validatePassword(normalizedValue, formData.username);
         default:
           return "";
       }
@@ -1249,7 +1279,38 @@ export default function UserManagement() {
               )}
             </div>
           ) : (
-            <div />
+            <div className="space-y-2">
+              <Label htmlFor="password" className="text-foreground">
+                New Password (optional)
+              </Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={formData.password}
+                  onChange={(e) => setFieldValue("password", e.target.value)}
+                  onBlur={() => handleFieldBlur("password")}
+                  className="bg-background border-border text-foreground pr-10"
+                  placeholder="Enter new password"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <Eye className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </Button>
+              </div>
+              {formErrors.password && (
+                <p className="text-xs text-destructive">{formErrors.password}</p>
+              )}
+            </div>
           )}
         </div>
 
@@ -1572,9 +1633,18 @@ export default function UserManagement() {
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
                   <Input
+                    type="search"
+                    name="superadmin-users-search"
                     placeholder="Search users by name or email..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      if (isAnyModalOpen) return;
+                      setSearchQuery(e.target.value);
+                    }}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
                     className="pl-10 bg-background border-border text-foreground"
                   />
                 </div>
@@ -1640,8 +1710,8 @@ export default function UserManagement() {
                       <TableHead>Restaurant</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Role</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right w-[160px] pr-10">Actions</TableHead>
+                      <TableHead className="w-[140px] pl-10">Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1666,18 +1736,22 @@ export default function UserManagement() {
                           <TableCell>
                             <Badge className={getRoleColor(user.role)}>{user.role}</Badge>
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-right w-[160px] pr-10 whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1">
                               <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setEditingUser(user)}
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={user.status === "inactive"}
+                                className="bg-muted text-foreground hover:bg-green-600 hover:text-white hover:border-green-600 disabled:opacity-50 disabled:hover:bg-muted disabled:hover:text-foreground"
+                                onClick={() => handleOpenEditUser(user)}
                               >
-                                <Edit className="h-4 w-4" />
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit
                               </Button>
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="w-[140px] pl-10">
                               <Switch
                                 checked={user.status === "active"}
                                 disabled={
@@ -1737,16 +1811,15 @@ export default function UserManagement() {
               }
             }}
           >
-            <DialogContent className="bg-background border-border max-w-2xl">
+            <DialogContent
+              className="bg-background border-border max-w-2xl"
+              onInteractOutside={(event) => event.preventDefault()}
+              onPointerDownOutside={(event) => event.preventDefault()}
+            >
               <DialogHeader>
-                <DialogTitle className="text-foreground">
-                  Add New User
-                </DialogTitle>
+                <DialogTitle className="text-foreground">Add New User</DialogTitle>
               </DialogHeader>
-              <UserForm
-                onSave={handleCreateUser}
-                onCancel={closeAddUserModal}
-              />
+              <UserForm onSave={handleCreateUser} onCancel={closeAddUserModal} />
             </DialogContent>
           </Dialog>
         )}
@@ -1755,12 +1828,14 @@ export default function UserManagement() {
           <Dialog
             open={!!editingUser}
             onOpenChange={(open) => {
-              if (!open) {
-                setEditingUser(null);
-              }
+              if (!open) setEditingUser(null);
             }}
           >
-            <DialogContent className="bg-background border-border max-w-2xl">
+            <DialogContent
+              className="bg-background border-border max-w-2xl"
+              onInteractOutside={(event) => event.preventDefault()}
+              onPointerDownOutside={(event) => event.preventDefault()}
+            >
               <DialogHeader>
                 <DialogTitle className="text-foreground">Edit User</DialogTitle>
               </DialogHeader>
@@ -1914,9 +1989,18 @@ export default function UserManagement() {
                     <div className="flex-1 relative">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                       <Input
+                        type="search"
+                        name="users-search"
                         placeholder="Search users..."
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => {
+                          if (isAnyModalOpen) return;
+                          setSearchQuery(e.target.value);
+                        }}
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
                         className="pl-10 bg-background border-border text-foreground"
                       />
                     </div>
@@ -2062,8 +2146,9 @@ export default function UserManagement() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="flex-1 border-border text-foreground hover:bg-accent"
-                            onClick={() => setEditingUser(user)}
+                            disabled={user.status === "inactive"}
+                            className="flex-1 border-border text-foreground hover:bg-green-600 hover:text-white hover:border-green-600 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-foreground"
+                            onClick={() => handleOpenEditUser(user)}
                           >
                             <Edit className="mr-2 h-4 w-4" />
                             Edit
@@ -2255,7 +2340,11 @@ export default function UserManagement() {
               }
             }}
           >
-            <DialogContent className="bg-background border-border max-w-2xl">
+            <DialogContent
+              className="bg-background border-border max-w-2xl"
+              onInteractOutside={(event) => event.preventDefault()}
+              onPointerDownOutside={(event) => event.preventDefault()}
+            >
               <DialogHeader>
                 <DialogTitle className="text-foreground">
                   Add New User
@@ -2272,7 +2361,11 @@ export default function UserManagement() {
         {/* Add Role Modal */}
         {isAddingRole && (
           <Dialog open={isAddingRole} onOpenChange={setIsAddingRole}>
-            <DialogContent className="bg-background border-border max-w-2xl">
+            <DialogContent
+              className="bg-background border-border max-w-2xl"
+              onInteractOutside={(event) => event.preventDefault()}
+              onPointerDownOutside={(event) => event.preventDefault()}
+            >
               <DialogHeader>
                 <DialogTitle className="text-foreground">
                   Add New Role
@@ -2297,7 +2390,11 @@ export default function UserManagement() {
         {/* Add Schedule Modal */}
         {isAddingSchedule && (
           <Dialog open={isAddingSchedule} onOpenChange={setIsAddingSchedule}>
-            <DialogContent className="bg-background border-border max-w-2xl">
+            <DialogContent
+              className="bg-background border-border max-w-2xl"
+              onInteractOutside={(event) => event.preventDefault()}
+              onPointerDownOutside={(event) => event.preventDefault()}
+            >
               <DialogHeader>
                 <DialogTitle className="text-foreground">
                   Add New Schedule
@@ -2329,7 +2426,11 @@ export default function UserManagement() {
               }
             }}
           >
-            <DialogContent className="bg-background border-border max-w-2xl">
+            <DialogContent
+              className="bg-background border-border max-w-2xl"
+              onInteractOutside={(event) => event.preventDefault()}
+              onPointerDownOutside={(event) => event.preventDefault()}
+            >
               <DialogHeader>
                 <DialogTitle className="text-foreground">Edit User</DialogTitle>
               </DialogHeader>

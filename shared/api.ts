@@ -58,6 +58,80 @@ export interface Restaurant {
   updated_at: string;
 }
 
+// ==================== Homebanner Types ====================
+
+export interface Homebanner {
+  id: string;
+  restaurant_id: string;
+  title: string;
+  subtitle?: string | null;
+  description?: string | null;
+
+  // Image fields: may be URLs returned by backend; uploads use File on client side.
+  mobile_image?: string | null;
+  desktop_image?: string | null;
+  mobile_image_url?: string | null; // compatibility
+  desktop_image_url?: string | null; // compatibility
+
+  redirect_url?: string | null;
+  button_text?: string | null;
+  active: boolean;
+  featured: boolean;
+  sort_order?: number | null;
+  start_at?: string | null;
+  end_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// ==================== Row Management Types ====================
+
+export type RowType =
+  | "category"
+  | "product"
+  | "combo_product"
+  | "single_banner"
+  | "ads_banner"
+  | "ads_video";
+
+export interface RowManagement {
+  id: string;
+  restaurant_id: string;
+  name: string;
+  title?: string | null;
+  subtitle?: string | null;
+  description?: string | null;
+  row_type: RowType;
+
+  active: boolean;
+  show_title?: boolean;
+  sort_order?: number | null;
+  layout_style?: string | null;
+  items_per_view?: number | null;
+  auto_scroll?: boolean;
+  redirect_url?: string | null;
+  button_text?: string | null;
+  background_color?: string | null;
+  text_color?: string | null;
+  start_at?: string | null;
+  end_at?: string | null;
+  metadata?: Record<string, any> | null;
+
+  category_ids?: string[] | null;
+  product_ids?: string[] | null;
+  combo_product_ids?: string[] | null;
+
+  image?: string | null;
+  mobile_image?: string | null;
+  desktop_image?: string | null;
+  thumbnail_image?: string | null;
+  video_url?: string | null;
+
+  created_at?: string;
+  updated_at?: string;
+  deleted_at?: string | null;
+}
+
 export interface Category {
   id: string;
   restaurant_id: string;

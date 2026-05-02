@@ -210,6 +210,7 @@ export default function CategoryConfiguration() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [viewingCategory, setViewingCategory] = useState<Category | null>(null);
   const [pendingCategoryStatusChange, setPendingCategoryStatusChange] = useState<{
     category: Category;
     active: boolean;
@@ -1743,66 +1744,83 @@ export default function CategoryConfiguration() {
       ) : isSuperAdmin ? (
         <Card className="bg-card border-border">
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Restaurant</TableHead>
-                  <TableHead>Image</TableHead>
-                  <TableHead>Sort</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredCategories.map((category) => (
-                  <TableRow key={category.id}>
-                    <TableCell className="font-medium">{category.name}</TableCell>
-                    <TableCell>
-                      {restaurantNameById.get(String(category.restaurant_id || "")) || "Unassigned"}
-                    </TableCell>
-                    <TableCell>
-                      <div className="h-10 w-10 rounded-md overflow-hidden bg-muted flex items-center justify-center">
-                        {category.image ? (
-                          <img
-                            src={resolveImageSrc(category.image)}
-                            alt={category.name}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{category.sort_order}</TableCell>
-                    <TableCell>
-                      <Switch
-                        checked={!!category.active}
-                        onCheckedChange={(checked) =>
-                          handleRequestCategoryStatusChange(category, checked)
-                        }
-                        disabled={updateMutation.isPending || !canEditCategories}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {canEditCategories && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="border-border"
-                          onClick={() => setEditingCategory(category)}
-                          disabled={!category.active}
-                          title={!category.active ? "Inactive categories cannot be edited" : undefined}
-                        >
-                          <Edit className="mr-2 h-4 w-4" />
-                          Edit
-                        </Button>
-                      )}
-                    </TableCell>
+            <div className="rounded-md border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[220px]">Name</TableHead>
+                    <TableHead className="min-w-[220px]">Restaurant</TableHead>
+                    <TableHead className="w-[88px]">Image</TableHead>
+                    <TableHead className="w-[80px] text-center">Sort</TableHead>
+                    <TableHead className="w-[120px] text-center">Status</TableHead>
+                    <TableHead className="w-[240px] text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredCategories.map((category) => (
+                    <TableRow key={category.id}>
+                      <TableCell className="font-medium">{category.name}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {restaurantNameById.get(String(category.restaurant_id || "")) || "Unassigned"}
+                      </TableCell>
+                      <TableCell>
+                        <div className="h-10 w-10 rounded-md overflow-hidden bg-muted flex items-center justify-center">
+                          {category.image ? (
+                            <img
+                              src={resolveImageSrc(category.image)}
+                              alt={category.name}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center tabular-nums">
+                        {category.sort_order}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex justify-center">
+                          <Switch
+                            checked={!!category.active}
+                            onCheckedChange={(checked) =>
+                              handleRequestCategoryStatusChange(category, checked)
+                            }
+                            disabled={updateMutation.isPending || !canEditCategories}
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-border"
+                            onClick={() => setViewingCategory(category)}
+                          >
+                            <Eye className="mr-2 h-4 w-4" />
+                            View
+                          </Button>
+                          {canEditCategories && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-border"
+                              onClick={() => setEditingCategory(category)}
+                              disabled={!category.active}
+                              title={!category.active ? "Inactive categories cannot be edited" : undefined}
+                            >
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       ) : (
@@ -1927,6 +1945,84 @@ export default function CategoryConfiguration() {
               onCancel={() => setEditingCategory(null)}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!viewingCategory}
+        onOpenChange={(open) => {
+          if (!open) setViewingCategory(null);
+        }}
+      >
+        <DialogContent className="bg-background border-border max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Category Details</DialogTitle>
+          </DialogHeader>
+
+          {viewingCategory ? (
+            <div className="space-y-5">
+              <div className="flex items-start gap-4">
+                <div className="h-24 w-24 rounded-md overflow-hidden bg-muted flex items-center justify-center shrink-0">
+                  {viewingCategory.image ? (
+                    <img
+                      src={resolveImageSrc(viewingCategory.image)}
+                      alt={viewingCategory.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-foreground truncate">
+                      {viewingCategory.name}
+                    </h3>
+                    <Badge
+                      className={
+                        viewingCategory.active
+                          ? "bg-green-600 text-white hover:bg-green-600"
+                          : "bg-muted text-foreground"
+                      }
+                    >
+                      {viewingCategory.active ? "Active" : "Inactive"}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground truncate">{viewingCategory.slug}</p>
+
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">Restaurant</span>
+                      <span className="text-foreground truncate">
+                        {restaurantNameById.get(String(viewingCategory.restaurant_id || "")) ||
+                          "Unassigned"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">Sort order</span>
+                      <span className="text-foreground">{viewingCategory.sort_order}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {viewingCategory.description ? (
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">Description</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                    {viewingCategory.description}
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-2">
+                <DialogClose asChild>
+                  <Button variant="outline">Close</Button>
+                </DialogClose>
+              </div>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
 

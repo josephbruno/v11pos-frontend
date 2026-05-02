@@ -82,6 +82,8 @@ import QRCheckout from "./pages/QRCheckout";
 import OrderTracking from "./pages/OrderTracking";
 import UserManagement from "./pages/UserManagement";
 import Settings from "./pages/Settings";
+import HomebannerManagement from "./pages/HomebannerManagement";
+import RowManagementPage from "./pages/RowManagement";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import NotFound from "./pages/NotFound";
@@ -260,6 +262,26 @@ function AppRoutes() {
             <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
                 <QRManagement />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/super-admin/homebanners"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <HomebannerManagement />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/super-admin/row-management"
+          element={
+            <RoleProtectedRoute allowedRoles={["super_admin"]}>
+              <LayoutWrapper>
+                <RowManagementPage />
               </LayoutWrapper>
             </RoleProtectedRoute>
           }
@@ -452,6 +474,26 @@ function AppRoutes() {
             <RoleProtectedRoute allowedRoles={["admin", "supervisor"]}>
               <LayoutWrapper>
                 <CustomerManagement />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/homebanners"
+          element={
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor"]}>
+              <LayoutWrapper>
+                <HomebannerManagement />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/row-management"
+          element={
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor"]}>
+              <LayoutWrapper>
+                <RowManagementPage />
               </LayoutWrapper>
             </RoleProtectedRoute>
           }
@@ -657,6 +699,22 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <RolePreservingRedirect suffix="/tables" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/homebanners"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/homebanners" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/row-management"
+          element={
+            <ProtectedRoute>
+              <RolePreservingRedirect suffix="/row-management" />
             </ProtectedRoute>
           }
         />
