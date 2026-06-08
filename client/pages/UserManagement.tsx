@@ -64,6 +64,7 @@ import {
   getMyRestaurants,
   getUsers,
   updateUser,
+  updateUserPassword,
 } from "@/lib/apiServices";
 import {
   Table,
@@ -82,7 +83,7 @@ interface User {
   phone: string;
   restaurant: string;
   restaurantId?: string;
-  role: "super_admin" | "admin" | "supervisor" | "user";
+  role: "super_admin" | "admin" | "supervisor" | "user" | "cashier" | "waiter" | "mobile-kds" | "kitchen-kds" | "kiosk-machine";
   status: "active" | "inactive" | "suspended";
   joinDate: string;
   lastLogin: string;
@@ -171,6 +172,11 @@ export default function UserManagement() {
   const [isAddingSchedule, setIsAddingSchedule] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [passwordResetUser, setPasswordResetUser] = useState<User | null>(null);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetPasswordValue, setResetPasswordValue] = useState("");
+  const [resetPasswordError, setResetPasswordError] = useState("");
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{
     user: User;
     checked: boolean;
@@ -228,6 +234,41 @@ export default function UserManagement() {
       description: "General POS and order operations",
       permissions: ["manage_orders", "process_payments", "view_menu"],
       userCount: 10,
+    },
+    {
+      id: "cashier",
+      name: "Cashier",
+      description: "POS billing and order processing",
+      permissions: ["process_payments", "manage_orders", "view_menu"],
+      userCount: 0,
+    },
+    {
+      id: "waiter",
+      name: "Waiter",
+      description: "Table service, orders and reservations",
+      permissions: ["manage_orders", "view_menu", "manage_table_booking"],
+      userCount: 0,
+    },
+    {
+      id: "mobile-kds",
+      name: "Mobile KDS",
+      description: "Mobile kitchen display — view live orders",
+      permissions: ["view_orders"],
+      userCount: 0,
+    },
+    {
+      id: "kitchen-kds",
+      name: "Kitchen KDS",
+      description: "Kitchen display screen — view and manage live orders",
+      permissions: ["view_orders", "manage_orders"],
+      userCount: 0,
+    },
+    {
+      id: "kiosk-machine",
+      name: "Kiosk Machine",
+      description: "Self-service ordering kiosk",
+      permissions: ["manage_orders", "process_payments", "view_menu"],
+      userCount: 0,
     },
   ];
 
@@ -477,16 +518,16 @@ export default function UserManagement() {
 
   const getRoleColor = (role: string) => {
     switch (role) {
-      case "super_admin":
-        return "bg-purple-600 text-white";
-      case "admin":
-        return "bg-red-500 text-white";
-      case "supervisor":
-        return "bg-yellow-500 text-black";
-      case "user":
-        return "bg-green-500 text-white";
-      default:
-        return "bg-gray-500 text-white";
+      case "super_admin":    return "bg-purple-600 text-white";
+      case "admin":          return "bg-red-500 text-white";
+      case "supervisor":     return "bg-yellow-500 text-black";
+      case "user":           return "bg-green-500 text-white";
+      case "cashier":        return "bg-blue-500 text-white";
+      case "waiter":         return "bg-teal-500 text-white";
+      case "mobile-kds":     return "bg-orange-500 text-white";
+      case "kitchen-kds":    return "bg-rose-500 text-white";
+      case "kiosk-machine":  return "bg-indigo-500 text-white";
+      default:               return "bg-gray-500 text-white";
     }
   };
 
@@ -648,6 +689,11 @@ export default function UserManagement() {
     if (value === "superadmin" || value === "super_admin") return "super_admin";
     if (value === "admin") return "admin";
     if (value === "supervisor") return "supervisor";
+    if (value === "cashier") return "cashier";
+    if (value === "waiter") return "waiter";
+    if (value === "mobile-kds" || value === "mobile_kds") return "mobile-kds";
+    if (value === "kitchen-kds" || value === "kitchen_kds") return "kitchen-kds";
+    if (value === "kiosk-machine" || value === "kiosk_machine") return "kiosk-machine";
     return "user";
   };
 
@@ -895,6 +941,48 @@ export default function UserManagement() {
 
     setUserToDelete(null);
     setIsDeletingUser(false);
+  };
+
+  const closeResetPasswordModal = () => {
+    setPasswordResetUser(null);
+    setResetPasswordValue("");
+    setResetPasswordError("");
+    setShowResetPassword(false);
+  };
+
+  const handleResetPassword = async () => {
+    if (!passwordResetUser) return;
+    
+    const error = validatePassword(resetPasswordValue, passwordResetUser.username);
+    if (error) {
+      setResetPasswordError(error);
+      return;
+    }
+    
+    setIsResettingPassword(true);
+    setResetPasswordError("");
+    
+    try {
+      if (authUser?.role === "super_admin") {
+        await updateUserPassword(passwordResetUser.id, resetPasswordValue);
+        await loadSuperAdminUsers();
+      }
+      addToast({
+        type: "success",
+        title: "Password Updated",
+        description: `Password for ${passwordResetUser.name} has been updated.`,
+      });
+      closeResetPasswordModal();
+    } catch (error: any) {
+      addToast({
+        type: "error",
+        title: "Update Failed",
+        description: error?.message || "Could not update password.",
+      });
+      setResetPasswordError(error?.message || "Could not update password.");
+    } finally {
+      setIsResettingPassword(false);
+    }
   };
 
   const handleToggleUserStatus = async (targetUser: User, checked: boolean) => {
@@ -1245,7 +1333,7 @@ export default function UserManagement() {
               <p className="text-xs text-destructive">{formErrors.username}</p>
             )}
           </div>
-          {!user ? (
+          {!user && (
             <div className="space-y-2">
               <Label htmlFor="password" className="text-foreground">
                 Temporary Password
@@ -1259,39 +1347,6 @@ export default function UserManagement() {
                   onBlur={() => handleFieldBlur("password")}
                   className="bg-background border-border text-foreground pr-10"
                   placeholder="Enter temporary password"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <Eye className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </Button>
-              </div>
-              {formErrors.password && (
-                <p className="text-xs text-destructive">{formErrors.password}</p>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-foreground">
-                New Password (optional)
-              </Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  value={formData.password}
-                  onChange={(e) => setFieldValue("password", e.target.value)}
-                  onBlur={() => handleFieldBlur("password")}
-                  className="bg-background border-border text-foreground pr-10"
-                  placeholder="Enter new password"
                 />
                 <Button
                   type="button"
@@ -1749,6 +1804,17 @@ export default function UserManagement() {
                                 <Edit className="mr-2 h-4 w-4" />
                                 Edit
                               </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={user.status === "inactive"}
+                                className="bg-muted text-foreground hover:bg-blue-600 hover:text-white hover:border-blue-600 disabled:opacity-50 disabled:hover:bg-muted disabled:hover:text-foreground px-2"
+                                onClick={() => setPasswordResetUser(user)}
+                                title="Update Password"
+                              >
+                                <Key className="h-4 w-4" />
+                              </Button>
                             </div>
                           </TableCell>
                           <TableCell className="w-[140px] pl-10">
@@ -1915,6 +1981,70 @@ export default function UserManagement() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <Dialog
+          open={!!passwordResetUser}
+          onOpenChange={(open) => {
+            if (!open) closeResetPasswordModal();
+          }}
+        >
+          <DialogContent className="bg-background border-border max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">Update Password</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <p className="text-sm text-muted-foreground">
+                Set a new password for <strong>{passwordResetUser?.name}</strong>.
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="new-password" className="text-foreground">
+                  New Password
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type={showResetPassword ? "text" : "password"}
+                    value={resetPasswordValue}
+                    onChange={(e) => {
+                      setResetPasswordValue(e.target.value);
+                      if (resetPasswordError) setResetPasswordError("");
+                    }}
+                    className="bg-background border-border text-foreground pr-10"
+                    placeholder="Enter new password"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => setShowResetPassword(!showResetPassword)}
+                  >
+                    {showResetPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
+                {resetPasswordError && (
+                  <p className="text-xs text-destructive">{resetPasswordError}</p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-end space-x-2 border-t border-border pt-4">
+              <Button variant="outline" onClick={closeResetPasswordModal} disabled={isResettingPassword}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleResetPassword}
+                disabled={isResettingPassword || !resetPasswordValue}
+                className="bg-primary hover:bg-primary/90"
+              >
+                {isResettingPassword ? "Updating..." : "Update Password"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </>
     );
   }

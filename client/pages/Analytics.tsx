@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   TrendingUp,
   TrendingDown,
@@ -23,6 +24,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  getOrderStatistics,
+  listItemReports,
+  listCategoryReports,
+  getDashboardStats,
+  getFilteredOrders,
+  getStaffMembers,
+} from "@/lib/apiServices";
+import type { OrderStatistics, ItemWiseReport, CategoryWiseReport } from "@/shared/api";
 
 interface SalesData {
   period: string;
@@ -61,152 +72,237 @@ interface StaffPerformance {
   rating: number;
 }
 
+function getDateRange(range: string): { start: string; end: string } {
+  const now = new Date();
+  const end = now.toISOString().split("T")[0];
+  let start: string;
+  const d = new Date(now);
+  switch (range) {
+    case "1d":
+      d.setDate(d.getDate() - 1);
+      break;
+    case "7d":
+      d.setDate(d.getDate() - 7);
+      break;
+    case "30d":
+      d.setDate(d.getDate() - 30);
+      break;
+    case "90d":
+      d.setDate(d.getDate() - 90);
+      break;
+    default:
+      d.setDate(d.getDate() - 7);
+  }
+  start = d.toISOString().split("T")[0];
+  return { start, end };
+}
+
+function getPrevRange(range: string): { start: string; end: string } {
+  const days = range === "1d" ? 1 : range === "7d" ? 7 : range === "30d" ? 30 : 90;
+  const now = new Date();
+  const endD = new Date(now);
+  endD.setDate(endD.getDate() - days);
+  const startD = new Date(endD);
+  startD.setDate(startD.getDate() - days);
+  return { start: startD.toISOString().split("T")[0], end: endD.toISOString().split("T")[0] };
+}
+
+const PAYMENT_COLORS: Record<string, string> = {
+  card: "bg-pos-accent",
+  cash: "bg-blue-500",
+  upi: "bg-purple-500",
+  digital_wallet: "bg-orange-500",
+};
+
 export default function Analytics() {
+  const { user } = useAuth();
+  const restaurantId = user?.branchId ?? "";
   const [dateRange, setDateRange] = useState("7d");
   const [activeTab, setActiveTab] = useState("overview");
 
-  // Mock data
-  const salesOverview: SalesData[] = [
-    {
-      period: "Today",
-      revenue: 2850.75,
-      orders: 127,
-      avgOrder: 22.45,
-      growth: 12.5,
-    },
-    {
-      period: "Yesterday",
-      revenue: 2534.2,
-      orders: 113,
-      avgOrder: 22.43,
-      growth: -5.2,
-    },
-    {
-      period: "This Week",
-      revenue: 18450.3,
-      orders: 842,
-      avgOrder: 21.91,
-      growth: 8.7,
-    },
-    {
-      period: "Last Week",
-      revenue: 16980.45,
-      orders: 789,
-      avgOrder: 21.52,
-      growth: 15.3,
-    },
-    {
-      period: "This Month",
-      revenue: 78920.15,
-      orders: 3567,
-      avgOrder: 22.12,
-      growth: 18.9,
-    },
-    {
-      period: "Last Month",
-      revenue: 66434.78,
-      orders: 3021,
-      avgOrder: 21.99,
-      growth: 12.4,
-    },
-  ];
+  const { start, end } = getDateRange(dateRange);
+  const prev = getPrevRange(dateRange);
 
-  const topProducts: ProductPerformance[] = [
-    {
-      name: "Grilled Chicken",
-      sales: 156,
-      revenue: 2964.44,
-      category: "Main Course",
-      trend: "up",
-    },
-    {
-      name: "Caesar Salad",
-      sales: 134,
-      revenue: 1740.66,
-      category: "Appetizers",
-      trend: "up",
-    },
-    {
-      name: "Coca Cola",
-      sales: 298,
-      revenue: 891.02,
-      category: "Beverages",
-      trend: "stable",
-    },
-    {
-      name: "Fish & Chips",
-      sales: 89,
-      revenue: 1512.11,
-      category: "Main Course",
-      trend: "down",
-    },
-    {
-      name: "Chocolate Cake",
-      sales: 78,
-      revenue: 623.22,
-      category: "Desserts",
-      trend: "up",
-    },
-  ];
+  const { data: currStatsRaw } = useQuery({
+    queryKey: ["orderStats", restaurantId, start, end],
+    queryFn: () => getOrderStatistics(restaurantId, start, end),
+    enabled: !!restaurantId,
+    select: (r: any) => (r?.data ?? r) as OrderStatistics,
+  });
 
-  const peakHours: TimeSlotData[] = [
-    { hour: "12:00", orders: 45, revenue: 1012.5 },
-    { hour: "13:00", orders: 52, revenue: 1234.75 },
-    { hour: "18:00", orders: 38, revenue: 891.25 },
-    { hour: "19:00", orders: 61, revenue: 1456.8 },
-    { hour: "20:00", orders: 47, revenue: 1098.4 },
-  ];
+  const { data: prevStatsRaw } = useQuery({
+    queryKey: ["orderStats", restaurantId, prev.start, prev.end],
+    queryFn: () => getOrderStatistics(restaurantId, prev.start, prev.end),
+    enabled: !!restaurantId,
+    select: (r: any) => (r?.data ?? r) as OrderStatistics,
+  });
 
-  const paymentMethods: PaymentMethodData[] = [
-    {
-      method: "Credit Card",
-      percentage: 45,
-      amount: 12834.5,
-      color: "bg-pos-accent",
+  const { data: itemReportsRaw } = useQuery({
+    queryKey: ["itemReports", restaurantId],
+    queryFn: () => listItemReports(restaurantId, { limit: 10 }),
+    enabled: !!restaurantId && activeTab === "products",
+    select: (r: any) => {
+      const src = r?.data?.data ?? r?.data ?? r;
+      return (Array.isArray(src) ? src : []) as ItemWiseReport[];
     },
-    { method: "Cash", percentage: 30, amount: 8556.75, color: "bg-blue-500" },
-    { method: "UPI", percentage: 20, amount: 5704.5, color: "bg-purple-500" },
-    {
-      method: "Wallet",
-      percentage: 5,
-      amount: 1427.25,
-      color: "bg-orange-500",
-    },
-  ];
+  });
 
-  const staffPerformance: StaffPerformance[] = [
-    {
-      name: "Alex Johnson",
-      orders: 67,
-      revenue: 1567.89,
-      avgOrder: 23.4,
-      rating: 4.8,
+  const { data: categoryReportsRaw } = useQuery({
+    queryKey: ["categoryReports", restaurantId],
+    queryFn: () => listCategoryReports(restaurantId, { limit: 20 }),
+    enabled: !!restaurantId && activeTab === "products",
+    select: (r: any) => {
+      const src = r?.data?.data ?? r?.data ?? r;
+      return (Array.isArray(src) ? src : []) as CategoryWiseReport[];
     },
-    {
-      name: "Maria Garcia",
-      orders: 58,
-      revenue: 1323.45,
-      avgOrder: 22.82,
-      rating: 4.7,
+  });
+
+  const periodKey = dateRange === "1d" ? "today" : dateRange === "7d" ? "7d" : dateRange === "30d" ? "30d" : "90d";
+
+  const { data: dashboardRaw } = useQuery({
+    queryKey: ["dashboardStats", restaurantId, periodKey],
+    queryFn: () => getDashboardStats(restaurantId, periodKey),
+    enabled: !!restaurantId,
+    select: (r: any) => r?.data ?? r,
+  });
+
+  const { data: ordersForAnalyticsRaw } = useQuery({
+    queryKey: ["analyticsOrders", restaurantId, start, end],
+    queryFn: () => getFilteredOrders(restaurantId, { limit: 500 }),
+    enabled: !!restaurantId,
+    select: (r: any) => {
+      const src = r?.data ?? r;
+      if (Array.isArray(src)) return src;
+      if (Array.isArray(src?.orders)) return src.orders;
+      return [];
     },
-    {
-      name: "David Chen",
-      orders: 52,
-      revenue: 1198.76,
-      avgOrder: 23.05,
-      rating: 4.6,
+  });
+
+  const { data: staffRaw } = useQuery({
+    queryKey: ["staffMembers", restaurantId],
+    queryFn: () => getStaffMembers(restaurantId),
+    enabled: !!restaurantId && activeTab === "staff",
+    select: (r: any) => {
+      const src = r?.data ?? r;
+      return Array.isArray(src) ? src : [];
     },
-    {
-      name: "Sarah Wilson",
-      orders: 49,
-      revenue: 1087.32,
-      avgOrder: 22.19,
-      rating: 4.5,
-    },
-  ];
+  });
+
+  const peakHours: TimeSlotData[] = useMemo(() => {
+    const orders = ordersForAnalyticsRaw ?? [];
+    const buckets: Record<string, { orders: number; revenue: number }> = {};
+    for (const o of orders) {
+      const created = o.created_at ? new Date(o.created_at) : null;
+      if (!created || Number.isNaN(created.getTime())) continue;
+      const hour = `${String(created.getHours()).padStart(2, "0")}:00`;
+      if (!buckets[hour]) buckets[hour] = { orders: 0, revenue: 0 };
+      buckets[hour].orders += 1;
+      buckets[hour].revenue += (o.total_amount ?? 0) / 100;
+    }
+    return Object.entries(buckets)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-8)
+      .map(([hour, v]) => ({ hour, orders: v.orders, revenue: Math.round(v.revenue * 100) / 100 }));
+  }, [ordersForAnalyticsRaw]);
+
+  const paymentMethods: PaymentMethodData[] = useMemo(() => {
+    const orders = ordersForAnalyticsRaw ?? [];
+    const totals: Record<string, number> = {};
+    for (const o of orders) {
+      const method = (o.payment_method ?? "cash").toLowerCase();
+      totals[method] = (totals[method] ?? 0) + (o.paid_amount ?? o.total_amount ?? 0);
+    }
+    const grand = Object.values(totals).reduce((s, v) => s + v, 0) || 1;
+    const labels: Record<string, string> = {
+      card: "Card",
+      cash: "Cash",
+      upi: "UPI",
+      digital_wallet: "Wallet",
+    };
+    return Object.entries(totals).map(([method, amount]) => ({
+      method: labels[method] ?? method,
+      percentage: Math.round((amount / grand) * 1000) / 10,
+      amount: amount / 100,
+      color: PAYMENT_COLORS[method] ?? "bg-slate-500",
+    }));
+  }, [ordersForAnalyticsRaw]);
+
+  const staffPerformance: StaffPerformance[] = useMemo(() => {
+    const staff = staffRaw ?? [];
+    return staff.slice(0, 8).map((s: any) => ({
+      name: `${s.first_name ?? ""} ${s.last_name ?? ""}`.trim() || s.employee_code,
+      orders: 0,
+      revenue: 0,
+      avgOrder: 0,
+      rating: s.is_active !== false ? 4.5 : 3,
+    }));
+  }, [staffRaw]);
+
+  const revenueTrend = dashboardRaw?.revenue_trend ?? [];
+
+  const currStats: OrderStatistics | null = currStatsRaw ?? null;
+  const prevStats: OrderStatistics | null = prevStatsRaw ?? null;
+
+  const periodLabel = dateRange === "1d" ? "Last 24h" : dateRange === "7d" ? "Last 7 Days" : dateRange === "30d" ? "Last 30 Days" : "Last 3 Months";
+  const prevLabel = dateRange === "1d" ? "Prev 24h" : dateRange === "7d" ? "Prev 7 Days" : dateRange === "30d" ? "Prev 30 Days" : "Prev 3 Months";
+
+  const computeGrowth = (curr: number, prev: number) =>
+    prev > 0 ? Math.round(((curr - prev) / prev) * 1000) / 10 : 0;
+
+  const salesOverview: SalesData[] = useMemo(() => {
+    if (!currStats) return [];
+    const items: SalesData[] = [
+      {
+        period: periodLabel,
+        revenue: currStats.total_revenue / 100,
+        orders: currStats.total_orders,
+        avgOrder: Math.round((currStats.avg_order_value / 100) * 100) / 100,
+        growth: prevStats ? computeGrowth(currStats.total_revenue, prevStats.total_revenue) : 0,
+      },
+    ];
+    if (prevStats) {
+      items.push({
+        period: prevLabel,
+        revenue: prevStats.total_revenue / 100,
+        orders: prevStats.total_orders,
+        avgOrder: Math.round((prevStats.avg_order_value / 100) * 100) / 100,
+        growth: 0,
+      });
+    }
+    return items;
+  }, [currStats, prevStats, periodLabel, prevLabel]);
+
+  const topProducts: ProductPerformance[] = useMemo(() => {
+    if (!itemReportsRaw?.length) return [];
+    return itemReportsRaw
+      .sort((a, b) => b.total_revenue - a.total_revenue)
+      .slice(0, 5)
+      .map((item) => ({
+        name: item.product_name || "Unknown",
+        sales: item.quantity_sold,
+        revenue: (item.total_revenue ?? 0) / 100,
+        category: item.category_name || "Uncategorized",
+        trend: "stable" as const,
+      }));
+  }, [itemReportsRaw]);
+
+  const categoryData = useMemo(() => {
+    if (!categoryReportsRaw?.length) return [];
+    const totalRevenue = categoryReportsRaw.reduce((sum, c) => sum + (c.total_revenue ?? 0), 0) / 100;
+    return categoryReportsRaw
+      .sort((a, b) => b.total_revenue - a.total_revenue)
+      .slice(0, 6)
+      .map((cat) => ({
+        category: cat.category_name || "Uncategorized",
+        revenue: (cat.total_revenue ?? 0) / 100,
+        percentage:
+          totalRevenue > 0
+            ? Math.round(((cat.total_revenue ?? 0) / 100 / totalRevenue) * 100)
+            : 0,
+      }));
+  }, [categoryReportsRaw]);
 
   const handleExport = (format: "csv" | "pdf") => {
-    // Export functionality placeholder
     console.log(`Exporting ${activeTab} data as ${format.toUpperCase()}`);
   };
 
@@ -215,12 +311,8 @@ export default function Analytics() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-pos-text">
-            Analytics & Reports
-          </h1>
-          <p className="text-pos-text-muted mt-1">
-            Comprehensive insights and performance metrics
-          </p>
+          <h1 className="text-3xl font-bold text-pos-text">Analytics & Reports</h1>
+          <p className="text-pos-text-muted mt-1">Comprehensive insights and performance metrics</p>
         </div>
         <div className="flex items-center space-x-2">
           <Select value={dateRange} onValueChange={setDateRange}>
@@ -243,10 +335,7 @@ export default function Analytics() {
             <Download className="mr-2 h-4 w-4" />
             Export CSV
           </Button>
-          <Button
-            className="bg-pos-accent hover:bg-pos-accent/90"
-            onClick={() => handleExport("pdf")}
-          >
+          <Button className="bg-pos-accent hover:bg-pos-accent/90" onClick={() => handleExport("pdf")}>
             <Download className="mr-2 h-4 w-4" />
             Export PDF
           </Button>
@@ -255,38 +344,23 @@ export default function Analytics() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="bg-pos-surface border-pos-secondary mb-6">
-          <TabsTrigger
-            value="overview"
-            className="data-[state=active]:bg-pos-accent data-[state=active]:text-pos-text"
-          >
+          <TabsTrigger value="overview" className="data-[state=active]:bg-pos-accent data-[state=active]:text-pos-text">
             <BarChart3 className="mr-2 h-4 w-4" />
             Overview
           </TabsTrigger>
-          <TabsTrigger
-            value="products"
-            className="data-[state=active]:bg-pos-accent data-[state=active]:text-pos-text"
-          >
+          <TabsTrigger value="products" className="data-[state=active]:bg-pos-accent data-[state=active]:text-pos-text">
             <ShoppingBag className="mr-2 h-4 w-4" />
             Products
           </TabsTrigger>
-          <TabsTrigger
-            value="time-analysis"
-            className="data-[state=active]:bg-pos-accent data-[state=active]:text-pos-text"
-          >
+          <TabsTrigger value="time-analysis" className="data-[state=active]:bg-pos-accent data-[state=active]:text-pos-text">
             <Clock className="mr-2 h-4 w-4" />
             Peak Hours
           </TabsTrigger>
-          <TabsTrigger
-            value="payments"
-            className="data-[state=active]:bg-pos-accent data-[state=active]:text-pos-text"
-          >
+          <TabsTrigger value="payments" className="data-[state=active]:bg-pos-accent data-[state=active]:text-pos-text">
             <CreditCard className="mr-2 h-4 w-4" />
             Payments
           </TabsTrigger>
-          <TabsTrigger
-            value="staff"
-            className="data-[state=active]:bg-pos-accent data-[state=active]:text-pos-text"
-          >
+          <TabsTrigger value="staff" className="data-[state=active]:bg-pos-accent data-[state=active]:text-pos-text">
             <Users className="mr-2 h-4 w-4" />
             Staff
           </TabsTrigger>
@@ -295,59 +369,43 @@ export default function Analytics() {
         {/* Sales Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {salesOverview.slice(0, 6).map((data, index) => (
-              <Card
-                key={data.period}
-                className="bg-pos-surface border-pos-secondary"
-              >
+            {salesOverview.map((data) => (
+              <Card key={data.period} className="bg-pos-surface border-pos-secondary">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-pos-text-muted flex items-center justify-between">
                     {data.period}
                     {data.growth > 0 ? (
                       <TrendingUp className="h-4 w-4 text-pos-success" />
-                    ) : (
+                    ) : data.growth < 0 ? (
                       <TrendingDown className="h-4 w-4 text-pos-error" />
+                    ) : (
+                      <Activity className="h-4 w-4 text-pos-text-muted" />
                     )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-pos-text-muted text-sm">
-                        Revenue
-                      </span>
+                      <span className="text-pos-text-muted text-sm">Revenue</span>
                       <span className="text-lg font-bold text-pos-text">
-                        ${data.revenue.toLocaleString()}
+                        ₹{data.revenue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-pos-text-muted text-sm">
-                        Orders
-                      </span>
-                      <span className="text-pos-text font-medium">
-                        {data.orders}
-                      </span>
+                      <span className="text-pos-text-muted text-sm">Orders</span>
+                      <span className="text-pos-text font-medium">{data.orders}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-pos-text-muted text-sm">
-                        Avg Order
-                      </span>
-                      <span className="text-pos-text font-medium">
-                        ${data.avgOrder}
-                      </span>
+                      <span className="text-pos-text-muted text-sm">Avg Order</span>
+                      <span className="text-pos-text font-medium">₹{data.avgOrder}</span>
                     </div>
-                    <div className="pt-2 border-t border-pos-secondary">
-                      <span
-                        className={`text-xs font-medium ${
-                          data.growth > 0
-                            ? "text-pos-success"
-                            : "text-pos-error"
-                        }`}
-                      >
-                        {data.growth > 0 ? "+" : ""}
-                        {data.growth}% vs previous period
-                      </span>
-                    </div>
+                    {data.growth !== 0 && (
+                      <div className="pt-2 border-t border-pos-secondary">
+                        <span className={`text-xs font-medium ${data.growth > 0 ? "text-pos-success" : "text-pos-error"}`}>
+                          {data.growth > 0 ? "+" : ""}{data.growth}% vs previous period
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -361,7 +419,9 @@ export default function Analytics() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-pos-text-muted text-sm">Total Revenue</p>
-                    <p className="text-2xl font-bold text-pos-text">$78,920</p>
+                    <p className="text-2xl font-bold text-pos-text">
+                      ₹{currStats ? (currStats.total_revenue / 100).toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
+                    </p>
                   </div>
                   <DollarSign className="h-8 w-8 text-pos-accent" />
                 </div>
@@ -372,7 +432,9 @@ export default function Analytics() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-pos-text-muted text-sm">Total Orders</p>
-                    <p className="text-2xl font-bold text-pos-text">3,567</p>
+                    <p className="text-2xl font-bold text-pos-text">
+                      {currStats?.total_orders?.toLocaleString() ?? "—"}
+                    </p>
                   </div>
                   <ShoppingBag className="h-8 w-8 text-pos-accent" />
                 </div>
@@ -382,10 +444,10 @@ export default function Analytics() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-pos-text-muted text-sm">
-                      Avg Order Value
+                    <p className="text-pos-text-muted text-sm">Avg Order Value</p>
+                    <p className="text-2xl font-bold text-pos-text">
+                      ₹{currStats ? (currStats.avg_order_value / 100).toFixed(2) : "—"}
                     </p>
-                    <p className="text-2xl font-bold text-pos-text">$22.12</p>
                   </div>
                   <TrendingUp className="h-8 w-8 text-pos-accent" />
                 </div>
@@ -396,8 +458,8 @@ export default function Analytics() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-pos-text-muted text-sm">Growth Rate</p>
-                    <p className="text-2xl font-bold text-pos-success">
-                      +18.9%
+                    <p className={`text-2xl font-bold ${salesOverview[0]?.growth >= 0 ? "text-pos-success" : "text-pos-error"}`}>
+                      {salesOverview[0] ? `${salesOverview[0].growth > 0 ? "+" : ""}${salesOverview[0].growth}%` : "—"}
                     </p>
                   </div>
                   <Activity className="h-8 w-8 text-pos-success" />
@@ -405,6 +467,32 @@ export default function Analytics() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Order Status Breakdown */}
+          {currStats && (
+            <Card className="bg-pos-surface border-pos-secondary">
+              <CardHeader>
+                <CardTitle className="text-pos-text">Order Status Breakdown</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    { label: "Pending", value: currStats.pending_orders, color: "text-pos-warning" },
+                    { label: "Confirmed", value: currStats.confirmed_orders, color: "text-pos-accent" },
+                    { label: "Preparing", value: currStats.preparing_orders, color: "text-blue-400" },
+                    { label: "Ready", value: currStats.ready_orders, color: "text-pos-success" },
+                    { label: "Delivered", value: currStats.delivered_orders, color: "text-pos-success" },
+                    { label: "Cancelled", value: currStats.cancelled_orders, color: "text-pos-error" },
+                  ].map((s) => (
+                    <div key={s.label} className="text-center p-3 rounded-lg bg-pos-primary/50">
+                      <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+                      <div className="text-sm text-pos-text-muted">{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Product Performance Tab */}
@@ -412,88 +500,61 @@ export default function Analytics() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="bg-pos-surface border-pos-secondary">
               <CardHeader>
-                <CardTitle className="text-pos-text">
-                  Top Performing Products
-                </CardTitle>
+                <CardTitle className="text-pos-text">Top Performing Products</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {topProducts.map((product, index) => (
-                    <div
-                      key={product.name}
-                      className="flex items-center justify-between p-3 rounded-lg bg-pos-primary/50"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-pos-accent rounded-full flex items-center justify-center text-pos-text font-bold text-sm">
-                          {index + 1}
-                        </div>
-                        <div>
-                          <div className="font-medium text-pos-text">
-                            {product.name}
+                {topProducts.length === 0 ? (
+                  <div className="text-center py-8 text-pos-text-muted">No product data available. Run item reports first.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {topProducts.map((product, index) => (
+                      <div key={product.name} className="flex items-center justify-between p-3 rounded-lg bg-pos-primary/50">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 bg-pos-accent rounded-full flex items-center justify-center text-pos-text font-bold text-sm">
+                            {index + 1}
                           </div>
-                          <div className="text-sm text-pos-text-muted">
-                            {product.category}
+                          <div>
+                            <div className="font-medium text-pos-text">{product.name}</div>
+                            <div className="text-sm text-pos-text-muted">{product.category}</div>
                           </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-medium text-pos-text">
-                          ${product.revenue.toLocaleString()}
+                        <div className="text-right">
+                          <div className="font-medium text-pos-text">₹{product.revenue.toLocaleString()}</div>
+                          <div className="text-sm text-pos-text-muted">{product.sales} sales</div>
                         </div>
-                        <div className="text-sm text-pos-text-muted">
-                          {product.sales} sales
-                        </div>
-                      </div>
-                      <div className="flex items-center">
-                        {product.trend === "up" && (
-                          <TrendingUp className="h-4 w-4 text-pos-success" />
-                        )}
-                        {product.trend === "down" && (
-                          <TrendingDown className="h-4 w-4 text-pos-error" />
-                        )}
-                        {product.trend === "stable" && (
+                        <div className="flex items-center">
                           <Activity className="h-4 w-4 text-pos-text-muted" />
-                        )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
             <Card className="bg-pos-surface border-pos-secondary">
               <CardHeader>
-                <CardTitle className="text-pos-text">
-                  Category Performance
-                </CardTitle>
+                <CardTitle className="text-pos-text">Category Performance</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {[
-                    { category: "Main Course", revenue: 45680, percentage: 58 },
-                    { category: "Beverages", revenue: 15420, percentage: 19 },
-                    { category: "Appetizers", revenue: 12340, percentage: 16 },
-                    { category: "Desserts", revenue: 5480, percentage: 7 },
-                  ].map((cat) => (
-                    <div key={cat.category} className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-pos-text">{cat.category}</span>
-                        <span className="text-pos-text-muted">
-                          {cat.percentage}%
-                        </span>
+                {categoryData.length === 0 ? (
+                  <div className="text-center py-8 text-pos-text-muted">No category data available. Run category reports first.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {categoryData.map((cat) => (
+                      <div key={cat.category} className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-pos-text">{cat.category}</span>
+                          <span className="text-pos-text-muted">{cat.percentage}%</span>
+                        </div>
+                        <div className="w-full bg-pos-secondary rounded-full h-2">
+                          <div className="bg-pos-accent h-2 rounded-full" style={{ width: `${cat.percentage}%` }}></div>
+                        </div>
+                        <div className="text-right text-pos-text font-medium">₹{cat.revenue.toLocaleString()}</div>
                       </div>
-                      <div className="w-full bg-pos-secondary rounded-full h-2">
-                        <div
-                          className="bg-pos-accent h-2 rounded-full"
-                          style={{ width: `${cat.percentage}%` }}
-                        ></div>
-                      </div>
-                      <div className="text-right text-pos-text font-medium">
-                        ${cat.revenue.toLocaleString()}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -503,26 +564,18 @@ export default function Analytics() {
         <TabsContent value="time-analysis" className="space-y-6">
           <Card className="bg-pos-surface border-pos-secondary">
             <CardHeader>
-              <CardTitle className="text-pos-text">
-                Peak Hour Analysis
-              </CardTitle>
+              <CardTitle className="text-pos-text">Peak Hour Analysis</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                {peakHours.length === 0 && (
+                  <p className="text-center text-pos-text-muted col-span-full py-4">No order data for peak hours in this period.</p>
+                )}
                 {peakHours.map((slot) => (
-                  <div
-                    key={slot.hour}
-                    className="text-center p-4 rounded-lg bg-pos-primary/50"
-                  >
-                    <div className="text-lg font-bold text-pos-text">
-                      {slot.hour}
-                    </div>
-                    <div className="text-sm text-pos-text-muted mt-1">
-                      {slot.orders} orders
-                    </div>
-                    <div className="text-pos-accent font-medium">
-                      ${slot.revenue.toLocaleString()}
-                    </div>
+                  <div key={slot.hour} className="text-center p-4 rounded-lg bg-pos-primary/50">
+                    <div className="text-lg font-bold text-pos-text">{slot.hour}</div>
+                    <div className="text-sm text-pos-text-muted mt-1">{slot.orders} orders</div>
+                    <div className="text-pos-accent font-medium">₹{slot.revenue.toLocaleString()}</div>
                   </div>
                 ))}
               </div>
@@ -532,9 +585,7 @@ export default function Analytics() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="bg-pos-surface border-pos-secondary">
               <CardHeader>
-                <CardTitle className="text-pos-text">
-                  Table Utilization
-                </CardTitle>
+                <CardTitle className="text-pos-text">Table Utilization</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -545,28 +596,16 @@ export default function Analytics() {
                     { table: "Table 4", utilization: 95, hours: 7.6 },
                     { table: "Table 5", utilization: 72, hours: 5.8 },
                   ].map((table) => (
-                    <div
-                      key={table.table}
-                      className="flex items-center justify-between"
-                    >
+                    <div key={table.table} className="flex items-center justify-between">
                       <div>
-                        <div className="font-medium text-pos-text">
-                          {table.table}
-                        </div>
-                        <div className="text-sm text-pos-text-muted">
-                          {table.hours}h active
-                        </div>
+                        <div className="font-medium text-pos-text">{table.table}</div>
+                        <div className="text-sm text-pos-text-muted">{table.hours}h active</div>
                       </div>
                       <div className="flex items-center space-x-2">
                         <div className="w-20 bg-pos-secondary rounded-full h-2">
-                          <div
-                            className="bg-pos-accent h-2 rounded-full"
-                            style={{ width: `${table.utilization}%` }}
-                          ></div>
+                          <div className="bg-pos-accent h-2 rounded-full" style={{ width: `${table.utilization}%` }}></div>
                         </div>
-                        <span className="text-pos-text text-sm w-10">
-                          {table.utilization}%
-                        </span>
+                        <span className="text-pos-text text-sm w-10">{table.utilization}%</span>
                       </div>
                     </div>
                   ))}
@@ -576,9 +615,7 @@ export default function Analytics() {
 
             <Card className="bg-pos-surface border-pos-secondary">
               <CardHeader>
-                <CardTitle className="text-pos-text">
-                  Order Distribution
-                </CardTitle>
+                <CardTitle className="text-pos-text">Order Distribution</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -587,23 +624,13 @@ export default function Analytics() {
                     { type: "Takeaway", count: 89, percentage: 25 },
                     { type: "Delivery", count: 36, percentage: 10 },
                   ].map((order) => (
-                    <div
-                      key={order.type}
-                      className="flex items-center justify-between"
-                    >
-                      <div className="font-medium text-pos-text">
-                        {order.type}
-                      </div>
+                    <div key={order.type} className="flex items-center justify-between">
+                      <div className="font-medium text-pos-text">{order.type}</div>
                       <div className="flex items-center space-x-2">
                         <div className="w-24 bg-pos-secondary rounded-full h-2">
-                          <div
-                            className="bg-pos-accent h-2 rounded-full"
-                            style={{ width: `${order.percentage}%` }}
-                          ></div>
+                          <div className="bg-pos-accent h-2 rounded-full" style={{ width: `${order.percentage}%` }}></div>
                         </div>
-                        <span className="text-pos-text text-sm w-16">
-                          {order.count} orders
-                        </span>
+                        <span className="text-pos-text text-sm w-16">{order.count} orders</span>
                       </div>
                     </div>
                   ))}
@@ -618,31 +645,23 @@ export default function Analytics() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="bg-pos-surface border-pos-secondary">
               <CardHeader>
-                <CardTitle className="text-pos-text">
-                  Payment Method Distribution
-                </CardTitle>
+                <CardTitle className="text-pos-text">Payment Method Distribution</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
+                  {paymentMethods.length === 0 && (
+                    <p className="text-pos-text-muted text-sm">No payment data in this period.</p>
+                  )}
                   {paymentMethods.map((method) => (
                     <div key={method.method} className="space-y-2">
                       <div className="flex justify-between">
-                        <span className="text-pos-text font-medium">
-                          {method.method}
-                        </span>
-                        <span className="text-pos-text-muted">
-                          {method.percentage}%
-                        </span>
+                        <span className="text-pos-text font-medium">{method.method}</span>
+                        <span className="text-pos-text-muted">{method.percentage}%</span>
                       </div>
                       <div className="w-full bg-pos-secondary rounded-full h-3">
-                        <div
-                          className={`${method.color} h-3 rounded-full`}
-                          style={{ width: `${method.percentage}%` }}
-                        ></div>
+                        <div className={`${method.color} h-3 rounded-full`} style={{ width: `${method.percentage}%` }}></div>
                       </div>
-                      <div className="text-right text-pos-text font-medium">
-                        ${method.amount.toLocaleString()}
-                      </div>
+                      <div className="text-right text-pos-text font-medium">₹{method.amount.toLocaleString()}</div>
                     </div>
                   ))}
                 </div>
@@ -651,41 +670,22 @@ export default function Analytics() {
 
             <Card className="bg-pos-surface border-pos-secondary">
               <CardHeader>
-                <CardTitle className="text-pos-text">
-                  Transaction Summary
-                </CardTitle>
+                <CardTitle className="text-pos-text">Transaction Summary</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   {[
-                    {
-                      label: "Total Transactions",
-                      value: "3,567",
-                      icon: CreditCard,
-                    },
-                    {
-                      label: "Successful Payments",
-                      value: "3,542",
-                      icon: TrendingUp,
-                    },
-                    {
-                      label: "Failed Payments",
-                      value: "25",
-                      icon: TrendingDown,
-                    },
-                    { label: "Refunds Processed", value: "12", icon: Activity },
+                    { label: "Total Transactions", value: currStats?.total_orders?.toLocaleString() ?? "—", icon: CreditCard },
+                    { label: "Delivered Orders", value: currStats?.delivered_orders?.toLocaleString() ?? "—", icon: TrendingUp },
+                    { label: "Cancelled Orders", value: currStats?.cancelled_orders?.toLocaleString() ?? "—", icon: TrendingDown },
+                    { label: "Pending Orders", value: currStats?.pending_orders?.toLocaleString() ?? "—", icon: Activity },
                   ].map((stat) => (
-                    <div
-                      key={stat.label}
-                      className="flex items-center justify-between p-3 rounded-lg bg-pos-primary/50"
-                    >
+                    <div key={stat.label} className="flex items-center justify-between p-3 rounded-lg bg-pos-primary/50">
                       <div className="flex items-center space-x-3">
                         <stat.icon className="h-5 w-5 text-pos-accent" />
                         <span className="text-pos-text">{stat.label}</span>
                       </div>
-                      <span className="font-bold text-pos-text">
-                        {stat.value}
-                      </span>
+                      <span className="font-bold text-pos-text">{stat.value}</span>
                     </div>
                   ))}
                 </div>
@@ -698,25 +698,18 @@ export default function Analytics() {
         <TabsContent value="staff" className="space-y-6">
           <Card className="bg-pos-surface border-pos-secondary">
             <CardHeader>
-              <CardTitle className="text-pos-text">
-                Staff Performance Rankings
-              </CardTitle>
+              <CardTitle className="text-pos-text">Staff Performance Rankings</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {staffPerformance.map((staff, index) => (
-                  <div
-                    key={staff.name}
-                    className="flex items-center justify-between p-4 rounded-lg bg-pos-primary/50 border border-pos-secondary"
-                  >
+                  <div key={staff.name} className="flex items-center justify-between p-4 rounded-lg bg-pos-primary/50 border border-pos-secondary">
                     <div className="flex items-center space-x-4">
                       <div className="w-10 h-10 bg-pos-accent rounded-full flex items-center justify-center text-pos-text font-bold">
                         {index + 1}
                       </div>
                       <div>
-                        <div className="font-medium text-pos-text">
-                          {staff.name}
-                        </div>
+                        <div className="font-medium text-pos-text">{staff.name}</div>
                         <div className="flex items-center space-x-4 text-sm text-pos-text-muted">
                           <span>{staff.orders} orders</span>
                           <span>★ {staff.rating}</span>
@@ -724,12 +717,8 @@ export default function Analytics() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="font-bold text-pos-text">
-                        ${staff.revenue.toLocaleString()}
-                      </div>
-                      <div className="text-sm text-pos-text-muted">
-                        Avg: ${staff.avgOrder}
-                      </div>
+                      <div className="font-bold text-pos-text">₹{staff.revenue.toLocaleString()}</div>
+                      <div className="text-sm text-pos-text-muted">Avg: ₹{staff.avgOrder}</div>
                     </div>
                   </div>
                 ))}

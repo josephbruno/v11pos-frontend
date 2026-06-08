@@ -28,6 +28,14 @@ export const IMAGE_CROP_CONFIG = {
     },
     maxFileSize: 5 * 1024 * 1024, // 5MB
   },
+  table: {
+    width: 800,
+    height: 800,
+    get aspectRatio() {
+      return 1;
+    },
+    maxFileSize: 2 * 1024 * 1024, // 2MB
+  },
 } as const;
 
 export type ImageCropType = keyof typeof IMAGE_CROP_CONFIG;

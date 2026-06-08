@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getCart, updateCartItemQuantity, removeCartItem } from "@/lib/apiServices";
+import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import {
   ArrowLeft,
   CreditCard,
@@ -188,7 +191,6 @@ interface CustomerInfo {
 export default function QRCheckout() {
   const { tableToken } = useParams<{ tableToken: string }>();
   const navigate = useNavigate();
-  const [cart, setCart] = useState<QRCart>(mockCart);
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo>({});
   const [paymentMethod, setPaymentMethod] = useState<"online" | "pay_at_table">(
     "pay_at_table",
@@ -199,6 +201,28 @@ export default function QRCheckout() {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [selectedPaymentGateway, setSelectedPaymentGateway] =
     useState<string>("");
+
+  const { customer } = useCustomerAuth();
+  const queryClient = useQueryClient();
+  const restaurantId = customer?.restaurant_id || mockTable.id;
+
+  const { data: cartData, isLoading: isLoadingCart } = useQuery({
+    queryKey: ["cart", restaurantId, customer?.id],
+    queryFn: () => getCart(restaurantId, customer!.id),
+    enabled: !!customer,
+  });
+
+  const cart = (cartData as any)?.data || cartData || mockCart;
+
+  const updateQuantityMutation = useMutation({
+    mutationFn: ({ itemId, quantity }: { itemId: string; quantity: number }) => updateCartItemQuantity(itemId, quantity),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["cart"] }),
+  });
+
+  const removeCartItemMutation = useMutation({
+    mutationFn: removeCartItem,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["cart"] }),
+  });
 
   useEffect(() => {
     // Load customer info from session storage
@@ -218,69 +242,11 @@ export default function QRCheckout() {
       removeFromCart(itemId);
       return;
     }
-
-    setCart((prev) => {
-      const newItems = prev.items.map((item) => {
-        if (item.id === itemId) {
-          const basePrice =
-            item.price +
-            item.modifiers.reduce((sum, mod) => sum + mod.price, 0);
-          return {
-            ...item,
-            quantity: newQuantity,
-            itemTotal: basePrice * newQuantity,
-          };
-        }
-        return item;
-      });
-
-      const subtotal = newItems.reduce((sum, item) => sum + item.itemTotal, 0);
-      const serviceCharge =
-        subtotal * (mockSettings.serviceChargePercentage / 100);
-      const taxes = prev.taxes.map((tax) => ({
-        ...tax,
-        taxableAmount: subtotal,
-        taxAmount: (subtotal * tax.taxPercentage) / 100,
-      }));
-      const totalTax = taxes.reduce((sum, tax) => sum + tax.taxAmount, 0);
-      const totalAmount = subtotal + serviceCharge + totalTax;
-
-      return {
-        ...prev,
-        items: newItems,
-        subtotal,
-        serviceCharge,
-        taxes,
-        totalAmount,
-        lastUpdated: new Date(),
-      };
-    });
+    updateQuantityMutation.mutate({ itemId, quantity: newQuantity });
   };
 
   const removeFromCart = (itemId: string) => {
-    setCart((prev) => {
-      const newItems = prev.items.filter((item) => item.id !== itemId);
-      const subtotal = newItems.reduce((sum, item) => sum + item.itemTotal, 0);
-      const serviceCharge =
-        subtotal * (mockSettings.serviceChargePercentage / 100);
-      const taxes = prev.taxes.map((tax) => ({
-        ...tax,
-        taxableAmount: subtotal,
-        taxAmount: (subtotal * tax.taxPercentage) / 100,
-      }));
-      const totalTax = taxes.reduce((sum, tax) => sum + tax.taxAmount, 0);
-      const totalAmount = subtotal + serviceCharge + totalTax;
-
-      return {
-        ...prev,
-        items: newItems,
-        subtotal,
-        serviceCharge,
-        taxes,
-        totalAmount,
-        lastUpdated: new Date(),
-      };
-    });
+    removeCartItemMutation.mutate(itemId);
   };
 
   const handleSubmitOrder = async () => {

@@ -17,8 +17,11 @@ import {
 } from "./apiClient";
 import {
   User, LoginRequest, LoginResponse, Restaurant, Category, Product, Order,
+  SubscriptionPlan, Subscription, SubscriptionInvoice, UsageLimits, SubscriptionCheckoutResponse,
   CategoryFilters, ProductFilters, OrderFilters, ModifierFilters,
-  CategoryListResponse, ProductListResponse, OrderListResponse, Homebanner, RowManagement, RowType
+  CategoryListResponse, ProductListResponse, OrderListResponse, Homebanner, RowManagement, RowType,
+  Customer, QRCart, OrderStatistics, BackendCustomer, BackendCustomerListResponse,
+  StaffMember, SalesReport, ItemWiseReport, CategoryWiseReport,
 } from "@shared/api";
 import { validateUserPayload } from "./userValidation";
 
@@ -188,6 +191,14 @@ export async function deleteUser(userId: string) {
   return apiDelete(`/users/${userId}`);
 }
 
+/**
+ * Update user password
+ * PATCH /api/v1/users/{user_id}/password
+ */
+export async function updateUserPassword(userId: string, newPassword: string) {
+  return apiPatch(`/users/${userId}/password`, { new_password: newPassword });
+}
+
 // ==================== Restaurant Management ====================
 
 /**
@@ -196,6 +207,11 @@ export async function deleteUser(userId: string) {
  */
 export async function getMyRestaurants(skip = 0, limit = 100) {
   return apiGet<Restaurant[]>(`/restaurants/my-restaurants?skip=${skip}&limit=${limit}`);
+}
+
+/** Superadmin: list ALL restaurants in the system */
+export async function getAllRestaurantsAdmin(skip = 0, limit = 500) {
+  return apiGet<Restaurant[]>(`/restaurants/all?skip=${skip}&limit=${limit}`);
 }
 
 /**
@@ -261,6 +277,120 @@ export async function patchRestaurant(restaurantId: string, restaurantData: Part
  */
 export async function deleteRestaurant(restaurantId: string) {
   return apiDelete(`/restaurants/${restaurantId}`);
+}
+
+// ==================== Subscription & Billing ====================
+
+export async function getSubscriptionPlans() {
+  return apiGet<SubscriptionPlan[]>("/restaurants/subscription-plans");
+}
+
+export async function getAllSubscriptionPlansAdmin() {
+  return apiGet<SubscriptionPlan[]>("/restaurants/subscription-plans/all");
+}
+
+export async function createSubscriptionPlan(plan: Partial<SubscriptionPlan>) {
+  return apiPost<SubscriptionPlan>("/restaurants/subscription-plans", plan);
+}
+
+export async function updateSubscriptionPlan(planId: string, plan: Partial<SubscriptionPlan>) {
+  return apiPut<SubscriptionPlan>(`/restaurants/subscription-plans/${planId}`, plan);
+}
+
+export async function updateSubscriptionPlanStatus(planId: string, isActive: boolean) {
+  return apiPatch<SubscriptionPlan>(
+    `/restaurants/subscription-plans/${planId}/status?is_active=${isActive}`,
+    {},
+  );
+}
+
+export async function getAllSubscriptionsAdmin(params?: {
+  skip?: number;
+  limit?: number;
+  status?: string;
+  plan?: string;
+}) {
+  const q = new URLSearchParams();
+  if (params?.skip != null) q.set("skip", String(params.skip));
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  if (params?.status) q.set("status", params.status);
+  if (params?.plan) q.set("plan", params.plan);
+  const query = q.toString();
+  return apiGet<Subscription[]>(`/restaurants/subscriptions${query ? `?${query}` : ""}`);
+}
+
+export async function getRestaurantSubscription(restaurantId: string) {
+  return apiGet<Subscription | Record<string, unknown>>(
+    `/restaurants/${restaurantId}/subscription`,
+  );
+}
+
+export async function createSubscriptionCheckout(
+  restaurantId: string,
+  planId: string,
+  billingCycle: "monthly" | "yearly" = "monthly",
+) {
+  return apiPost<SubscriptionCheckoutResponse>(
+    `/restaurants/${restaurantId}/subscriptions/checkout`,
+    { plan_id: planId, billing_cycle: billingCycle },
+  );
+}
+
+export async function verifySubscriptionCheckout(
+  restaurantId: string,
+  razorpaySubscriptionId: string,
+) {
+  return apiPost<Subscription>(
+    `/restaurants/${restaurantId}/subscriptions/verify`,
+    { razorpay_subscription_id: razorpaySubscriptionId },
+  );
+}
+
+export async function cancelSubscription(
+  subscriptionId: string,
+  reason?: string,
+  immediate = false,
+) {
+  const q = new URLSearchParams();
+  if (reason) q.set("reason", reason);
+  if (immediate) q.set("immediate", "true");
+  const query = q.toString();
+  return apiPost<Subscription>(
+    `/restaurants/subscriptions/${subscriptionId}/cancel${query ? `?${query}` : ""}`,
+    {},
+  );
+}
+
+export async function getRestaurantInvoices(restaurantId: string, skip = 0, limit = 100) {
+  return apiGet<SubscriptionInvoice[]>(
+    `/restaurants/${restaurantId}/invoices?skip=${skip}&limit=${limit}`,
+  );
+}
+
+export async function getUsageLimits(restaurantId: string) {
+  return apiGet<UsageLimits>(`/restaurants/${restaurantId}/usage-limits`);
+}
+
+export async function assignRestaurantSubscription(
+  restaurantId: string,
+  planName: string,
+  billingCycle: "monthly" | "yearly" = "monthly",
+) {
+  return apiPost<Subscription>(`/restaurants/${restaurantId}/subscriptions/assign`, {
+    plan_name: planName,
+    billing_cycle: billingCycle,
+  });
+}
+
+export async function updateRestaurantSubscriptionStatus(
+  restaurantId: string,
+  payload: {
+    subscription_status: string;
+    is_suspended: boolean;
+    suspension_reason?: string;
+  },
+) {
+  return apiPatch<Restaurant>(`/restaurants/${restaurantId}/subscription-status`, payload);
 }
 
 // ==================== Homebanner Services ====================
@@ -1403,6 +1533,19 @@ export async function getTables(restaurantId: string) {
  * POST /api/v1/tables
  */
 export async function createTable(tableData: any) {
+  if (tableData && tableData.image instanceof File) {
+    const formData = new FormData();
+    Object.entries(tableData).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        if (value instanceof File) {
+          formData.append(key, value);
+        } else {
+          formData.append(key, String(value));
+        }
+      }
+    });
+    return apiUpload("/tables", formData);
+  }
   return apiPost("/tables", tableData);
 }
 
@@ -1410,6 +1553,22 @@ export async function createTable(tableData: any) {
  * Update a table
  */
 export async function updateTable(tableId: string, tableData: any) {
+  const isMultipart = Object.values(tableData).some(v => v instanceof File);
+  
+  if (isMultipart) {
+    const formData = new FormData();
+    Object.entries(tableData).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        if (value instanceof File) {
+          formData.append(key, value);
+        } else {
+          formData.append(key, String(value));
+        }
+      }
+    });
+    return apiUploadPut(`/tables/${tableId}`, formData);
+  }
+
   try {
     return await apiPatch(`/tables/${tableId}`, tableData);
   } catch {
@@ -1443,56 +1602,140 @@ export async function updateOrderStatus(orderId: string, status: string) {
 
 // ==================== Kitchen Display System (KDS) ====================
 
-/**
- * Get active tickets for a kitchen station
- * GET /api/v1/kds/tickets/station/{station_id}
- */
+/** @deprecated Use getKdsDisplaysByStation */
 export async function getKdsTickets(stationId: string) {
-  return apiGet(`/kds/tickets/station/${stationId}`);
+  return getKdsDisplaysByStation(stationId);
 }
 
-/**
- * Update ticket item status (preparing, ready, etc.)
- * PATCH /api/v1/kds/items/{item_id}/status
- */
+export async function getKdsStations(restaurantId: string) {
+  return apiGet(`/kds/stations/restaurant/${restaurantId}`);
+}
+
+export async function getKdsStation(stationId: string) {
+  return apiGet(`/kds/stations/${stationId}`);
+}
+
+export async function getKdsDisplaysByStation(stationId: string) {
+  return apiGet(`/kds/displays/station/${stationId}`);
+}
+
+export async function getKdsDisplay(displayId: string) {
+  return apiGet(`/kds/displays/${displayId}`);
+}
+
+export async function routeOrderToKds(orderId: string) {
+  return apiPost(`/kds/displays/route/${orderId}`, {});
+}
+
 export async function updateKdsItemStatus(itemId: string, status: string) {
   return apiPatch(`/kds/items/${itemId}/status`, { status });
 }
 
+export async function acknowledgeKdsDisplay(displayId: string) {
+  return apiPost(`/kds/displays/${displayId}/acknowledge`, {});
+}
+
+export async function startKdsDisplay(displayId: string) {
+  return apiPost(`/kds/displays/${displayId}/start`, {});
+}
+
+export async function completeKdsDisplay(displayId: string) {
+  return apiPost(`/kds/displays/${displayId}/complete`, {});
+}
+
+export async function bumpKdsDisplay(displayId: string) {
+  return apiPost(`/kds/displays/${displayId}/bump`, {});
+}
+
+export async function getKotJson(displayId: string) {
+  return apiGet(`/kds/displays/${displayId}/kot/json`);
+}
+
+export async function printKot(displayId: string, format: "text" | "html" | "json" = "text") {
+  return apiPost(`/kds/displays/${displayId}/kot/print?format=${format}`, {});
+}
+
 // ==================== Inventory Management ====================
 
-/**
- * Get inventory stock levels for restaurant
- * GET /api/v1/inventory/stock/restaurant/{restaurant_id}
- */
+/** Low-stock alerts for dashboard/inventory overview */
 export async function getInventoryStock(restaurantId: string) {
-  return apiGet(`/inventory/stock/restaurant/${restaurantId}`);
+  return getLowStockAlerts(restaurantId);
 }
 
-/**
- * Record stock transaction
- * POST /api/v1/inventory/transactions
- */
-export async function recordStockTransaction(transactionData: any) {
-  return apiPost("/inventory/transactions", transactionData);
+export async function getLowStockAlerts(restaurantId: string) {
+  return apiGet(`/inventory/alerts/low-stock/restaurant/${restaurantId}`);
 }
+
+export async function resolveLowStockAlert(alertId: string) {
+  return apiPost(`/inventory/alerts/low-stock/${alertId}/resolve`, {});
+}
+
+export async function getIngredients(restaurantId: string, skip = 0, limit = 100) {
+  return apiGet(`/inventory/ingredients/restaurant/${restaurantId}?skip=${skip}&limit=${limit}`);
+}
+
+export async function createIngredient(data: Record<string, unknown>) {
+  return apiPost("/inventory/ingredients", data);
+}
+
+export async function updateIngredient(ingredientId: string, data: Record<string, unknown>) {
+  return apiPut(`/inventory/ingredients/${ingredientId}`, data);
+}
+
+export async function deleteIngredient(ingredientId: string) {
+  return apiDelete(`/inventory/ingredients/${ingredientId}`);
+}
+
+export async function getStockTransactions(restaurantId: string, skip = 0, limit = 50) {
+  return apiGet(`/inventory/stock/transactions/restaurant/${restaurantId}?skip=${skip}&limit=${limit}`);
+}
+
+export async function recordStockTransaction(transactionData: Record<string, unknown>) {
+  return apiPost("/inventory/stock/transactions", transactionData);
+}
+
+export async function adjustStock(data: Record<string, unknown>) {
+  return apiPost("/inventory/stock/adjustment", data);
+}
+
+export async function getSuppliers(restaurantId: string, skip = 0, limit = 100) {
+  return apiGet(`/inventory/suppliers/restaurant/${restaurantId}?skip=${skip}&limit=${limit}`);
+}
+
 
 // ==================== Staff Management ====================
 
-/**
- * Get staff members for restaurant
- * GET /api/v1/staff/restaurant/{restaurant_id}
- */
 export async function getStaffMembers(restaurantId: string) {
-  return apiGet(`/staff/restaurant/${restaurantId}`);
+  return apiGet<StaffMember[]>(`/staff/members/restaurant/${restaurantId}`);
 }
 
-/**
- * Clock in/out for shift
- * POST /api/v1/staff/attendance/clock
- */
-export async function clockStaff(staffId: string, action: 'clock_in' | 'clock_out') {
-  return apiPost("/staff/attendance/clock", { staff_id: staffId, action });
+export async function getStaffRoles(restaurantId: string) {
+  return apiGet(`/staff/roles/restaurant/${restaurantId}`);
+}
+
+export async function getStaffAttendance(restaurantId: string, startDate?: string, endDate?: string) {
+  const params = new URLSearchParams();
+  if (startDate) params.append("start_date", startDate);
+  if (endDate) params.append("end_date", endDate);
+  const qs = params.toString();
+  return apiGet(`/staff/attendance/restaurant/${restaurantId}${qs ? `?${qs}` : ""}`);
+}
+
+export async function getStaffShifts(restaurantId: string) {
+  return apiGet(`/staff/shifts/restaurant/${restaurantId}`);
+}
+
+export async function clockStaff(
+  restaurantId: string,
+  staffId: string,
+  action: "clock_in" | "clock_out",
+  attendanceId?: string,
+) {
+  if (action === "clock_in") {
+    return apiPost(`/staff/attendance/check-in?restaurant_id=${restaurantId}`, { staff_id: staffId });
+  }
+  if (!attendanceId) throw new Error("attendance_id required for clock out");
+  return apiPost(`/staff/attendance/${attendanceId}/check-out`, {});
 }
 
 // ==================== Reports & Analytics ====================
@@ -1505,12 +1748,553 @@ export async function getDashboardStats(restaurantId: string, period = 'today') 
   return apiGet(`/reports/dashboard/restaurant/${restaurantId}?period=${period}`);
 }
 
-/**
- * Generate PDF report
- * GET /api/v1/reports/sales/pdf
- */
+/** Generate sales report via POST (PDF endpoint not available). */
 export async function generateSalesReport(restaurantId: string, startDate: string, endDate: string) {
-  return apiGet(`/reports/sales/pdf?restaurant_id=${restaurantId}&start_date=${startDate}&end_date=${endDate}`, {
-    headers: { Accept: "application/pdf" }
+  return generateSalesReportNew({
+    restaurant_id: restaurantId,
+    period_type: "daily",
+    report_date: startDate,
   });
+}
+
+export async function getSuperAdminDashboard(period = "30d") {
+  return apiGet(`/reports/dashboard/super-admin?period=${period}`);
+}
+
+// ==================== Customer Auth & Profile ====================
+
+/**
+ * Request OTP for customer login
+ * POST /api/v1/customer-auth/send-otp
+ */
+export async function requestCustomerOTP(email: string, restaurantId: string) {
+  return apiPost("/customer-auth/send-otp", { email, restaurant_id: restaurantId });
+}
+
+/**
+ * Verify OTP for customer login
+ * POST /api/v1/customer-auth/verify-otp
+ */
+export async function verifyCustomerOTP(email: string, restaurantId: string, otp: string) {
+  return apiPost<{ customer: Customer; access_token: string; refresh_token: string; token_type: string }>(
+    "/customer-auth/verify-otp",
+    { email, restaurant_id: restaurantId, otp }
+  );
+}
+
+/**
+ * Refresh customer access token
+ * POST /api/v1/customer-auth/refresh
+ */
+export async function refreshCustomerToken(refreshToken: string) {
+  return apiPost<{ access_token: string; token_type: string }>("/customer-auth/refresh", { refresh_token: refreshToken });
+}
+
+/**
+ * Get current customer profile
+ * GET /api/v1/customer-auth/me
+ */
+export async function getCustomerProfile() {
+  return apiGet<Customer>("/customer-auth/me");
+}
+
+/**
+ * Update customer profile
+ * PATCH /api/v1/customer-auth/me
+ */
+export async function updateCustomerProfile(data: Partial<Customer>) {
+  return apiPatch<Customer>("/customer-auth/me", data);
+}
+
+// ==================== Customer Addresses ====================
+
+export async function getCustomerAddresses() {
+  return apiGet<any[]>("/customer-auth/me/addresses");
+}
+
+export async function addCustomerAddress(addressData: any) {
+  return apiPost<any>("/customer-auth/me/addresses", addressData);
+}
+
+export async function updateCustomerAddress(addressId: string, addressData: any) {
+  return apiPut<any>(`/customer-auth/me/addresses/${addressId}`, addressData);
+}
+
+export async function deleteCustomerAddress(addressId: string) {
+  return apiDelete(`/customer-auth/me/addresses/${addressId}`);
+}
+
+// ==================== Customer Orders ====================
+
+export async function getCustomerOrders(skip = 0, limit = 50, status?: string) {
+  const query = new URLSearchParams({ skip: skip.toString(), limit: limit.toString() });
+  if (status) query.append("order_status", status);
+  return apiGet<{ orders: Order[]; total: number; skip: number; limit: number }>(`/customer-auth/me/orders?${query.toString()}`);
+}
+
+export async function getCustomerOrder(orderId: string) {
+  return apiGet<Order>(`/customer-auth/me/orders/${orderId}`);
+}
+
+// ==================== Server-Side Cart ====================
+
+export async function getCart(restaurantId: string, customerId: string) {
+  return apiGet<QRCart>(`/carts/restaurant/${restaurantId}/customer/${customerId}`);
+}
+
+export async function addCartItem(data: {
+  restaurant_id: string;
+  customer_id: string;
+  item_type: string;
+  product_id?: string | null;
+  combo_product_id?: string | null;
+  quantity: number;
+  modifier_option_ids?: string[];
+  notes?: string | null;
+}) {
+  return apiPost<QRCart>("/carts/items", data);
+}
+
+export async function updateCartItemQuantity(itemId: string, quantity: number) {
+  return apiPatch<QRCart>(`/carts/items/${itemId}`, { quantity });
+}
+
+export async function removeCartItem(itemId: string, quantity?: number) {
+  const query = quantity !== undefined ? `?quantity=${quantity}` : "";
+  return apiDelete<QRCart>(`/carts/items/${itemId}${query}`);
+}
+
+export async function clearCart(restaurantId: string, customerId: string) {
+  return apiDelete(`/carts/restaurant/${restaurantId}/customer/${customerId}`);
+}
+
+// ==================== Order Statistics ====================
+
+/**
+ * Get order statistics for a restaurant
+ * GET /api/v1/orders/restaurant/{restaurant_id}/statistics
+ */
+export async function getOrderStatistics(
+  restaurantId: string,
+  startDate?: string,
+  endDate?: string,
+) {
+  const params = new URLSearchParams();
+  if (startDate) params.append("start_date", startDate);
+  if (endDate) params.append("end_date", endDate);
+  const query = params.toString();
+  return apiGet<OrderStatistics>(
+    `/orders/restaurant/${restaurantId}/statistics${query ? `?${query}` : ""}`,
+  );
+}
+
+/**
+ * Get orders with filters
+ * GET /api/v1/orders/restaurant/{restaurant_id}
+ */
+export async function getFilteredOrders(
+  restaurantId: string,
+  filters?: {
+    status?: string;
+    order_type?: string;
+    payment_status?: string;
+    start_date?: string;
+    end_date?: string;
+    skip?: number;
+    limit?: number;
+    search?: string;
+  },
+) {
+  const params = new URLSearchParams();
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) params.append(key, String(value));
+    });
+  }
+  const query = params.toString();
+  return apiGet<any>(`/orders/restaurant/${restaurantId}${query ? `?${query}` : ""}`);
+}
+
+/**
+ * Cancel an order
+ * POST /api/v1/orders/{order_id}/cancel
+ */
+export async function cancelOrder(orderId: string, reason?: string) {
+  return apiPost<Order>(`/orders/${orderId}/cancel`, { reason });
+}
+
+/**
+ * Update order payment
+ * PATCH /api/v1/orders/{order_id}/payment
+ */
+export async function updateOrderPayment(
+  orderId: string,
+  paymentData: { payment_status: string; payment_method?: string },
+) {
+  return apiPatch<Order>(`/orders/${orderId}/payment`, paymentData);
+}
+
+/**
+ * Get a single order by ID
+ * GET /api/v1/orders/{order_id}
+ */
+export async function getOrderById(orderId: string) {
+  return apiGet<Order>(`/orders/${orderId}`);
+}
+
+// ==================== Table Delete ====================
+
+/**
+ * Delete a table
+ * DELETE /api/v1/tables/{table_id}
+ */
+export async function deleteTable(tableId: string) {
+  return apiDelete(`/tables/${tableId}`);
+}
+
+// ==================== Admin Customer CRUD ====================
+
+/**
+ * List customers for a restaurant (admin)
+ * GET /api/v1/customers/?restaurant_id=&search=&skip=&limit=
+ */
+export async function getAdminCustomers(
+  restaurantId: string,
+  options?: { search?: string; is_active?: boolean; skip?: number; limit?: number },
+) {
+  const params = new URLSearchParams();
+  params.append("restaurant_id", restaurantId);
+  if (options?.search) params.append("search", options.search);
+  if (options?.is_active !== undefined) params.append("is_active", String(options.is_active));
+  params.append("skip", String(options?.skip ?? 0));
+  params.append("limit", String(options?.limit ?? 100));
+  return apiGet<BackendCustomerListResponse>(`/customers/?${params.toString()}`);
+}
+
+/**
+ * Get customer by ID (admin)
+ * GET /api/v1/customers/{customer_id}
+ */
+export async function getAdminCustomerById(customerId: string) {
+  return apiGet<BackendCustomer>(`/customers/${customerId}`);
+}
+
+/**
+ * Create customer (admin)
+ * POST /api/v1/customers/
+ */
+export async function createAdminCustomer(data: {
+  restaurant_id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  notes?: string;
+  is_active?: boolean;
+}) {
+  return apiPost<BackendCustomer>("/customers/", data);
+}
+
+/**
+ * Update customer (admin)
+ * PUT /api/v1/customers/{customer_id}
+ */
+export async function updateAdminCustomer(
+  customerId: string,
+  data: Partial<{
+    name: string;
+    email: string;
+    phone: string;
+    address: string;
+    notes: string;
+    is_active: boolean;
+  }>,
+) {
+  return apiPut<BackendCustomer>(`/customers/${customerId}`, data);
+}
+
+/**
+ * Delete customer (admin)
+ * DELETE /api/v1/customers/{customer_id}
+ */
+export async function deleteAdminCustomer(customerId: string, permanent = false) {
+  return apiDelete(`/customers/${customerId}?permanent=${permanent}`);
+}
+
+// ==================== Staff Full CRUD ====================
+
+export async function createStaffMember(data: Partial<StaffMember>) {
+  return apiPost<StaffMember>("/staff/members", data);
+}
+
+export async function updateStaffMember(staffId: string, data: Partial<StaffMember>) {
+  return apiPut<StaffMember>(`/staff/members/${staffId}`, data);
+}
+
+export async function deleteStaffMember(staffId: string) {
+  return apiDelete(`/staff/members/${staffId}`);
+}
+
+// ==================== Reports Full Suite ====================
+
+/**
+ * Generate daily/monthly sales report
+ * POST /api/v1/reports/sales/generate
+ */
+export async function generateSalesReportNew(data: {
+  restaurant_id: string;
+  period_type: "daily" | "monthly";
+  report_date?: string;
+  report_month?: number;
+  report_year?: number;
+}) {
+  return apiPost<SalesReport>("/reports/sales/generate", data);
+}
+
+/**
+ * List sales reports for a restaurant
+ * GET /api/v1/reports/sales?restaurant_id=&period_type=&skip=&limit=
+ */
+export async function listSalesReports(
+  restaurantId: string,
+  options?: { period_type?: "daily" | "monthly"; skip?: number; limit?: number },
+) {
+  const params = new URLSearchParams();
+  params.append("restaurant_id", restaurantId);
+  if (options?.period_type) params.append("period_type", options.period_type);
+  params.append("skip", String(options?.skip ?? 0));
+  params.append("limit", String(options?.limit ?? 30));
+  return apiGet<SalesReport[]>(`/reports/sales?${params.toString()}`);
+}
+
+/**
+ * Generate item-wise sales report
+ * POST /api/v1/reports/items/generate
+ */
+export async function generateItemReport(data: {
+  restaurant_id: string;
+  start_date?: string;
+  end_date?: string;
+}) {
+  return apiPost<ItemWiseReport[]>("/reports/items/generate", data);
+}
+
+/**
+ * List item-wise reports
+ * GET /api/v1/reports/items?restaurant_id=&skip=&limit=
+ */
+export async function listItemReports(
+  restaurantId: string,
+  options?: { skip?: number; limit?: number },
+) {
+  const params = new URLSearchParams();
+  params.append("restaurant_id", restaurantId);
+  params.append("skip", String(options?.skip ?? 0));
+  params.append("limit", String(options?.limit ?? 50));
+  return apiGet<ItemWiseReport[]>(`/reports/items?${params.toString()}`);
+}
+
+/**
+ * Generate category-wise report
+ * POST /api/v1/reports/categories/generate
+ */
+export async function generateCategoryReport(data: {
+  restaurant_id: string;
+  start_date?: string;
+  end_date?: string;
+}) {
+  return apiPost<CategoryWiseReport[]>("/reports/categories/generate", data);
+}
+
+/**
+ * List category reports
+ * GET /api/v1/reports/categories?restaurant_id=&skip=&limit=
+ */
+export async function listCategoryReports(
+  restaurantId: string,
+  options?: { skip?: number; limit?: number },
+) {
+  const params = new URLSearchParams();
+  params.append("restaurant_id", restaurantId);
+  params.append("skip", String(options?.skip ?? 0));
+  params.append("limit", String(options?.limit ?? 50));
+  return apiGet<CategoryWiseReport[]>(`/reports/categories?${params.toString()}`);
+}
+
+// ==================== Data Copy / Migration ====================
+
+export interface DataCopyOptions {
+  skip_duplicates?: boolean;
+  copy_images?: boolean;
+  copy_prices?: boolean;
+  copy_stock?: boolean;
+  maintain_relationships?: boolean;
+  include_inactive?: boolean;
+  include_unavailable?: boolean;
+}
+
+export interface DataCopyCreatePayload {
+  source_restaurant_id: string;
+  destination_restaurant_ids: string[];
+  copy_type: "category" | "product" | "combo" | "modifier" | "category_products" | "full_menu";
+  copy_name?: string;
+  notes?: string;
+  options?: DataCopyOptions;
+}
+
+export interface DataCopyOperation {
+  id: string;
+  copy_number: string;
+  copy_name: string;
+  source_restaurant_id: string;
+  destination_restaurant_id: string;
+  copy_type: string;
+  status: "pending" | "processing" | "completed" | "failed" | "partial";
+  processing_started_at: string | null;
+  processing_completed_at: string | null;
+  processing_time: number | null;
+  statistics: {
+    total_items: number;
+    items_copied: number;
+    items_skipped: number;
+    items_failed: number;
+    categories_copied: number;
+    products_copied: number;
+    combos_copied: number;
+    modifiers_copied: number;
+    duplicates_found: number;
+    duplicates_skipped: number;
+  };
+  skip_duplicates: boolean;
+  copy_images: boolean;
+  copy_prices: boolean;
+  copy_stock: boolean;
+  maintain_relationships: boolean;
+  error_message: string | null;
+  notes: string | null;
+  copied_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function createDataCopy(payload: DataCopyCreatePayload) {
+  return apiPost<{ copies: DataCopyOperation[] }>("/data-copy/copy", payload);
+}
+
+export async function listDataCopies(params?: {
+  page?: number;
+  page_size?: number;
+  source_restaurant_id?: string;
+  destination_restaurant_id?: string;
+  status?: string;
+  copy_type?: string;
+}) {
+  const p = new URLSearchParams();
+  if (params?.page) p.append("page", String(params.page));
+  if (params?.page_size) p.append("page_size", String(params.page_size));
+  if (params?.source_restaurant_id) p.append("source_restaurant_id", params.source_restaurant_id);
+  if (params?.destination_restaurant_id) p.append("destination_restaurant_id", params.destination_restaurant_id);
+  if (params?.status) p.append("status", params.status);
+  if (params?.copy_type) p.append("copy_type", params.copy_type);
+  return apiGet<{ items: DataCopyOperation[]; total: number; page: number; pages: number }>(
+    `/data-copy/copies?${p.toString()}`
+  );
+}
+
+export async function getDataCopyDetail(copyId: string) {
+  return apiGet<DataCopyOperation & {
+    entity_mapping: any;
+    copy_summary: any;
+    skipped_items: any;
+    failed_items: any;
+  }>(`/data-copy/copies/${copyId}`);
+}
+
+export async function getDataCopyLogs(copyId: string, params?: { page?: number; page_size?: number; status?: string; entity_type?: string }) {
+  const p = new URLSearchParams();
+  if (params?.page) p.append("page", String(params.page));
+  if (params?.page_size) p.append("page_size", String(params.page_size));
+  if (params?.status) p.append("status", params.status);
+  if (params?.entity_type) p.append("entity_type", params.entity_type);
+  return apiGet<{ items: any[]; total: number; page: number; pages: number }>(
+    `/data-copy/copies/${copyId}/logs?${p.toString()}`
+  );
+}
+
+export async function getDataCopyStatistics(restaurantId?: string) {
+  const p = restaurantId ? `?restaurant_id=${restaurantId}` : "";
+  return apiGet<{
+    total_copies: number;
+    total_items_copied: number;
+    total_items_skipped: number;
+    total_categories_copied: number;
+    total_products_copied: number;
+  }>(`/data-copy/statistics${p}`);
+}
+
+// ==================== Table transfer approvals (QR dine-in) ====================
+
+export type TableTransferRequest = {
+  id: string;
+  old_table_uuid: string;
+  new_table_uuid: string;
+  customer_uuid: string;
+  restaurant_uuid: string;
+  order_uuid?: string;
+  status: string;
+  created_at: string;
+};
+
+export async function getPendingTableTransfers(restaurantId: string, skip = 0, limit = 50) {
+  return apiGet<{
+    transfers: TableTransferRequest[];
+    total: number;
+    skip: number;
+    limit: number;
+  }>(`/table-transfers/restaurant/${restaurantId}/pending?skip=${skip}&limit=${limit}`);
+}
+
+export async function approveTableTransfer(transferId: string) {
+  return apiPatch<{ transfer: TableTransferRequest }>(`/table-transfers/${transferId}/approve`, {});
+}
+
+export async function rejectTableTransfer(transferId: string) {
+  return apiPatch<{ transfer: TableTransferRequest }>(`/table-transfers/${transferId}/reject`, {});
+}
+
+// ==================== QR table order approvals ====================
+
+export type QrTableOrderApproval = {
+  id: string;
+  order_number: string;
+  table_id?: string;
+  customer_id?: string;
+  status: string;
+  total_amount: number;
+  items: Array<{
+    id?: string;
+    product_name: string;
+    name?: string;
+    quantity: number;
+    total_price: number;
+    unit_price?: number;
+  }>;
+  created_at: string;
+};
+
+export async function getPendingQrTableOrders(restaurantId: string, skip = 0, limit = 50) {
+  return apiGet<{
+    orders: QrTableOrderApproval[];
+    total: number;
+    skip: number;
+    limit: number;
+  }>(`/qr-table-orders/restaurant/${restaurantId}/pending?skip=${skip}&limit=${limit}`);
+}
+
+export async function approveQrTableOrder(orderId: string) {
+  return apiPatch<{ order: QrTableOrderApproval }>(`/qr-table-orders/${orderId}/approve`, {});
+}
+
+export async function rejectQrTableOrder(orderId: string) {
+  return apiPatch<{ order: QrTableOrderApproval }>(`/qr-table-orders/${orderId}/reject`, {});
 }

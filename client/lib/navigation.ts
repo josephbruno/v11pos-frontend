@@ -10,19 +10,20 @@ import {
     Heart,
     Monitor,
     QrCode,
+    ClipboardCheck,
+    ArrowRightLeft,
     Calendar,
     Building2,
     Layers3,
     GitBranch,
     Database,
-    Workflow,
-    Network,
-    Shield,
     Globe,
     LayoutGrid,
+    CreditCard,
+    Receipt,
 } from "lucide-react";
 
-export type UserRole = "super_admin" | "admin" | "supervisor" | "user";
+export type UserRole = "super_admin" | "admin" | "supervisor" | "user" | "cashier" | "waiter" | "mobile-kds" | "kitchen-kds" | "kiosk-machine";
 
 export interface NavItem {
     name: string;
@@ -36,10 +37,10 @@ export interface NavItem {
 export const navigationConfig: NavItem[] = [
     // Super Admin Specific
     {
-        name: "System Overview",
+        name: "Global Analytics",
         href: "/super-admin",
-        icon: LayoutDashboard,
-        description: "System Health & Metrics",
+        icon: BarChart3,
+        description: "Restaurants & Users Overview",
         roles: ["super_admin"],
         category: "overview",
     },
@@ -48,6 +49,14 @@ export const navigationConfig: NavItem[] = [
         href: "/super-admin/organizations",
         icon: Building2,
         description: "Restaurant Management",
+        roles: ["super_admin"],
+        category: "organizations",
+    },
+    {
+        name: "Subscription Plans",
+        href: "/super-admin/subscription-plans",
+        icon: CreditCard,
+        description: "SaaS plan management",
         roles: ["super_admin"],
         category: "organizations",
     },
@@ -131,46 +140,6 @@ export const navigationConfig: NavItem[] = [
         roles: ["super_admin"],
         category: "data",
     },
-    {
-        name: "Workflow Builder",
-        href: "/super-admin/workflows",
-        icon: Workflow,
-        description: "Process Automation",
-        roles: ["super_admin"],
-        category: "automation",
-    },
-    {
-        name: "Global Analytics",
-        href: "/super-admin/analytics",
-        icon: BarChart3,
-        description: "Cross-System Reports",
-        roles: ["super_admin"],
-        category: "insights",
-    },
-    {
-        name: "Network Config",
-        href: "/super-admin/network",
-        icon: Network,
-        description: "API & Integrations",
-        roles: ["super_admin"],
-        category: "technical",
-    },
-    {
-        name: "Security Center",
-        href: "/super-admin/security",
-        icon: Shield,
-        description: "Access & Permissions",
-        roles: ["super_admin"],
-        category: "security",
-    },
-    {
-        name: "Global Settings",
-        href: "/super-admin/settings",
-        icon: Settings,
-        description: "System Configuration",
-        roles: ["super_admin"],
-        category: "settings",
-    },
 
     // Regular Admin, Supervisor, User
     {
@@ -178,21 +147,28 @@ export const navigationConfig: NavItem[] = [
         href: "/admin",
         icon: LayoutDashboard,
         description: "Overview & Quick Stats",
-        roles: ["admin", "supervisor", "user"],
+        roles: ["admin", "supervisor", "user", "cashier", "waiter"],
     },
     {
         name: "Order Terminal",
         href: "/admin/order",
         icon: ShoppingCart,
         description: "POS & Billing",
-        roles: ["admin", "supervisor", "user"],
+        roles: ["admin", "supervisor", "user", "cashier", "waiter", "kiosk-machine"],
     },
     {
         name: "Kitchen Queue",
         href: "/admin/queue",
         icon: Monitor,
         description: "Live Order Queue",
-        roles: ["admin", "supervisor", "user"],
+        roles: ["admin", "supervisor", "user", "cashier", "waiter", "mobile-kds", "kitchen-kds"],
+    },
+    {
+        name: "Kitchen Display",
+        href: "/admin/kds",
+        icon: ChefHat,
+        description: "KDS stations & KOT",
+        roles: ["admin", "supervisor", "user", "mobile-kds", "kitchen-kds"],
     },
     {
         name: "Analytics",
@@ -219,7 +195,14 @@ export const navigationConfig: NavItem[] = [
         name: "Products",
         href: "/admin/products",
         icon: Package,
-        description: "Menu & Inventory",
+        description: "Menu management",
+        roles: ["admin", "supervisor"],
+    },
+    {
+        name: "Inventory",
+        href: "/admin/inventory",
+        icon: Package,
+        description: "Stock & ingredients",
         roles: ["admin", "supervisor"],
     },
     {
@@ -242,13 +225,6 @@ export const navigationConfig: NavItem[] = [
         icon: ChefHat,
         description: "Combo Products",
         roles: ["admin", "supervisor"],
-    },
-    {
-        name: "Tax Rules",
-        href: "/admin/tax",
-        icon: FileText,
-        description: "Tax Configuration",
-        roles: ["admin"],
     },
     {
         name: "Customers",
@@ -279,24 +255,52 @@ export const navigationConfig: NavItem[] = [
         roles: ["admin", "supervisor"],
     },
     {
+        name: "QR Order Approvals",
+        href: "/admin/table-order-approvals",
+        icon: ClipboardCheck,
+        description: "Approve customer QR table orders",
+        roles: ["admin", "supervisor", "user", "waiter", "cashier"],
+    },
+    {
+        name: "Table Transfers",
+        href: "/admin/table-transfers",
+        icon: ArrowRightLeft,
+        description: "Approve QR table transfer requests",
+        roles: ["admin", "supervisor", "user", "waiter", "cashier"],
+    },
+    {
         name: "Table Booking",
         href: "/admin/table-booking",
         icon: Calendar,
         description: "Reservations & Tables",
-        roles: ["admin", "supervisor", "user"],
+        roles: ["admin", "supervisor", "user", "waiter"],
     },
     {
         name: "Users",
         href: "/admin/users",
         icon: Users,
-        description: "Staff & Roles",
+        description: "System users & roles",
         roles: ["admin"],
+    },
+    {
+        name: "Staff & HR",
+        href: "/admin/staff",
+        icon: Users,
+        description: "Employees, attendance, shifts",
+        roles: ["admin", "supervisor"],
     },
     {
         name: "Settings",
         href: "/admin/settings",
         icon: Settings,
         description: "Configuration",
+        roles: ["admin"],
+    },
+    {
+        name: "Billing",
+        href: "/admin/billing",
+        icon: Receipt,
+        description: "Subscription & invoices",
         roles: ["admin"],
     },
 ];

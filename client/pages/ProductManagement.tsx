@@ -1959,7 +1959,7 @@ export default function ProductManagement() {
       payload;
     return Array.isArray(source) ? source : [];
   })();
-  const pagination = (productsResponse as any)?.pagination;
+  const pagination = (productsResponse as any)?.data?.pagination ?? (productsResponse as any)?.pagination;
 
   // API Hooks - Mutations
   const createMutation = useCreateProduct();

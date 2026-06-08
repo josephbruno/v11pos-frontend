@@ -15,7 +15,7 @@ export interface User {
   name: string;
   email: string;
   phone?: string;
-  role: 'super_admin' | 'admin' | 'supervisor' | 'user';
+  role: 'super_admin' | 'admin' | 'supervisor' | 'user' | 'cashier' | 'waiter' | 'mobile-kds' | 'kitchen-kds' | 'kiosk-machine';
   status?: string;
   avatar?: string | null;
   permissions?: string[];
@@ -39,6 +39,10 @@ export interface LoginRequest {
   password: string;
 }
 
+export type SubscriptionPlanType = 'trial' | 'basic' | 'pro' | 'enterprise';
+export type SubscriptionStatus = 'active' | 'suspended' | 'cancelled' | 'expired' | 'past_due';
+export type InvoiceStatus = 'pending' | 'paid' | 'failed' | 'refunded';
+
 export interface Restaurant {
   id: string;
   name: string;
@@ -51,11 +55,121 @@ export interface Restaurant {
   state?: string;
   postal_code?: string;
   country?: string;
+  logo?: string;
   logo_url?: string;
+  banner_image?: string;
   banner_url?: string;
-  status: 'active' | 'inactive' | 'suspended';
+  website_url?: string;
+  status?: 'active' | 'inactive' | 'suspended';
+  subscription_plan?: SubscriptionPlanType;
+  subscription_status?: SubscriptionStatus;
+  trial_ends_at?: string | null;
+  max_users?: number;
+  max_products?: number;
+  max_orders_per_month?: number;
+  current_users?: number;
+  current_products?: number;
+  current_orders_this_month?: number;
+  features?: string[] | null;
+  is_suspended?: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  display_name: string;
+  description?: string | null;
+  tagline?: string | null;
+  price_monthly: number;
+  price_yearly: number;
+  discount_yearly: number;
+  max_users: number;
+  max_products: number;
+  max_orders_per_month: number;
+  max_locations: number;
+  max_storage_gb: number;
+  features?: string[] | null;
+  is_active: boolean;
+  is_public: boolean;
+  is_featured: boolean;
+  sort_order: number;
+  badge?: string | null;
+  trial_days: number;
+  razorpay_plan_id_monthly?: string | null;
+  razorpay_plan_id_yearly?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Subscription {
+  id: string;
+  restaurant_id: string;
+  plan: SubscriptionPlanType;
+  plan_name: string;
+  status: SubscriptionStatus;
+  price_per_month: number;
+  price_per_year: number;
+  billing_cycle: string;
+  started_at: string;
+  current_period_start?: string | null;
+  current_period_end?: string | null;
+  trial_end?: string | null;
+  cancelled_at?: string | null;
+  cancel_at_period_end: boolean;
+  cancellation_reason?: string | null;
+  payment_method?: string | null;
+  next_payment_date?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubscriptionInvoice {
+  id: string;
+  subscription_id: string;
+  restaurant_id: string;
+  invoice_number: string;
+  amount: number;
+  tax: number;
+  total: number;
+  currency: string;
+  status: InvoiceStatus;
+  invoice_date: string;
+  due_date?: string | null;
+  paid_at?: string | null;
+  payment_method?: string | null;
+  description?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UsageLimitMetric {
+  current: number;
+  max: number;
+  available: number;
+  percentage: number;
+}
+
+export interface UsageLimits {
+  subscription_plan?: SubscriptionPlanType;
+  subscription_status?: SubscriptionStatus;
+  trial_ends_at?: string | null;
+  is_operational?: boolean;
+  users: UsageLimitMetric;
+  products: UsageLimitMetric;
+  orders: UsageLimitMetric;
+}
+
+export interface SubscriptionCheckoutResponse {
+  subscription_id: string;
+  razorpay_subscription_id: string;
+  razorpay_key_id: string;
+  plan_name: string;
+  amount: number;
+  currency: string;
+  billing_cycle: string;
+  prefill: { name?: string; email?: string; contact?: string };
 }
 
 // ==================== Homebanner Types ====================
@@ -605,4 +719,104 @@ export interface ModifierOption {
   sort_order?: number;
   created_at?: string;
   updated_at?: string;
+}
+
+// ==================== Order Statistics ====================
+
+export interface OrderStatistics {
+  total_orders: number;
+  total_revenue: number;
+  avg_order_value: number;
+  pending_orders: number;
+  confirmed_orders: number;
+  preparing_orders: number;
+  ready_orders: number;
+  delivered_orders: number;
+  cancelled_orders: number;
+}
+
+// ==================== Backend Customer (API response) ====================
+
+export interface BackendCustomer {
+  id: string;
+  restaurant_id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+  notes?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  addresses?: any[];
+}
+
+export interface BackendCustomerListResponse {
+  total: number;
+  customers: BackendCustomer[];
+}
+
+// ==================== Staff ====================
+
+export interface StaffMember {
+  id: string;
+  restaurant_id: string;
+  user_id?: string | null;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  role?: string | null;
+  department?: string | null;
+  status?: string;
+  is_active?: boolean;
+  hourly_rate?: number | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// ==================== Sales Report ====================
+
+export interface SalesReport {
+  id: string;
+  restaurant_id: string;
+  report_date?: string | null;
+  report_month?: number | null;
+  report_year?: number | null;
+  period_type: 'daily' | 'monthly';
+  total_orders: number;
+  total_revenue: number;
+  total_tax: number;
+  total_discount: number;
+  net_revenue: number;
+  avg_order_value: number;
+  created_at: string;
+}
+
+export interface ItemWiseReport {
+  id: string;
+  restaurant_id: string;
+  product_id?: string;
+  product_name?: string;
+  category_name?: string;
+  quantity_sold: number;
+  total_revenue: number;
+  total_cost?: number;
+  profit?: number;
+  report_date?: string;
+  created_at: string;
+}
+
+export interface CategoryWiseReport {
+  id: string;
+  restaurant_id: string;
+  category_id?: string;
+  category_name?: string;
+  total_revenue: number;
+  quantity_sold: number;
+  report_date?: string;
+  created_at: string;
 }

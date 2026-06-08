@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   Card,
@@ -22,22 +23,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Shield,
   Plus,
   Eye,
-  EyeOff,
   Lock,
-  Key,
   AlertTriangle,
   CheckCircle2,
   XCircle,
@@ -46,18 +38,11 @@ import {
   Activity,
   Settings,
   Ban,
-  Unlock,
-  Fingerprint,
-  Smartphone,
-  Globe,
-  Database,
-  FileText,
   Zap,
-  Router,
-  Wifi,
+  Database,
 } from "lucide-react";
+import { getMyLoginLogs } from "@/lib/apiServices";
 
-// Mock security data
 const securityAlerts = [
   {
     id: "alert-001",
@@ -177,77 +162,45 @@ const userSessions = [
 ];
 
 const securityFeatures = [
-  {
-    name: "Encryption at Rest",
-    status: "enabled",
-    description: "AES-256 encryption for stored data",
-    coverage: 100,
-  },
-  {
-    name: "Encryption in Transit",
-    status: "enabled",
-    description: "TLS 1.3 for all data transmission",
-    coverage: 100,
-  },
-  {
-    name: "API Rate Limiting",
-    status: "enabled",
-    description: "Prevents API abuse and DDoS attacks",
-    coverage: 95,
-  },
-  {
-    name: "Audit Logging",
-    status: "enabled",
-    description: "Comprehensive activity logging",
-    coverage: 98,
-  },
-  {
-    name: "Vulnerability Scanning",
-    status: "enabled",
-    description: "Automated security vulnerability detection",
-    coverage: 92,
-  },
-  {
-    name: "Backup Encryption",
-    status: "enabled",
-    description: "Encrypted backups with key rotation",
-    coverage: 100,
-  },
+  { name: "Encryption at Rest", status: "enabled", description: "AES-256 encryption for stored data", coverage: 100 },
+  { name: "Encryption in Transit", status: "enabled", description: "TLS 1.3 for all data transmission", coverage: 100 },
+  { name: "API Rate Limiting", status: "enabled", description: "Prevents API abuse and DDoS attacks", coverage: 95 },
+  { name: "Audit Logging", status: "enabled", description: "Comprehensive activity logging", coverage: 98 },
+  { name: "Vulnerability Scanning", status: "enabled", description: "Automated security vulnerability detection", coverage: 92 },
+  { name: "Backup Encryption", status: "enabled", description: "Encrypted backups with key rotation", coverage: 100 },
 ];
 
-const alertTypeColors = {
-  critical: "bg-red-500",
-  warning: "bg-yellow-500",
-  info: "bg-blue-500",
-};
+const alertTypeColors = { critical: "bg-red-500", warning: "bg-yellow-500", info: "bg-blue-500" };
 
-const statusColors = {
-  active: "bg-red-500",
-  investigating: "bg-yellow-500",
-  resolved: "bg-green-500",
-  blocked: "bg-gray-500",
-  enabled: "bg-green-500",
-  disabled: "bg-red-500",
-  draft: "bg-yellow-500",
-  expired: "bg-gray-500",
-};
+function formatTimeAgo(dateStr: string) {
+  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+  if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
+  return `${Math.round(diff / 86400)}d ago`;
+}
 
 export default function Security() {
   const [isAddingPolicy, setIsAddingPolicy] = useState(false);
-  const [selectedAlert, setSelectedAlert] = useState<string | null>(null);
   const [policyName, setPolicyName] = useState("");
   const [policyDescription, setPolicyDescription] = useState("");
 
+  const { data: loginLogsRaw } = useQuery({
+    queryKey: ["loginLogs"],
+    queryFn: () => getMyLoginLogs(0, 20),
+    select: (r: any) => {
+      const src = r?.data ?? r;
+      return Array.isArray(src) ? src : [];
+    },
+  });
+
+  const loginLogs: any[] = loginLogsRaw ?? [];
+
   const getAlertIcon = (type: string) => {
     switch (type) {
-      case "critical":
-        return <XCircle className="h-5 w-5 text-red-600" />;
-      case "warning":
-        return <AlertTriangle className="h-5 w-5 text-yellow-600" />;
-      case "info":
-        return <CheckCircle2 className="h-5 w-5 text-blue-600" />;
-      default:
-        return <Shield className="h-5 w-5 text-gray-600" />;
+      case "critical": return <XCircle className="h-5 w-5 text-red-600" />;
+      case "warning": return <AlertTriangle className="h-5 w-5 text-yellow-600" />;
+      case "info": return <CheckCircle2 className="h-5 w-5 text-blue-600" />;
+      default: return <Shield className="h-5 w-5 text-gray-600" />;
     }
   };
 
@@ -265,13 +218,8 @@ export default function Security() {
       {/* Header */}
       <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">
-            Security Center
-          </h1>
-          <p className="text-muted-foreground">
-            Monitor security threats, manage access controls, and enforce
-            policies
-          </p>
+          <h1 className="text-3xl font-bold text-foreground">Security Center</h1>
+          <p className="text-muted-foreground">Monitor security threats, manage access controls, and enforce policies</p>
         </div>
         <div className="flex items-center space-x-2">
           <Button variant="outline">
@@ -288,9 +236,7 @@ export default function Security() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create Security Policy</DialogTitle>
-                <DialogDescription>
-                  Define a new security policy for your organization
-                </DialogDescription>
+                <DialogDescription>Define a new security policy for your organization</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
@@ -314,15 +260,8 @@ export default function Security() {
                 </div>
               </div>
               <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setIsAddingPolicy(false)}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={() => setIsAddingPolicy(false)}>
-                  Create Policy
-                </Button>
+                <Button variant="outline" onClick={() => setIsAddingPolicy(false)}>Cancel</Button>
+                <Button onClick={() => setIsAddingPolicy(false)}>Create Policy</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -347,7 +286,7 @@ export default function Security() {
             <div className="flex items-center space-x-2">
               <AlertTriangle className="h-8 w-8 text-red-600" />
               <div>
-                <p className="text-2xl font-bold">2</p>
+                <p className="text-2xl font-bold">{securityAlerts.filter((a) => a.status === "active").length}</p>
                 <p className="text-sm text-muted-foreground">Active Threats</p>
               </div>
             </div>
@@ -358,7 +297,7 @@ export default function Security() {
             <div className="flex items-center space-x-2">
               <Users className="h-8 w-8 text-blue-600" />
               <div>
-                <p className="text-2xl font-bold">3</p>
+                <p className="text-2xl font-bold">{userSessions.filter((s) => s.status === "active").length}</p>
                 <p className="text-sm text-muted-foreground">Active Sessions</p>
               </div>
             </div>
@@ -369,10 +308,8 @@ export default function Security() {
             <div className="flex items-center space-x-2">
               <Lock className="h-8 w-8 text-purple-600" />
               <div>
-                <p className="text-2xl font-bold">4</p>
-                <p className="text-sm text-muted-foreground">
-                  Security Policies
-                </p>
+                <p className="text-2xl font-bold">{accessPolicies.length}</p>
+                <p className="text-sm text-muted-foreground">Security Policies</p>
               </div>
             </div>
           </CardContent>
@@ -393,61 +330,33 @@ export default function Security() {
           <Card>
             <CardHeader>
               <CardTitle>Security Alerts & Threats</CardTitle>
-              <CardDescription>
-                Real-time security event monitoring and incident response
-              </CardDescription>
+              <CardDescription>Real-time security event monitoring and incident response</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {securityAlerts.map((alert) => (
-                  <div
-                    key={alert.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50"
-                  >
+                  <div key={alert.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50">
                     <div className="flex items-center space-x-4 flex-1">
                       <div className="flex items-center space-x-2">
                         {getAlertIcon(alert.type)}
-                        <div
-                          className={`w-3 h-3 rounded-full ${alertTypeColors[alert.type as keyof typeof alertTypeColors]}`}
-                        ></div>
+                        <div className={`w-3 h-3 rounded-full ${alertTypeColors[alert.type as keyof typeof alertTypeColors]}`}></div>
                       </div>
                       <div className="flex-1">
                         <h3 className="font-semibold">{alert.title}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {alert.description}
-                        </p>
+                        <p className="text-sm text-muted-foreground">{alert.description}</p>
                         <div className="flex items-center space-x-4 mt-1">
                           <span className="text-xs text-muted-foreground flex items-center">
-                            <Clock className="h-3 w-3 mr-1" />
-                            {alert.timestamp}
+                            <Clock className="h-3 w-3 mr-1" />{alert.timestamp}
                           </span>
-                          <span className="text-xs text-muted-foreground">
-                            User: {alert.affectedUser}
-                          </span>
+                          <span className="text-xs text-muted-foreground">User: {alert.affectedUser}</span>
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center space-x-3">
-                      <Badge
-                        variant={
-                          alert.severity === "high"
-                            ? "destructive"
-                            : alert.severity === "medium"
-                              ? "secondary"
-                              : "outline"
-                        }
-                      >
+                      <Badge variant={alert.severity === "high" ? "destructive" : alert.severity === "medium" ? "secondary" : "outline"}>
                         {alert.severity}
                       </Badge>
-                      <Badge
-                        variant={
-                          alert.status === "active"
-                            ? "destructive"
-                            : alert.status === "resolved"
-                              ? "default"
-                              : "secondary"
-                        }
-                      >
+                      <Badge variant={alert.status === "active" ? "destructive" : alert.status === "resolved" ? "default" : "secondary"}>
                         {alert.status}
                       </Badge>
                       <Button variant="outline" size="sm">
@@ -467,63 +376,33 @@ export default function Security() {
           <Card>
             <CardHeader>
               <CardTitle>Security Policies</CardTitle>
-              <CardDescription>
-                Manage access controls, authentication, and security
-                requirements
-              </CardDescription>
+              <CardDescription>Manage access controls, authentication, and security requirements</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {accessPolicies.map((policy) => (
-                  <div
-                    key={policy.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50"
-                  >
+                  <div key={policy.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50">
                     <div className="flex items-center space-x-4 flex-1">
                       <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900">
                         <Lock className="h-5 w-5 text-blue-600" />
                       </div>
                       <div className="flex-1">
                         <h3 className="font-semibold">{policy.name}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {policy.description}
-                        </p>
+                        <p className="text-sm text-muted-foreground">{policy.description}</p>
                         <div className="flex items-center space-x-4 mt-2">
-                          <span className="text-xs text-muted-foreground">
-                            Applied to: {policy.appliedTo}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            Updated: {policy.lastUpdated}
-                          </span>
+                          <span className="text-xs text-muted-foreground">Applied to: {policy.appliedTo}</span>
+                          <span className="text-xs text-muted-foreground">Updated: {policy.lastUpdated}</span>
                         </div>
                         <div className="flex items-center space-x-2 mt-2">
-                          <span className="text-xs text-muted-foreground">
-                            Compliance:
-                          </span>
-                          <Progress
-                            value={policy.compliance}
-                            className="w-24 h-2"
-                          />
-                          <span className="text-xs text-muted-foreground">
-                            {policy.compliance}%
-                          </span>
+                          <span className="text-xs text-muted-foreground">Compliance:</span>
+                          <Progress value={policy.compliance} className="w-24 h-2" />
+                          <span className="text-xs text-muted-foreground">{policy.compliance}%</span>
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center space-x-3">
-                      <Badge
-                        variant={
-                          policy.status === "active" ? "default" : "secondary"
-                        }
-                      >
-                        {policy.status}
-                      </Badge>
-                      <Switch
-                        checked={policy.status === "active"}
-                        onCheckedChange={() =>
-                          console.log(`Toggle policy ${policy.id}`)
-                        }
-                      />
+                      <Badge variant={policy.status === "active" ? "default" : "secondary"}>{policy.status}</Badge>
+                      <Switch checked={policy.status === "active"} onCheckedChange={() => {}} />
                       <Button variant="outline" size="sm">
                         <Settings className="h-4 w-4 mr-1" />
                         Configure
@@ -541,48 +420,29 @@ export default function Security() {
           <Card>
             <CardHeader>
               <CardTitle>Active User Sessions</CardTitle>
-              <CardDescription>
-                Monitor and manage user authentication sessions
-              </CardDescription>
+              <CardDescription>Monitor and manage user authentication sessions</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {userSessions.map((session) => (
-                  <div
-                    key={session.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50"
-                  >
+                  <div key={session.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50">
                     <div className="flex items-center space-x-4 flex-1">
                       <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900">
                         <Users className="h-5 w-5 text-green-600" />
                       </div>
                       <div className="flex-1">
                         <h3 className="font-semibold">{session.user}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {session.device} • {session.location}
-                        </p>
+                        <p className="text-sm text-muted-foreground">{session.device} • {session.location}</p>
                         <div className="flex items-center space-x-4 mt-1">
-                          <span className="text-xs text-muted-foreground">
-                            IP: {session.ipAddress}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            Login: {session.loginTime}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            Last: {session.lastActivity}
-                          </span>
+                          <span className="text-xs text-muted-foreground">IP: {session.ipAddress}</span>
+                          <span className="text-xs text-muted-foreground">Login: {session.loginTime}</span>
+                          <span className="text-xs text-muted-foreground">Last: {session.lastActivity}</span>
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center space-x-3">
                       <Badge variant="outline">{session.role}</Badge>
-                      <Badge
-                        variant={
-                          session.status === "active" ? "default" : "secondary"
-                        }
-                      >
-                        {session.status}
-                      </Badge>
+                      <Badge variant={session.status === "active" ? "default" : "secondary"}>{session.status}</Badge>
                       <Button
                         variant="outline"
                         size="sm"
@@ -605,9 +465,7 @@ export default function Security() {
           <Card>
             <CardHeader>
               <CardTitle>Security Features</CardTitle>
-              <CardDescription>
-                System-wide security capabilities and their status
-              </CardDescription>
+              <CardDescription>System-wide security capabilities and their status</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -615,28 +473,13 @@ export default function Security() {
                   <div key={feature.name} className="p-4 border rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <h3 className="font-semibold">{feature.name}</h3>
-                      <Badge
-                        variant={
-                          feature.status === "enabled" ? "default" : "secondary"
-                        }
-                      >
-                        {feature.status}
-                      </Badge>
+                      <Badge variant={feature.status === "enabled" ? "default" : "secondary"}>{feature.status}</Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-3">
-                      {feature.description}
-                    </p>
+                    <p className="text-sm text-muted-foreground mb-3">{feature.description}</p>
                     <div className="flex items-center space-x-2">
-                      <span className="text-xs text-muted-foreground">
-                        Coverage:
-                      </span>
-                      <Progress
-                        value={feature.coverage}
-                        className="flex-1 h-2"
-                      />
-                      <span className="text-xs text-muted-foreground">
-                        {feature.coverage}%
-                      </span>
+                      <span className="text-xs text-muted-foreground">Coverage:</span>
+                      <Progress value={feature.coverage} className="flex-1 h-2" />
+                      <span className="text-xs text-muted-foreground">{feature.coverage}%</span>
                     </div>
                   </div>
                 ))}
@@ -651,9 +494,7 @@ export default function Security() {
             <Card>
               <CardHeader>
                 <CardTitle>Compliance Standards</CardTitle>
-                <CardDescription>
-                  Industry security compliance status
-                </CardDescription>
+                <CardDescription>Industry security compliance status</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -690,41 +531,48 @@ export default function Security() {
             <Card>
               <CardHeader>
                 <CardTitle>Audit Trail</CardTitle>
-                <CardDescription>
-                  Recent security and compliance activities
-                </CardDescription>
+                <CardDescription>Recent login activity from your account</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-3 text-sm">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>Security policy updated</span>
-                    <span className="text-muted-foreground text-xs">
-                      2h ago
-                    </span>
+                {loginLogs.length > 0 ? (
+                  <div className="space-y-3 text-sm">
+                    {loginLogs.slice(0, 8).map((log: any, i: number) => (
+                      <div key={log.id ?? i} className="flex items-center space-x-2">
+                        <div className={`w-2 h-2 rounded-full ${log.success === false ? "bg-red-500" : "bg-green-500"}`}></div>
+                        <span className="flex-1">
+                          {log.success === false ? "Failed login attempt" : "Successful login"}
+                          {log.ip_address ? ` from ${log.ip_address}` : ""}
+                        </span>
+                        <span className="text-muted-foreground text-xs shrink-0">
+                          {log.created_at ? formatTimeAgo(log.created_at) : ""}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    <span>Compliance scan completed</span>
-                    <span className="text-muted-foreground text-xs">
-                      4h ago
-                    </span>
+                ) : (
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <span>Security policy updated</span>
+                      <span className="text-muted-foreground text-xs">2h ago</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                      <span>Compliance scan completed</span>
+                      <span className="text-muted-foreground text-xs">4h ago</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                      <span>Security incident detected</span>
+                      <span className="text-muted-foreground text-xs">6h ago</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <span>User access review completed</span>
+                      <span className="text-muted-foreground text-xs">1d ago</span>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                    <span>Security incident detected</span>
-                    <span className="text-muted-foreground text-xs">
-                      6h ago
-                    </span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>User access review completed</span>
-                    <span className="text-muted-foreground text-xs">
-                      1d ago
-                    </span>
-                  </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </div>

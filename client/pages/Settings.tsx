@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Save,
   Building,
@@ -7,11 +8,8 @@ import {
   Bell,
   Shield,
   Database,
-  Palette,
   Globe,
-  Clock,
   DollarSign,
-  Percent,
   Download,
   Upload,
   RefreshCw,
@@ -33,22 +31,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-
-interface StoreSettings {
-  name: string;
-  address: string;
-  phone: string;
-  email: string;
-  website: string;
-  logo?: string;
-  currency: string;
-  timezone: string;
-  taxRate: number;
-  serviceCharge: number;
-  openingHours: {
-    [key: string]: { open: string; close: string; closed: boolean };
-  };
-}
+import { useAuth } from "@/contexts/AuthContext";
+import { getRestaurantById, updateRestaurant } from "@/lib/apiServices";
+import { useToast } from "@/contexts/ToastContext";
 
 interface PaymentSettings {
   cashEnabled: boolean;
@@ -81,29 +66,34 @@ interface NotificationSettings {
   pushNotifications: boolean;
 }
 
+const defaultOpeningHours = {
+  Monday: { open: "09:00", close: "22:00", closed: false },
+  Tuesday: { open: "09:00", close: "22:00", closed: false },
+  Wednesday: { open: "09:00", close: "22:00", closed: false },
+  Thursday: { open: "09:00", close: "22:00", closed: false },
+  Friday: { open: "09:00", close: "23:00", closed: false },
+  Saturday: { open: "09:00", close: "23:00", closed: false },
+  Sunday: { open: "10:00", close: "21:00", closed: false },
+};
+
 export default function Settings() {
+  const { user } = useAuth();
+  const { addToast } = useToast();
+  const queryClient = useQueryClient();
+  const branchId = user?.branchId ?? "";
   const [activeTab, setActiveTab] = useState("store");
 
-  // Mock settings data
-  const [storeSettings, setStoreSettings] = useState<StoreSettings>({
-    name: "RestaurantPOS",
-    address: "123 Main Street, Downtown, City 12345",
-    phone: "+1 (555) 123-4567",
-    email: "info@restaurantpos.com",
-    website: "www.restaurantpos.com",
+  const [storeSettings, setStoreSettings] = useState({
+    name: "",
+    address: "",
+    phone: "",
+    email: "",
+    website: "",
     currency: "USD",
     timezone: "America/New_York",
     taxRate: 8.5,
     serviceCharge: 10,
-    openingHours: {
-      Monday: { open: "09:00", close: "22:00", closed: false },
-      Tuesday: { open: "09:00", close: "22:00", closed: false },
-      Wednesday: { open: "09:00", close: "22:00", closed: false },
-      Thursday: { open: "09:00", close: "22:00", closed: false },
-      Friday: { open: "09:00", close: "23:00", closed: false },
-      Saturday: { open: "09:00", close: "23:00", closed: false },
-      Sunday: { open: "10:00", close: "21:00", closed: false },
-    },
+    openingHours: defaultOpeningHours,
   });
 
   const [paymentSettings, setPaymentSettings] = useState<PaymentSettings>({
@@ -127,28 +117,65 @@ export default function Settings() {
     logoOnReceipt: true,
   });
 
-  const [notificationSettings, setNotificationSettings] =
-    useState<NotificationSettings>({
-      orderNotifications: true,
-      lowStockAlerts: true,
-      staffAttendance: false,
-      dailyReports: true,
-      emailNotifications: true,
-      smsNotifications: false,
-      pushNotifications: true,
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
+    orderNotifications: true,
+    lowStockAlerts: true,
+    staffAttendance: false,
+    dailyReports: true,
+    emailNotifications: true,
+    smsNotifications: false,
+    pushNotifications: true,
+  });
+
+  const { data: restaurant, isLoading } = useQuery({
+    queryKey: ["restaurant", branchId],
+    queryFn: () => getRestaurantById(branchId),
+    enabled: !!branchId,
+    select: (r: any) => r?.data ?? r,
+  });
+
+  useEffect(() => {
+    if (restaurant) {
+      setStoreSettings((prev) => ({
+        ...prev,
+        name: restaurant.name || "",
+        address: restaurant.address || "",
+        phone: restaurant.phone || "",
+        email: restaurant.email || "",
+        website: restaurant.website_url || "",
+      }));
+    }
+  }, [restaurant]);
+
+  const updateMutation = useMutation({
+    mutationFn: (data: any) => updateRestaurant(branchId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["restaurant", branchId] });
+      addToast({ type: "success", title: "Store settings saved successfully" });
+    },
+    onError: (e: any) => addToast({ type: "error", title: e?.message ?? "Failed to save settings" }),
+  });
+
+  const handleSaveStore = () => {
+    updateMutation.mutate({
+      name: storeSettings.name,
+      address: storeSettings.address,
+      phone: storeSettings.phone,
+      email: storeSettings.email,
+      website_url: storeSettings.website,
     });
+  };
 
   const handleSaveSettings = (category: string) => {
-    console.log(`Saving ${category} settings`);
-    // Save settings logic here
+    addToast({ type: "success", title: `${category} settings saved (local only)` });
   };
 
   const handleBackup = () => {
-    console.log("Creating backup...");
+    addToast({ type: "info", title: "Backup initiated" });
   };
 
   const handleRestore = () => {
-    console.log("Restoring backup...");
+    addToast({ type: "info", title: "Restore initiated" });
   };
 
   return (
@@ -157,9 +184,7 @@ export default function Settings() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Settings</h1>
-          <p className="text-foreground-muted mt-1">
-            System configuration and preferences
-          </p>
+          <p className="text-foreground-muted mt-1">System configuration and preferences</p>
         </div>
         <div className="flex items-center space-x-2">
           <Button
@@ -183,45 +208,27 @@ export default function Settings() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="bg-card border-border mb-6">
-          <TabsTrigger
-            value="store"
-            className="data-[state=active]:bg-pos-accent data-[state=active]:text-foreground"
-          >
+          <TabsTrigger value="store" className="data-[state=active]:bg-pos-accent data-[state=active]:text-foreground">
             <Building className="mr-2 h-4 w-4" />
             Store
           </TabsTrigger>
-          <TabsTrigger
-            value="payments"
-            className="data-[state=active]:bg-pos-accent data-[state=active]:text-foreground"
-          >
+          <TabsTrigger value="payments" className="data-[state=active]:bg-pos-accent data-[state=active]:text-foreground">
             <CreditCard className="mr-2 h-4 w-4" />
             Payments
           </TabsTrigger>
-          <TabsTrigger
-            value="printers"
-            className="data-[state=active]:bg-pos-accent data-[state=active]:text-foreground"
-          >
+          <TabsTrigger value="printers" className="data-[state=active]:bg-pos-accent data-[state=active]:text-foreground">
             <Printer className="mr-2 h-4 w-4" />
             Printers
           </TabsTrigger>
-          <TabsTrigger
-            value="notifications"
-            className="data-[state=active]:bg-pos-accent data-[state=active]:text-foreground"
-          >
+          <TabsTrigger value="notifications" className="data-[state=active]:bg-pos-accent data-[state=active]:text-foreground">
             <Bell className="mr-2 h-4 w-4" />
             Notifications
           </TabsTrigger>
-          <TabsTrigger
-            value="security"
-            className="data-[state=active]:bg-pos-accent data-[state=active]:text-foreground"
-          >
+          <TabsTrigger value="security" className="data-[state=active]:bg-pos-accent data-[state=active]:text-foreground">
             <Shield className="mr-2 h-4 w-4" />
             Security
           </TabsTrigger>
-          <TabsTrigger
-            value="system"
-            className="data-[state=active]:bg-pos-accent data-[state=active]:text-foreground"
-          >
+          <TabsTrigger value="system" className="data-[state=active]:bg-pos-accent data-[state=active]:text-foreground">
             <Database className="mr-2 h-4 w-4" />
             System
           </TabsTrigger>
@@ -232,105 +239,86 @@ export default function Settings() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="text-foreground">
-                  Store Information
-                </CardTitle>
+                <CardTitle className="text-foreground">Store Information</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="storeName" className="text-foreground">
-                    Store Name
-                  </Label>
-                  <Input
-                    id="storeName"
-                    value={storeSettings.name}
-                    onChange={(e) =>
-                      setStoreSettings({
-                        ...storeSettings,
-                        name: e.target.value,
-                      })
-                    }
-                    className="bg-card border-border text-foreground"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="address" className="text-foreground">
-                    Address
-                  </Label>
-                  <Textarea
-                    id="address"
-                    value={storeSettings.address}
-                    onChange={(e) =>
-                      setStoreSettings({
-                        ...storeSettings,
-                        address: e.target.value,
-                      })
-                    }
-                    className="bg-card border-border text-foreground"
-                    rows={3}
-                  />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="phone" className="text-foreground">
-                      Phone
-                    </Label>
-                    <Input
-                      id="phone"
-                      value={storeSettings.phone}
-                      onChange={(e) =>
-                        setStoreSettings({
-                          ...storeSettings,
-                          phone: e.target.value,
-                        })
-                      }
-                      className="bg-card border-border text-foreground"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email" className="text-foreground">
-                      Email
-                    </Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={storeSettings.email}
-                      onChange={(e) =>
-                        setStoreSettings({
-                          ...storeSettings,
-                          email: e.target.value,
-                        })
-                      }
-                      className="bg-card border-border text-foreground"
-                    />
-                  </div>
-                </div>
+                {isLoading ? (
+                  <div className="text-muted-foreground text-sm">Loading store info...</div>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="storeName" className="text-foreground">Store Name</Label>
+                      <Input
+                        id="storeName"
+                        value={storeSettings.name}
+                        onChange={(e) => setStoreSettings({ ...storeSettings, name: e.target.value })}
+                        className="bg-card border-border text-foreground"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="address" className="text-foreground">Address</Label>
+                      <Textarea
+                        id="address"
+                        value={storeSettings.address}
+                        onChange={(e) => setStoreSettings({ ...storeSettings, address: e.target.value })}
+                        className="bg-card border-border text-foreground"
+                        rows={3}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="phone" className="text-foreground">Phone</Label>
+                        <Input
+                          id="phone"
+                          value={storeSettings.phone}
+                          onChange={(e) => setStoreSettings({ ...storeSettings, phone: e.target.value })}
+                          className="bg-card border-border text-foreground"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="email" className="text-foreground">Email</Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          value={storeSettings.email}
+                          onChange={(e) => setStoreSettings({ ...storeSettings, email: e.target.value })}
+                          className="bg-card border-border text-foreground"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="website" className="text-foreground">Website</Label>
+                      <Input
+                        id="website"
+                        value={storeSettings.website}
+                        onChange={(e) => setStoreSettings({ ...storeSettings, website: e.target.value })}
+                        className="bg-card border-border text-foreground"
+                        placeholder="https://yourrestaurant.com"
+                      />
+                    </div>
+                  </>
+                )}
                 <Button
-                  onClick={() => handleSaveSettings("store")}
+                  onClick={handleSaveStore}
+                  disabled={updateMutation.isPending || isLoading}
                   className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
                   <Save className="mr-2 h-4 w-4" />
-                  Save Store Settings
+                  {updateMutation.isPending ? "Saving..." : "Save Store Settings"}
                 </Button>
               </CardContent>
             </Card>
 
             <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="text-foreground">
-                  Regional Settings
-                </CardTitle>
+                <CardTitle className="text-foreground">Regional Settings</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="currency" className="text-foreground">
-                    Currency
-                  </Label>
+                  <Label htmlFor="currency" className="text-foreground">Currency</Label>
                   <Select
                     value={storeSettings.currency}
-                    onValueChange={(value) =>
-                      setStoreSettings({ ...storeSettings, currency: value })
-                    }
+                    onValueChange={(value) => setStoreSettings({ ...storeSettings, currency: value })}
                   >
                     <SelectTrigger className="bg-card border-border text-foreground">
                       <SelectValue />
@@ -344,68 +332,42 @@ export default function Settings() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="timezone" className="text-foreground">
-                    Timezone
-                  </Label>
+                  <Label htmlFor="timezone" className="text-foreground">Timezone</Label>
                   <Select
                     value={storeSettings.timezone}
-                    onValueChange={(value) =>
-                      setStoreSettings({ ...storeSettings, timezone: value })
-                    }
+                    onValueChange={(value) => setStoreSettings({ ...storeSettings, timezone: value })}
                   >
                     <SelectTrigger className="bg-card border-border text-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-card border-border">
-                      <SelectItem value="America/New_York">
-                        Eastern Time
-                      </SelectItem>
-                      <SelectItem value="America/Chicago">
-                        Central Time
-                      </SelectItem>
-                      <SelectItem value="America/Denver">
-                        Mountain Time
-                      </SelectItem>
-                      <SelectItem value="America/Los_Angeles">
-                        Pacific Time
-                      </SelectItem>
+                      <SelectItem value="America/New_York">Eastern Time</SelectItem>
+                      <SelectItem value="America/Chicago">Central Time</SelectItem>
+                      <SelectItem value="America/Denver">Mountain Time</SelectItem>
+                      <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="taxRate" className="text-foreground">
-                      Tax Rate (%)
-                    </Label>
+                    <Label htmlFor="taxRate" className="text-foreground">Tax Rate (%)</Label>
                     <Input
                       id="taxRate"
                       type="number"
                       step="0.1"
                       value={storeSettings.taxRate}
-                      onChange={(e) =>
-                        setStoreSettings({
-                          ...storeSettings,
-                          taxRate: parseFloat(e.target.value) || 0,
-                        })
-                      }
+                      onChange={(e) => setStoreSettings({ ...storeSettings, taxRate: parseFloat(e.target.value) || 0 })}
                       className="bg-card border-border text-foreground"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="serviceCharge" className="text-foreground">
-                      Service Charge (%)
-                    </Label>
+                    <Label htmlFor="serviceCharge" className="text-foreground">Service Charge (%)</Label>
                     <Input
                       id="serviceCharge"
                       type="number"
                       step="0.1"
                       value={storeSettings.serviceCharge}
-                      onChange={(e) =>
-                        setStoreSettings({
-                          ...storeSettings,
-                          serviceCharge: parseFloat(e.target.value) || 0,
-                        })
-                      }
+                      onChange={(e) => setStoreSettings({ ...storeSettings, serviceCharge: parseFloat(e.target.value) || 0 })}
                       className="bg-card border-border text-foreground"
                     />
                   </div>
@@ -421,73 +383,52 @@ export default function Settings() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {Object.entries(storeSettings.openingHours).map(
-                  ([day, hours]) => (
-                    <div
-                      key={day}
-                      className="flex items-center justify-between p-3 bg-muted rounded-lg"
-                    >
-                      <div className="flex items-center space-x-4">
-                        <div className="w-20">
-                          <span className="font-medium text-foreground">
-                            {day}
-                          </span>
-                        </div>
-                        <Switch
-                          checked={!hours.closed}
-                          onCheckedChange={(checked) => {
-                            const newHours = {
-                              ...storeSettings.openingHours,
-                              [day]: { ...hours, closed: !checked },
-                            };
+                {Object.entries(storeSettings.openingHours).map(([day, hours]) => (
+                  <div key={day} className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                    <div className="flex items-center space-x-4">
+                      <div className="w-20">
+                        <span className="font-medium text-foreground">{day}</span>
+                      </div>
+                      <Switch
+                        checked={!hours.closed}
+                        onCheckedChange={(checked) => {
+                          setStoreSettings({
+                            ...storeSettings,
+                            openingHours: { ...storeSettings.openingHours, [day]: { ...hours, closed: !checked } },
+                          });
+                        }}
+                      />
+                      <span className="text-foreground-muted text-sm">{hours.closed ? "Closed" : "Open"}</span>
+                    </div>
+                    {!hours.closed && (
+                      <div className="flex items-center space-x-2">
+                        <Input
+                          type="time"
+                          value={hours.open}
+                          onChange={(e) => {
                             setStoreSettings({
                               ...storeSettings,
-                              openingHours: newHours,
+                              openingHours: { ...storeSettings.openingHours, [day]: { ...hours, open: e.target.value } },
                             });
                           }}
+                          className="w-24 bg-card border-border text-foreground"
                         />
-                        <span className="text-foreground-muted text-sm">
-                          {hours.closed ? "Closed" : "Open"}
-                        </span>
+                        <span className="text-foreground-muted">to</span>
+                        <Input
+                          type="time"
+                          value={hours.close}
+                          onChange={(e) => {
+                            setStoreSettings({
+                              ...storeSettings,
+                              openingHours: { ...storeSettings.openingHours, [day]: { ...hours, close: e.target.value } },
+                            });
+                          }}
+                          className="w-24 bg-card border-border text-foreground"
+                        />
                       </div>
-                      {!hours.closed && (
-                        <div className="flex items-center space-x-2">
-                          <Input
-                            type="time"
-                            value={hours.open}
-                            onChange={(e) => {
-                              const newHours = {
-                                ...storeSettings.openingHours,
-                                [day]: { ...hours, open: e.target.value },
-                              };
-                              setStoreSettings({
-                                ...storeSettings,
-                                openingHours: newHours,
-                              });
-                            }}
-                            className="w-24 bg-card border-border text-foreground"
-                          />
-                          <span className="text-foreground-muted">to</span>
-                          <Input
-                            type="time"
-                            value={hours.close}
-                            onChange={(e) => {
-                              const newHours = {
-                                ...storeSettings.openingHours,
-                                [day]: { ...hours, close: e.target.value },
-                              };
-                              setStoreSettings({
-                                ...storeSettings,
-                                openingHours: newHours,
-                              });
-                            }}
-                            className="w-24 bg-card border-border text-foreground"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ),
-                )}
+                    )}
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -498,47 +439,23 @@ export default function Settings() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="text-foreground">
-                  Payment Methods
-                </CardTitle>
+                <CardTitle className="text-foreground">Payment Methods</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {[
-                  {
-                    key: "cashEnabled",
-                    label: "Cash Payments",
-                    icon: DollarSign,
-                  },
-                  {
-                    key: "cardEnabled",
-                    label: "Card Payments",
-                    icon: CreditCard,
-                  },
+                  { key: "cashEnabled", label: "Cash Payments", icon: DollarSign },
+                  { key: "cardEnabled", label: "Card Payments", icon: CreditCard },
                   { key: "upiEnabled", label: "UPI Payments", icon: Globe },
-                  {
-                    key: "walletEnabled",
-                    label: "Digital Wallet",
-                    icon: CreditCard,
-                  },
+                  { key: "walletEnabled", label: "Digital Wallet", icon: CreditCard },
                 ].map(({ key, label, icon: Icon }) => (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between p-3 bg-muted rounded-lg"
-                  >
+                  <div key={key} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                     <div className="flex items-center space-x-3">
                       <Icon className="h-5 w-5 text-pos-accent" />
                       <span className="text-foreground">{label}</span>
                     </div>
                     <Switch
-                      checked={
-                        paymentSettings[key as keyof PaymentSettings] as boolean
-                      }
-                      onCheckedChange={(checked) =>
-                        setPaymentSettings({
-                          ...paymentSettings,
-                          [key]: checked,
-                        })
-                      }
+                      checked={paymentSettings[key as keyof PaymentSettings] as boolean}
+                      onCheckedChange={(checked) => setPaymentSettings({ ...paymentSettings, [key]: checked })}
                     />
                   </div>
                 ))}
@@ -547,33 +464,21 @@ export default function Settings() {
 
             <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="text-foreground">
-                  Payment Features
-                </CardTitle>
+                <CardTitle className="text-foreground">Payment Features</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
                   <span className="text-foreground">Split Payments</span>
                   <Switch
                     checked={paymentSettings.splitPaymentEnabled}
-                    onCheckedChange={(checked) =>
-                      setPaymentSettings({
-                        ...paymentSettings,
-                        splitPaymentEnabled: checked,
-                      })
-                    }
+                    onCheckedChange={(checked) => setPaymentSettings({ ...paymentSettings, splitPaymentEnabled: checked })}
                   />
                 </div>
                 <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
                   <span className="text-foreground">Tips Enabled</span>
                   <Switch
                     checked={paymentSettings.tipEnabled}
-                    onCheckedChange={(checked) =>
-                      setPaymentSettings({
-                        ...paymentSettings,
-                        tipEnabled: checked,
-                      })
-                    }
+                    onCheckedChange={(checked) => setPaymentSettings({ ...paymentSettings, tipEnabled: checked })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -581,12 +486,7 @@ export default function Settings() {
                   <Input
                     type="number"
                     value={paymentSettings.defaultTipPercentage}
-                    onChange={(e) =>
-                      setPaymentSettings({
-                        ...paymentSettings,
-                        defaultTipPercentage: parseInt(e.target.value) || 0,
-                      })
-                    }
+                    onChange={(e) => setPaymentSettings({ ...paymentSettings, defaultTipPercentage: parseInt(e.target.value) || 0 })}
                     className="bg-card border-border text-foreground"
                   />
                 </div>
@@ -594,12 +494,7 @@ export default function Settings() {
                   <span className="text-foreground">Auto Settlement</span>
                   <Switch
                     checked={paymentSettings.autoSettlement}
-                    onCheckedChange={(checked) =>
-                      setPaymentSettings({
-                        ...paymentSettings,
-                        autoSettlement: checked,
-                      })
-                    }
+                    onCheckedChange={(checked) => setPaymentSettings({ ...paymentSettings, autoSettlement: checked })}
                   />
                 </div>
                 <Button
@@ -618,9 +513,7 @@ export default function Settings() {
         <TabsContent value="printers" className="space-y-6">
           <Card className="bg-card border-border">
             <CardHeader>
-              <CardTitle className="text-foreground">
-                Printer Configuration
-              </CardTitle>
+              <CardTitle className="text-foreground">Printer Configuration</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -631,12 +524,8 @@ export default function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-card border-border">
-                      <SelectItem value="Kitchen Printer 1">
-                        Kitchen Printer 1
-                      </SelectItem>
-                      <SelectItem value="Kitchen Printer 2">
-                        Kitchen Printer 2
-                      </SelectItem>
+                      <SelectItem value="Kitchen Printer 1">Kitchen Printer 1</SelectItem>
+                      <SelectItem value="Kitchen Printer 2">Kitchen Printer 2</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -647,12 +536,8 @@ export default function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-card border-border">
-                      <SelectItem value="Epson TM-T88V">
-                        Epson TM-T88V
-                      </SelectItem>
-                      <SelectItem value="Star TSP143III">
-                        Star TSP143III
-                      </SelectItem>
+                      <SelectItem value="Epson TM-T88V">Epson TM-T88V</SelectItem>
+                      <SelectItem value="Star TSP143III">Star TSP143III</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -673,44 +558,27 @@ export default function Settings() {
               <Separator className="bg-muted" />
 
               <div className="space-y-4">
-                <Label className="text-foreground text-lg font-medium">
-                  Auto Print Settings
-                </Label>
+                <Label className="text-foreground text-lg font-medium">Auto Print Settings</Label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
                     <span className="text-foreground">Auto Print KOT</span>
                     <Switch
                       checked={printerSettings.autoPrintKOT}
-                      onCheckedChange={(checked) =>
-                        setPrinterSettings({
-                          ...printerSettings,
-                          autoPrintKOT: checked,
-                        })
-                      }
+                      onCheckedChange={(checked) => setPrinterSettings({ ...printerSettings, autoPrintKOT: checked })}
                     />
                   </div>
                   <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
                     <span className="text-foreground">Auto Print Bill</span>
                     <Switch
                       checked={printerSettings.autoPrintBill}
-                      onCheckedChange={(checked) =>
-                        setPrinterSettings({
-                          ...printerSettings,
-                          autoPrintBill: checked,
-                        })
-                      }
+                      onCheckedChange={(checked) => setPrinterSettings({ ...printerSettings, autoPrintBill: checked })}
                     />
                   </div>
                   <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
                     <span className="text-foreground">Logo on Receipt</span>
                     <Switch
                       checked={printerSettings.logoOnReceipt}
-                      onCheckedChange={(checked) =>
-                        setPrinterSettings({
-                          ...printerSettings,
-                          logoOnReceipt: checked,
-                        })
-                      }
+                      onCheckedChange={(checked) => setPrinterSettings({ ...printerSettings, logoOnReceipt: checked })}
                     />
                   </div>
                 </div>
@@ -741,23 +609,11 @@ export default function Settings() {
                   { key: "staffAttendance", label: "Staff Attendance" },
                   { key: "dailyReports", label: "Daily Reports" },
                 ].map(({ key, label }) => (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between p-3 bg-muted rounded-lg"
-                  >
+                  <div key={key} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                     <span className="text-foreground">{label}</span>
                     <Switch
-                      checked={
-                        notificationSettings[
-                          key as keyof NotificationSettings
-                        ] as boolean
-                      }
-                      onCheckedChange={(checked) =>
-                        setNotificationSettings({
-                          ...notificationSettings,
-                          [key]: checked,
-                        })
-                      }
+                      checked={notificationSettings[key as keyof NotificationSettings] as boolean}
+                      onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, [key]: checked })}
                     />
                   </div>
                 ))}
@@ -766,9 +622,7 @@ export default function Settings() {
 
             <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="text-foreground">
-                  Delivery Channels
-                </CardTitle>
+                <CardTitle className="text-foreground">Delivery Channels</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {[
@@ -776,23 +630,11 @@ export default function Settings() {
                   { key: "smsNotifications", label: "SMS Notifications" },
                   { key: "pushNotifications", label: "Push Notifications" },
                 ].map(({ key, label }) => (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between p-3 bg-muted rounded-lg"
-                  >
+                  <div key={key} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                     <span className="text-foreground">{label}</span>
                     <Switch
-                      checked={
-                        notificationSettings[
-                          key as keyof NotificationSettings
-                        ] as boolean
-                      }
-                      onCheckedChange={(checked) =>
-                        setNotificationSettings({
-                          ...notificationSettings,
-                          [key]: checked,
-                        })
-                      }
+                      checked={notificationSettings[key as keyof NotificationSettings] as boolean}
+                      onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, [key]: checked })}
                     />
                   </div>
                 ))}
@@ -813,35 +655,25 @@ export default function Settings() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="text-foreground">
-                  Password Policy
-                </CardTitle>
+                <CardTitle className="text-foreground">Password Policy</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-3">
                   <div className="flex items-center space-x-2">
                     <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span className="text-foreground text-sm">
-                      Minimum 8 characters
-                    </span>
+                    <span className="text-foreground text-sm">Minimum 8 characters</span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span className="text-foreground text-sm">
-                      Require uppercase letters
-                    </span>
+                    <span className="text-foreground text-sm">Require uppercase letters</span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span className="text-foreground text-sm">
-                      Require numbers
-                    </span>
+                    <span className="text-foreground text-sm">Require numbers</span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                    <span className="text-foreground text-sm">
-                      Password expiry: 90 days
-                    </span>
+                    <span className="text-foreground text-sm">Password expiry: 90 days</span>
                   </div>
                 </div>
               </CardContent>
@@ -849,43 +681,20 @@ export default function Settings() {
 
             <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="text-foreground">
-                  Session Settings
-                </CardTitle>
+                <CardTitle className="text-foreground">Session Settings</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label className="text-foreground">
-                    Auto-logout after (minutes)
-                  </Label>
-                  <Input
-                    type="number"
-                    defaultValue="30"
-                    onChange={(e) => {
-                      console.log(
-                        "Auto-logout timeout changed:",
-                        e.target.value,
-                      );
-                    }}
-                    className="bg-card border-border text-foreground"
-                  />
+                  <Label className="text-foreground">Auto-logout after (minutes)</Label>
+                  <Input type="number" defaultValue="30" className="bg-card border-border text-foreground" />
                 </div>
                 <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
                   <span className="text-foreground">Require 2FA</span>
-                  <Switch
-                    onCheckedChange={(checked) => {
-                      console.log("2FA toggled:", checked);
-                    }}
-                  />
+                  <Switch />
                 </div>
                 <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
                   <span className="text-foreground">Login Notifications</span>
-                  <Switch
-                    defaultChecked
-                    onCheckedChange={(checked) => {
-                      console.log("Login notifications toggled:", checked);
-                    }}
-                  />
+                  <Switch defaultChecked />
                 </div>
               </CardContent>
             </Card>
@@ -932,43 +741,29 @@ export default function Settings() {
 
             <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="text-foreground">
-                  Backup & Maintenance
-                </CardTitle>
+                <CardTitle className="text-foreground">Backup & Maintenance</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-foreground">Last Backup</span>
-                    <span className="text-foreground-muted text-sm">
-                      2 hours ago
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-foreground">Database Size</span>
-                    <span className="text-foreground-muted text-sm">
-                      245 MB
-                    </span>
+                    <span className="text-foreground-muted text-sm">2 hours ago</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-foreground">System Version</span>
-                    <span className="text-foreground-muted text-sm">
-                      v2.1.0
-                    </span>
+                    <span className="text-foreground-muted text-sm">v2.1.0</span>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Button
                     variant="outline"
                     className="w-full border-pos-secondary text-foreground-muted hover:text-foreground"
+                    onClick={handleBackup}
                   >
                     <Download className="mr-2 h-4 w-4" />
                     Create Backup
                   </Button>
-                  <Button
-                    variant="outline"
-                    className="w-full border-pos-secondary text-foreground-muted hover:text-foreground"
-                  >
+                  <Button variant="outline" className="w-full border-pos-secondary text-foreground-muted hover:text-foreground">
                     <RefreshCw className="mr-2 h-4 w-4" />
                     Check Updates
                   </Button>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Plus,
@@ -18,6 +18,7 @@ import {
   Clock,
   DollarSign,
   TrendingUp,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -44,7 +46,25 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/contexts/ToastContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { createTable, getMyRestaurants, getTables, updateTable } from "@/lib/apiServices";
+import { getImageCropConfig, validateImageFile } from "@/lib/imageCropConfig";
 import type { QRTable, QRSession, QRSettings } from "@/shared/api";
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
+const normalizeDoubleProtocolUrl = (url: string) =>
+  url
+    .replace(/^https?:\/\/https:\/\//i, "https://")
+    .replace(/^https?:\/\/http:\/\//i, "http://");
+
+const resolveTableImageSrc = (image?: string) => {
+  if (!image) return "";
+  const cleaned = normalizeDoubleProtocolUrl(image);
+  if (/^https?:\/\//i.test(cleaned)) return cleaned;
+
+  const base = String(BACKEND_URL || "").replace(/\/$/, "");
+  const path = cleaned.startsWith("/") ? cleaned : `/${cleaned}`;
+  return `${base}${path}`;
+};
 
 function isProbablyImageUrl(value: unknown) {
   if (!value) return false;
@@ -204,7 +224,7 @@ async function composeMonkeyQr(options: {
   logoSrc?: string;
   size?: number;
 }) {
-  const outputSize = Math.max(256, Math.floor(options.size ?? 1024));
+  const outputSize = Math.max(512, Math.floor(options.size ?? 1024));
   const qrImage = await loadImageForCanvas(options.qrSrc);
 
   const canvas = document.createElement("canvas");
@@ -213,94 +233,129 @@ async function composeMonkeyQr(options: {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas not supported");
 
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.fillStyle = "#FFFFFF";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Render as dots by downsampling the QR raster.
-  const grid = 150;
-  const tiny = document.createElement("canvas");
-  tiny.width = grid;
-  tiny.height = grid;
-  const tctx = tiny.getContext("2d");
+  // Step 1: Detect actual QR modules
+  const tempCanvas = document.createElement("canvas");
+  tempCanvas.width = qrImage.width;
+  tempCanvas.height = qrImage.height;
+  const tctx = tempCanvas.getContext("2d", { willReadFrequently: true });
   if (!tctx) throw new Error("Canvas not supported");
-  tctx.imageSmoothingEnabled = false;
-  tctx.clearRect(0, 0, grid, grid);
-  tctx.drawImage(qrImage, 0, 0, grid, grid);
+  tctx.drawImage(qrImage, 0, 0);
+  const qrData = tctx.getImageData(0, 0, qrImage.width, qrImage.height).data;
 
-  const data = tctx.getImageData(0, 0, grid, grid).data;
-  const step = outputSize / grid;
-  const r = step * 0.43;
-
-  ctx.save();
-  ctx.fillStyle = "#0B0B0B";
-  for (let y = 0; y < grid; y++) {
-    for (let x = 0; x < grid; x++) {
-      const i = (y * grid + x) * 4;
-      const a = data[i + 3];
-      if (a < 10) continue;
-      const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-      if (lum > 160) continue;
-      const cx = x * step + step / 2;
-      const cy = y * step + step / 2;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fill();
+  // Detect module size
+  // The first 7 modules are black (finder pattern).
+  // The first transition to white marks the end of 7 modules.
+  let firstWhiteX = 0;
+  for (let x = 0; x < qrImage.width; x++) {
+    const i = x * 4;
+    const isWhite = qrData[i] > 180 && qrData[i+1] > 180 && qrData[i+2] > 180;
+    if (isWhite) {
+      firstWhiteX = x;
+      break;
     }
   }
-  ctx.restore();
+  
+  // If firstWhiteX is found, it represents 7 modules.
+  const modulePixelSize = firstWhiteX ? firstWhiteX / 7 : Math.floor(qrImage.width / 21);
+  const grid = Math.round(qrImage.width / modulePixelSize);
+  
+  // Re-sample to the exact grid
+  const gridCanvas = document.createElement("canvas");
+  gridCanvas.width = grid;
+  gridCanvas.height = grid;
+  const gctx = gridCanvas.getContext("2d");
+  if (!gctx) throw new Error("Canvas not supported");
+  gctx.imageSmoothingEnabled = false;
+  gctx.drawImage(qrImage, 0, 0, grid, grid);
+  const gridData = gctx.getImageData(0, 0, grid, grid).data;
 
-  const drawEye = (cx: number, cy: number, size: number) => {
-    const outerR = size * 0.48;
-    const ringR = outerR * 0.78;
-    const dotR = outerR * 0.34;
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(0, 0, outputSize, outputSize);
 
+  const step = outputSize / grid;
+  const moduleDrawSize = step * 0.85; // Use 85% for a nice "Monkey QR" look with gaps
+
+  const eyeSize = 7;
+  const logoSizeModules = Math.floor(grid * 0.20); 
+  const logoStart = Math.floor((grid - logoSizeModules) / 2);
+  const logoEnd = logoStart + logoSizeModules;
+
+  ctx.fillStyle = "#000000";
+  for (let y = 0; y < grid; y++) {
+    for (let x = 0; x < grid; x++) {
+      // Skip finder patterns
+      if (y < eyeSize && x < eyeSize) continue;
+      if (y < eyeSize && x >= grid - eyeSize) continue;
+      if (y >= grid - eyeSize && x < eyeSize) continue;
+
+      // Skip logo area
+      if (options.logoSrc && x >= logoStart && x < logoEnd && y >= logoStart && y < logoEnd) continue;
+
+      const i = (y * grid + x) * 4;
+      const isBlack = gridData[i] < 128 && gridData[i+3] > 128;
+
+      if (isBlack) {
+        const cx = x * step + step / 2;
+        const cy = y * step + step / 2;
+        const r = moduleDrawSize / 2;
+        
+        // Circular/Dotted look for "Monkey QR"
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Draw perfect Finder Patterns (Eyes) - Dotted/Rounded style
+  const drawEye = (ex: number, ey: number) => {
+    const s = step;
+    const x = ex * s;
+    const y = ey * s;
+    const fullSize = 7 * s;
+    
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, outerR * 1.25, 0, Math.PI * 2);
+    ctx.fillStyle = "#000000";
+    
+    // Outer frame (7x7) with nice rounding
+    drawRoundedRectPath(ctx, x, y, fullSize, fullSize, fullSize * 0.25);
+    ctx.fill();
+    
+    // Inner white gap (5x5)
     ctx.fillStyle = "#FFFFFF";
+    drawRoundedRectPath(ctx, x + s, y + s, 5 * s, 5 * s, (5 * s) * 0.2);
     ctx.fill();
-    ctx.restore();
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
-    ctx.fillStyle = "#0B0B0B";
+    
+    // Inner solid dot (3x3)
+    ctx.fillStyle = "#000000";
+    drawRoundedRectPath(ctx, x + 2 * s, y + 2 * s, 3 * s, 3 * s, (3 * s) * 0.2);
     ctx.fill();
-    ctx.beginPath();
-    ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
-    ctx.fillStyle = "#0B0B0B";
-    ctx.fill();
+    
     ctx.restore();
   };
 
-  // Circular finder eyes (3 corners)
-  const eyeSize = outputSize * 0.17;
-  const eyeInset = outputSize * 0.13;
-  drawEye(eyeInset, eyeInset, eyeSize);
-  drawEye(outputSize - eyeInset, eyeInset, eyeSize);
-  drawEye(eyeInset, outputSize - eyeInset, eyeSize);
+  drawEye(0, 0); // Top-left
+  drawEye(grid - 7, 0); // Top-right
+  drawEye(0, grid - 7); // Bottom-left
 
   // Center logo
   if (options.logoSrc) {
     const logoImage = await loadImageForCanvas(options.logoSrc);
-    const logoSize = Math.floor(outputSize * 0.22);
-    const padding = Math.floor(outputSize * 0.03);
-    const boxSize = logoSize + padding * 2;
-    const x = Math.floor((outputSize - boxSize) / 2);
-    const y = Math.floor((outputSize - boxSize) / 2);
+    const logoDrawSize = logoSizeModules * step;
+    const logoPadding = step * 0.5;
+    const boxSize = logoDrawSize + logoPadding * 2;
+    const lx = (outputSize - boxSize) / 2;
+    const ly = (outputSize - boxSize) / 2;
 
     ctx.save();
-    drawRoundedRectPath(ctx, x, y, boxSize, boxSize, Math.floor(boxSize * 0.18));
+    ctx.shadowColor = "rgba(0,0,0,0.1)";
+    ctx.shadowBlur = 10;
+    drawRoundedRectPath(ctx, lx, ly, boxSize, boxSize, boxSize * 0.25);
     ctx.fillStyle = "#FFFFFF";
     ctx.fill();
     ctx.clip();
-    ctx.drawImage(logoImage, x + padding, y + padding, logoSize, logoSize);
+    
+    ctx.drawImage(logoImage, lx + logoPadding, ly + logoPadding, logoDrawSize, logoDrawSize);
     ctx.restore();
   }
 
@@ -316,8 +371,8 @@ async function composeQrSticker(options: {
   width?: number;
   height?: number;
 }) {
-  const width = Math.max(720, Math.floor(options.width ?? 1024));
-  const height = Math.max(920, Math.floor(options.height ?? 1280));
+  const width = Math.max(800, Math.floor(options.width ?? 1024));
+  const height = Math.max(1100, Math.floor(options.height ?? 1350));
 
   const sticker = document.createElement("canvas");
   sticker.width = width;
@@ -328,57 +383,20 @@ async function composeQrSticker(options: {
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
 
+  // White Background
   ctx.fillStyle = "#FFFFFF";
   ctx.fillRect(0, 0, width, height);
 
-  const drawStylizedQrEyes = (qrX: number, qrY: number, qrSize: number) => {
-    const eyeBox = qrSize * 0.18;
-    const eyeInset = qrSize * 0.045;
-    const positions: Array<[number, number]> = [
-      [qrX + eyeInset, qrY + eyeInset], // top-left
-      [qrX + qrSize - eyeInset - eyeBox, qrY + eyeInset], // top-right
-      [qrX + eyeInset, qrY + qrSize - eyeInset - eyeBox], // bottom-left
-    ];
+  const accent1 = "#0F4CFF";
+  const accent2 = "#00A3FF";
+  
+  // Premium Background Accents
+  const cornerGradient = ctx.createLinearGradient(0, 0, width, height);
+  cornerGradient.addColorStop(0, accent1);
+  cornerGradient.addColorStop(1, accent2);
 
-    for (const [x, y] of positions) {
-      const cx = x + eyeBox / 2;
-      const cy = y + eyeBox / 2;
-      const outerR = eyeBox * 0.46;
-      const ringR = outerR * 0.78;
-      const dotR = outerR * 0.34;
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, outerR * 1.15, 0, Math.PI * 2);
-      ctx.fillStyle = "#FFFFFF";
-      ctx.fill();
-      ctx.restore();
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
-      ctx.fillStyle = "#0B0B0B";
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
-      ctx.fillStyle = "#FFFFFF";
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
-      ctx.fillStyle = "#0B0B0B";
-      ctx.fill();
-      ctx.restore();
-    }
-  };
-
-  const accent1 = "#0B5FFF";
-  const accent2 = "#00C2FF";
-  const cornerGradient = ctx.createLinearGradient(width * 0.35, height * 0.18, width, height * 0.62);
-  cornerGradient.addColorStop(0, accent2);
-  cornerGradient.addColorStop(1, accent1);
-
-  // Background closer to the reference: two diagonal blue bands + corner accents.
-  const cornerSize = Math.floor(Math.min(width, height) * 0.2);
+  // Top-right triangle accent
+  const cornerSize = Math.floor(width * 0.3);
   ctx.fillStyle = cornerGradient;
   ctx.beginPath();
   ctx.moveTo(width - cornerSize, 0);
@@ -387,7 +405,7 @@ async function composeQrSticker(options: {
   ctx.closePath();
   ctx.fill();
 
-  ctx.fillStyle = cornerGradient;
+  // Bottom-left triangle accent
   ctx.beginPath();
   ctx.moveTo(0, height - cornerSize);
   ctx.lineTo(0, height);
@@ -395,123 +413,76 @@ async function composeQrSticker(options: {
   ctx.closePath();
   ctx.fill();
 
-  const bandGradient = ctx.createLinearGradient(0, height * 0.5, width, height * 0.25);
-  bandGradient.addColorStop(0, "rgba(11,95,255,0.0)");
-  bandGradient.addColorStop(0.35, "rgba(11,95,255,0.12)");
-  bandGradient.addColorStop(1, "rgba(0,194,255,0.0)");
-  ctx.fillStyle = bandGradient;
+  // Subtle diagonal bands
+  ctx.save();
+  ctx.globalAlpha = 0.05;
+  ctx.fillStyle = accent1;
   ctx.beginPath();
-  ctx.moveTo(0, height * 0.55);
-  ctx.lineTo(width * 0.45, height * 0.28);
-  ctx.lineTo(width, height * 0.42);
-  ctx.lineTo(width, height * 0.72);
-  ctx.lineTo(0, height * 0.68);
+  ctx.moveTo(0, height * 0.4);
+  ctx.lineTo(width, height * 0.2);
+  ctx.lineTo(width, height * 0.25);
+  ctx.lineTo(0, height * 0.45);
   ctx.closePath();
   ctx.fill();
-
-  const bandGradient2 = ctx.createLinearGradient(0, height * 0.7, width, height * 0.45);
-  bandGradient2.addColorStop(0, "rgba(0,194,255,0.0)");
-  bandGradient2.addColorStop(0.35, "rgba(0,194,255,0.14)");
-  bandGradient2.addColorStop(1, "rgba(11,95,255,0.0)");
-  ctx.fillStyle = bandGradient2;
+  
   ctx.beginPath();
-  ctx.moveTo(0, height * 0.72);
-  ctx.lineTo(width * 0.52, height * 0.42);
-  ctx.lineTo(width, height * 0.58);
-  ctx.lineTo(width, height * 0.88);
-  ctx.lineTo(0, height * 0.9);
+  ctx.moveTo(0, height * 0.6);
+  ctx.lineTo(width, height * 0.4);
+  ctx.lineTo(width, height * 0.45);
+  ctx.lineTo(0, height * 0.65);
   ctx.closePath();
   ctx.fill();
+  ctx.restore();
 
-  const title = String(options.restaurantName || "SCAN").trim();
+  const title = String(options.restaurantName || "SCAN").trim().toUpperCase();
   const footerProvider = String(options.providerName || "V11TECH").trim();
   const tableLabel = String(options.tableLabel || "").trim();
 
-  const paddingX = Math.floor(width * 0.08);
-  const topY = Math.floor(height * 0.05);
-
-  ctx.fillStyle = "#0B0B0B";
+  const paddingX = Math.floor(width * 0.1);
+  
+  // Typography
   ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
+  ctx.textBaseline = "middle";
 
+  // Title Rendering (Max 2 lines)
   const maxTitleWidth = width - paddingX * 2;
-  const titleWords = title.toUpperCase().split(/\s+/).filter(Boolean);
-  const buildTitleLines = (fontSize: number) => {
-    ctx.font = `800 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif`;
-    if (titleWords.length <= 1) return [title.toUpperCase()];
-
-    const lines: string[] = [];
-    let current = "";
-    for (const word of titleWords) {
-      const next = current ? `${current} ${word}` : word;
-      if (ctx.measureText(next).width <= maxTitleWidth) {
-        current = next;
-        continue;
-      }
-      if (current) lines.push(current);
-      current = word;
-      if (lines.length === 1) break; // we only allow up to 2 lines
+  const titleWords = title.split(/\s+/);
+  
+  let fontSize = Math.floor(width * 0.07);
+  ctx.font = `900 ${fontSize}px "Inter", "system-ui", sans-serif`;
+  
+  const lines: string[] = [];
+  let currentLine = "";
+  for (const word of titleWords) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    if (ctx.measureText(testLine).width <= maxTitleWidth) {
+      currentLine = testLine;
+    } else {
+      if (currentLine) lines.push(currentLine);
+      currentLine = word;
+      if (lines.length >= 2) break;
     }
-    if (current && lines.length < 2) lines.push(current);
-
-    if (lines.length === 1 && ctx.measureText(lines[0]).width > maxTitleWidth) {
-      // If even one line doesn't fit (very long word), force split into 2 halves.
-      const text = lines[0];
-      const mid = Math.max(1, Math.floor(text.length / 2));
-      return [text.slice(0, mid), text.slice(mid)];
-    }
-
-    if (lines.length > 2) lines.length = 2;
-    return lines;
-  };
-
-  let titleFontSize = Math.floor(width * 0.075);
-  let titleLines = buildTitleLines(titleFontSize);
-  if (titleLines.length === 1 && ctx.measureText(titleLines[0]).width > maxTitleWidth) {
-    titleFontSize = Math.floor(width * 0.065);
-    titleLines = buildTitleLines(titleFontSize);
   }
-  if (titleLines.length === 2) {
-    titleFontSize = Math.floor(width * 0.06);
-    titleLines = buildTitleLines(titleFontSize);
-  }
+  if (currentLine && lines.length < 2) lines.push(currentLine);
 
-  const titleLineHeight = Math.floor(titleFontSize * 1.08);
-  const titleStartY = topY;
-  titleLines.forEach((line, index) => {
-    ctx.fillText(line, Math.floor(width / 2), titleStartY + index * titleLineHeight);
+  const titleY = Math.floor(height * 0.1);
+  const lineHeight = fontSize * 1.1;
+  
+  ctx.fillStyle = "#0F0F0F";
+  lines.forEach((line, i) => {
+    ctx.fillText(line, width / 2, titleY + (i - (lines.length - 1) / 2) * lineHeight);
   });
 
-  const titleBlockHeight = titleLines.length * titleLineHeight;
-  let qrCardSize = Math.floor(Math.min(width * 0.74, height * 0.58));
-
-  const badgeText = (() => {
-    if (!tableLabel) return "";
-    const raw = tableLabel.toUpperCase().trim();
-    const digits = raw.replace(/[^0-9]/g, "");
-    if (digits.length >= 1) {
-      const trimmedDigits = digits.slice(-3);
-      const paddedDigits =
-        trimmedDigits.length === 1 ? `0${trimmedDigits}` : trimmedDigits;
-      return `T${paddedDigits}`;
-    }
-    const compact = raw.replace(/[^0-9A-Z]/g, "");
-    return compact.length > 3 ? compact.slice(-3) : compact;
-  })();
-
-  // Center card inside safe margins.
-  const qrCardX = Math.floor(paddingX + (width - paddingX * 2 - qrCardSize) / 2);
-  const titleToQrGap =
-    titleLines.length === 1 ? height * 0.002 : height * 0.004;
-  const qrCardY = Math.floor(
-    Math.max(height * 0.095, titleStartY + titleBlockHeight + titleToQrGap),
-  );
+  // QR Card
+  const qrCardSize = Math.floor(width * 0.72);
+  const qrCardX = (width - qrCardSize) / 2;
+  const qrCardY = Math.floor(height * 0.22);
 
   ctx.save();
-  ctx.shadowColor = "rgba(0,0,0,0.18)";
-  ctx.shadowBlur = Math.floor(width * 0.03);
-  ctx.shadowOffsetY = Math.floor(width * 0.012);
-  drawRoundedRectPath(ctx, qrCardX, qrCardY, qrCardSize, qrCardSize, Math.floor(qrCardSize * 0.06));
+  ctx.shadowColor = "rgba(0,0,0,0.12)";
+  ctx.shadowBlur = Math.floor(width * 0.04);
+  ctx.shadowOffsetY = Math.floor(width * 0.02);
+  drawRoundedRectPath(ctx, qrCardX, qrCardY, qrCardSize, qrCardSize, Math.floor(qrCardSize * 0.08));
   ctx.fillStyle = "#FFFFFF";
   ctx.fill();
   ctx.restore();
@@ -523,80 +494,43 @@ async function composeQrSticker(options: {
   });
   const qrImage = await loadImageForCanvas(qrPngDataUrl);
 
-  const qrInnerPadding = Math.floor(qrCardSize * 0.07);
+  const qrInnerPadding = Math.floor(qrCardSize * 0.06);
   const qrInnerSize = qrCardSize - qrInnerPadding * 2;
   ctx.drawImage(qrImage, qrCardX + qrInnerPadding, qrCardY + qrInnerPadding, qrInnerSize, qrInnerSize);
 
-  // Table badge as a pill below the QR card (never interferes with QR)
-  let contentY = Math.floor(qrCardY + qrCardSize + height * 0.035);
-  if (badgeText) {
-    let fontSize = Math.floor(width * 0.045);
-    fontSize = Math.max(18, Math.min(34, fontSize));
-
-    const measure = () => {
-      ctx.font = `800 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif`;
-      const textWidth = ctx.measureText(badgeText).width;
-      const padX = Math.floor(fontSize * 0.7);
-      const padY = Math.floor(fontSize * 0.42);
-      return {
-        textWidth,
-        w: Math.ceil(textWidth + padX * 2),
-        h: Math.ceil(fontSize + padY * 2),
-      };
-    };
-
-    let box = measure();
-    const maxW = width - paddingX * 2;
-    while (box.w > maxW && fontSize > 14) {
-      fontSize = Math.floor(fontSize * 0.92);
-      box = measure();
-    }
-
-    const x = Math.floor(width / 2 - box.w / 2);
-    const y = contentY;
-
+  // Table ID Badge (Pill)
+  let currentY = qrCardY + qrCardSize + Math.floor(height * 0.05);
+  if (tableLabel) {
+    const badgeFontSize = Math.floor(width * 0.045);
+    ctx.font = `bold ${badgeFontSize}px sans-serif`;
+    const badgeText = tableLabel.toUpperCase();
+    const textWidth = ctx.measureText(badgeText).width;
+    const badgeWidth = textWidth + Math.floor(width * 0.08);
+    const badgeHeight = badgeFontSize * 1.8;
+    
     ctx.save();
-    ctx.shadowColor = "rgba(0,0,0,0.16)";
-    ctx.shadowBlur = Math.floor(width * 0.014);
-    ctx.shadowOffsetY = Math.floor(width * 0.006);
-    drawRoundedRectPath(ctx, x, y, box.w, box.h, Math.floor(box.h / 2));
-    ctx.fillStyle = accent1;
+    drawRoundedRectPath(ctx, (width - badgeWidth) / 2, currentY - badgeHeight / 2, badgeWidth, badgeHeight, badgeHeight / 2);
+    ctx.fillStyle = "#0F4CFF";
     ctx.fill();
-    ctx.restore();
-
+    
     ctx.fillStyle = "#FFFFFF";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = `800 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif`;
-    ctx.fillText(badgeText, Math.floor(width / 2), Math.floor(y + box.h / 2) + 1);
-
-    contentY = y + box.h + Math.floor(height * 0.045);
+    ctx.fillText(badgeText, width / 2, currentY);
+    ctx.restore();
+    currentY += badgeHeight / 2 + Math.floor(height * 0.05);
   } else {
-    contentY = contentY + Math.floor(height * 0.045);
+    currentY += Math.floor(height * 0.02);
   }
 
-  const scanTextY = contentY;
-  ctx.fillStyle = "#0B0B0B";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
-  ctx.font = `700 ${Math.floor(width * 0.06)}px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif`;
-  ctx.fillText("SCAN TO ORDER", Math.floor(width / 2), scanTextY);
+  // Large CTA
+  const scanTextY = currentY;
+  ctx.font = `900 ${Math.floor(width * 0.065)}px sans-serif`;
+  ctx.fillStyle = "#0F0F0F";
+  ctx.fillText("SCAN TO ORDER", width / 2, scanTextY);
 
-  if (footerProvider) {
-    ctx.fillStyle = "rgba(11,11,11,0.75)";
-    ctx.font = `500 ${Math.floor(width * 0.038)}px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif`;
-    const footerText = `Powered by ${footerProvider}`;
-    const footerMaxWidth = width - paddingX * 2;
-    if (ctx.measureText(footerText).width <= footerMaxWidth) {
-      ctx.fillText(footerText, Math.floor(width / 2), scanTextY + Math.floor(height * 0.055));
-    } else {
-      let clipped = footerText;
-      while (clipped.length > 12 && ctx.measureText(`${clipped}…`).width > footerMaxWidth) {
-        clipped = clipped.slice(0, -1);
-      }
-      ctx.fillText(`${clipped}…`, Math.floor(width / 2), scanTextY + Math.floor(height * 0.055));
-    }
-  }
+  // Provider
+  ctx.font = `500 ${Math.floor(width * 0.035)}px sans-serif`;
+  ctx.fillStyle = "#666666";
+  ctx.fillText(`Powered by ${footerProvider}`, width / 2, scanTextY + Math.floor(height * 0.05));
 
   return sticker.toDataURL("image/png");
 }
@@ -656,29 +590,48 @@ type EditTableFormValues = {
   description: string;
   notes: string;
   is_active: boolean;
+  image_file?: File | null;
 };
 
 interface CreateTableFormProps {
-  onSave: (table: {
-    tableNumber: string;
-    tableName: string;
-    location: string;
-    capacity: number;
-    isActive: boolean;
-  }) => void;
+  onSave: (table: any) => void;
   onCancel: () => void;
 }
 
 function CreateTableForm({ onSave, onCancel }: CreateTableFormProps) {
   const [formData, setFormData] = useState({
-    tableNumber: "",
-    tableName: "",
+    table_number: "",
+    table_name: "",
     location: "Main Floor",
     capacity: 4,
-    isActive: true,
+    is_active: true,
   });
+  const [imagePreview, setImagePreview] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [error, setError] = useState("");
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSubmit = () => onSave(formData);
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const validation = validateImageFile(file, "table");
+      if (!validation.valid) {
+        setError(validation.error || "Invalid image");
+        return;
+      }
+      setError("");
+      setImageFile(file);
+      setImagePreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleSubmit = () => {
+    if (!formData.table_number) {
+      setError("Table number is required");
+      return;
+    }
+    onSave({ ...formData, image_file: imageFile });
+  };
 
   return (
     <div className="space-y-6">
@@ -689,8 +642,8 @@ function CreateTableForm({ onSave, onCancel }: CreateTableFormProps) {
           </Label>
           <Input
             id="table-number"
-            value={formData.tableNumber}
-            onChange={(e) => setFormData((p) => ({ ...p, tableNumber: e.target.value }))}
+            value={formData.table_number}
+            onChange={(e) => setFormData((p) => ({ ...p, table_number: e.target.value }))}
             className="bg-background border-border text-foreground"
             placeholder="T-01"
           />
@@ -701,8 +654,8 @@ function CreateTableForm({ onSave, onCancel }: CreateTableFormProps) {
           </Label>
           <Input
             id="table-name"
-            value={formData.tableName}
-            onChange={(e) => setFormData((p) => ({ ...p, tableName: e.target.value }))}
+            value={formData.table_name}
+            onChange={(e) => setFormData((p) => ({ ...p, table_name: e.target.value }))}
             className="bg-background border-border text-foreground"
             placeholder="Table 1"
           />
@@ -751,10 +704,45 @@ function CreateTableForm({ onSave, onCancel }: CreateTableFormProps) {
         </div>
       </div>
 
+      <div className="space-y-2">
+        <Label className="text-foreground">Table Image</Label>
+        <div className="flex items-start gap-4">
+          <div className="w-32 h-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted">
+            {imagePreview ? (
+              <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+            ) : (
+              <ImageIcon className="h-12 w-12 text-muted-foreground" />
+            )}
+          </div>
+          <div className="flex-1 space-y-2">
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="hidden"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => imageInputRef.current?.click()}
+              className="w-full border-border text-foreground"
+            >
+              Choose Image
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Recommended: Square image, max 2MB.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
       <div className="flex items-center space-x-3 p-4 bg-muted rounded-lg">
         <Switch
-          checked={formData.isActive}
-          onCheckedChange={(checked) => setFormData((p) => ({ ...p, isActive: checked }))}
+          checked={formData.is_active}
+          onCheckedChange={(checked) => setFormData((p) => ({ ...p, is_active: checked }))}
         />
         <div>
           <Label className="text-foreground font-medium">
@@ -816,16 +804,39 @@ function EditTableForm({ restaurantId, table, onSave, onCancel }: EditTableFormP
     notes: String((table as any)?.notes ?? ""),
     is_active: (table as any)?.is_active ?? table?.isActive ?? true,
   });
+  const [imagePreview, setImagePreview] = useState(
+    table?.image ? resolveTableImageSrc(table.image) : ""
+  );
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageError, setImageError] = useState("");
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setFormData((prev) => ({
       ...prev,
       restaurant_id: String((table as any)?.restaurant_id ?? restaurantId ?? ""),
     }));
+    if (table?.image) {
+      setImagePreview(resolveTableImageSrc(table.image));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restaurantId, table?.id]);
+  }, [restaurantId, table?.id, table?.image]);
 
-  const handleSubmit = () => onSave(formData);
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const validation = validateImageFile(file, "table");
+      if (!validation.valid) {
+        setImageError(validation.error || "Invalid image");
+        return;
+      }
+      setImageError("");
+      setImageFile(file);
+      setImagePreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleSubmit = () => onSave({ ...formData, image_file: imageFile });
 
   return (
     <div className="space-y-6">
@@ -973,31 +984,51 @@ function EditTableForm({ restaurantId, table, onSave, onCancel }: EditTableFormP
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="image" className="text-foreground">
-            Image URL
-          </Label>
-          <Input
-            id="image"
-            value={formData.image}
-            onChange={(e) => setFormData((p) => ({ ...p, image: e.target.value }))}
-            className="bg-background border-border text-foreground"
-            placeholder="https://..."
-          />
+      <div className="space-y-2">
+        <Label className="text-foreground">Table Image</Label>
+        <div className="flex items-start gap-4">
+          <div className="w-32 h-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted">
+            {imagePreview ? (
+              <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+            ) : (
+              <ImageIcon className="h-12 w-12 text-muted-foreground" />
+            )}
+          </div>
+          <div className="flex-1 space-y-2">
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="hidden"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => imageInputRef.current?.click()}
+              className="w-full border-border text-foreground"
+            >
+              Choose Image
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Recommended: Square image, max 2MB.
+            </p>
+          </div>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="qr-code" className="text-foreground">
-            QR Code URL
-          </Label>
-          <Input
-            id="qr-code"
-            value={formData.qr_code}
-            onChange={(e) => setFormData((p) => ({ ...p, qr_code: e.target.value }))}
-            className="bg-background border-border text-foreground"
-            placeholder="https://..."
-          />
-        </div>
+        {imageError && <p className="text-xs text-destructive mt-1">{imageError}</p>}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="qr-code" className="text-foreground">
+          QR Code URL
+        </Label>
+        <Input
+          id="qr-code"
+          value={formData.qr_code}
+          onChange={(e) => setFormData((p) => ({ ...p, qr_code: e.target.value }))}
+          className="bg-background border-border text-foreground"
+          placeholder="https://..."
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1642,10 +1673,11 @@ export default function QRManagement() {
               id: String(restaurant.id),
               name: String(restaurant.name || restaurant.business_name),
               logoUrl: String(restaurant.logo_url ?? restaurant.logoUrl ?? restaurant.logo ?? ""),
+              websiteUrl: String(restaurant.website_url ?? restaurant.websiteUrl ?? ""),
             },
           ]),
       ).values(),
-    ) as { id: string; name: string; logoUrl?: string }[];
+    ) as { id: string; name: string; logoUrl?: string; websiteUrl?: string }[];
   })();
 
   const currentRestaurantLogoUrl =
@@ -1657,6 +1689,10 @@ export default function QRManagement() {
     (user as any)?.branchName ||
     (user as any)?.restaurantName ||
     "Current Restaurant";
+
+  const currentRestaurantWebsiteUrl =
+    restaurantOptions.find((restaurant) => restaurant.id === selectedRestaurantId)?.websiteUrl ||
+    String((user as any)?.websiteUrl ?? (user as any)?.website_url ?? "");
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -1727,13 +1763,21 @@ export default function QRManagement() {
           id ??
           safeTableNumber,
       );
-      const qrCodeUrl = String(
+      let qrCodeUrl = String(
         table.qr_code_url ??
           table.qrCodeUrl ??
           table.qr_url ??
           (qrToken ? buildQrMenuUrl(baseUrl, qrToken, id || safeTableNumber) : ""),
       );
-      const qrCodeUrlWithTable = ensureTableIdInQrMenuUrl(qrCodeUrl, id || safeTableNumber);
+
+      if (currentRestaurantWebsiteUrl) {
+        const base = currentRestaurantWebsiteUrl.endsWith("/")
+          ? currentRestaurantWebsiteUrl
+          : currentRestaurantWebsiteUrl + "/";
+        qrCodeUrl = `${base}table/${id || safeTableNumber}`;
+      } else {
+        qrCodeUrl = ensureTableIdInQrMenuUrl(qrCodeUrl, id || safeTableNumber);
+      }
 
       return {
         id: id || `table-${index + 1}`,
@@ -1757,7 +1801,7 @@ export default function QRManagement() {
         minimum_spend: table.minimum_spend ?? table.minimumSpend ?? undefined,
         description: table.description ?? undefined,
         notes: table.notes ?? undefined,
-        qrCodeUrl: qrCodeUrlWithTable,
+        qrCodeUrl,
         qrToken,
         isActive: table.is_active ?? table.isActive ?? true,
         isOccupied: table.is_occupied ?? table.isOccupied ?? false,
@@ -1769,7 +1813,7 @@ export default function QRManagement() {
     });
 
     setTables(normalizedTables);
-  }, [tablesResponse, baseUrl, selectedRestaurantId]);
+  }, [tablesResponse, baseUrl, selectedRestaurantId, currentRestaurantWebsiteUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1780,12 +1824,11 @@ export default function QRManagement() {
       setQrOnlyError(null);
       setQrOnlyDataUrl(null);
 
-      const qrValue = String(qrOnlyTable.qrCodeUrl || "").trim();
       const qrSrcCandidate = String((qrOnlyTable as any).qr_code ?? "").trim();
       const qrSrc = isProbablyImageUrl(qrSrcCandidate)
         ? qrSrcCandidate
-        : qrValue
-          ? buildRemoteQrImageUrl(qrValue)
+        : qrOnlyTable.qrCodeUrl
+          ? buildRemoteQrImageUrl(qrOnlyTable.qrCodeUrl)
           : "";
 
       if (!qrSrc) {
@@ -1908,7 +1951,7 @@ export default function QRManagement() {
       tableData.position_y === "" || tableData.position_y === undefined
         ? undefined
         : Number(tableData.position_y);
-    const image = String(tableData.image || "").trim() || undefined;
+    const image = tableData.image_file instanceof File ? tableData.image_file : (String(tableData.image || "").trim() || undefined);
     const qrCode = String(tableData.qr_code || "").trim() || undefined;
     const status = String(tableData.status || "").trim() || undefined;
     const isBookable = tableData.is_bookable ?? true;
@@ -1948,32 +1991,31 @@ export default function QRManagement() {
       return;
     }
 
-    const payload: any = {
+    const finalPayload = {
       restaurant_id: restaurantId,
       table_number: tableNumber,
-      table_name: tableName || undefined,
+      table_name: tableName,
       capacity,
       min_capacity: minCapacity,
       floor,
       section,
-      location: section || floor || undefined,
       position_x: positionX,
       position_y: positionY,
       image,
       qr_code: qrCode,
       status,
-      is_bookable: !!isBookable,
-      is_outdoor: !!isOutdoor,
-      is_accessible: !!isAccessible,
-      has_power_outlet: !!hasPowerOutlet,
+      is_bookable: isBookable,
+      is_outdoor: isOutdoor,
+      is_accessible: isAccessible,
+      has_power_outlet: hasPowerOutlet,
       minimum_spend: minimumSpend,
       description,
       notes,
-      is_active: !!isActive,
+      is_active: isActive,
     };
 
     if (!editingTable?.id) return;
-    updateTableMutation.mutate({ id: editingTable.id, data: payload });
+    updateTableMutation.mutate({ id: editingTable.id, data: finalPayload });
   };
 
   const deleteTable = (tableId: string) => {
@@ -2051,11 +2093,12 @@ export default function QRManagement() {
             <CreateTableForm
               onSave={(values) => {
                 const restaurantId = String(selectedRestaurantId || "").trim();
-                const tableNumber = String(values.tableNumber || "").trim();
-                const tableName = String(values.tableName || "").trim();
+                const tableNumber = String(values.table_number || "").trim();
+                const tableName = String(values.table_name || "").trim();
                 const location = String(values.location || "").trim();
                 const capacity = Number(values.capacity || 0);
-                const isActive = values.isActive ?? true;
+                const isActive = values.is_active ?? true;
+                const image = values.image_file;
 
                 if (!restaurantId) {
                   addToast({
@@ -2089,6 +2132,7 @@ export default function QRManagement() {
                   capacity,
                   location: location || undefined,
                   is_active: !!isActive,
+                  image,
                 });
               }}
               onCancel={() => setIsAddingTable(false)}
@@ -2241,10 +2285,19 @@ export default function QRManagement() {
             {filteredTables.map((table) => (
               <Card
                 key={table.id}
-                className={`bg-card border-border ${
+                className={`bg-card border-border overflow-hidden hover:shadow-lg transition-shadow group ${
                   !table.isActive ? "opacity-60" : ""
                 }`}
               >
+                {table.image && (
+                  <div className="aspect-video w-full overflow-hidden border-b border-border bg-muted">
+                    <img 
+                      src={table.image} 
+                      alt={table.tableName} 
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+                    />
+                  </div>
+                )}
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -2293,33 +2346,6 @@ export default function QRManagement() {
                   </div>
 
                   <div className="flex items-center space-x-2">
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 border-border text-foreground"
-                          onClick={() => setPreviewTable(table)}
-                        >
-                          <Eye className="mr-2 h-4 w-4" />
-                          Preview
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="bg-card border-border max-w-md">
-                        <DialogHeader>
-                          <DialogTitle className="text-card-foreground">
-                            QR Code Preview
-                         </DialogTitle>
-                        </DialogHeader>
-                        {previewTable && (
-                          <QRCodePreview
-                            table={previewTable}
-                            restaurantName={currentRestaurantName}
-                            restaurantLogoUrl={currentRestaurantLogoUrl}
-                          />
-                        )}
-                      </DialogContent>
-                    </Dialog>
 
                     <Button
                       variant="outline"
@@ -2433,37 +2459,61 @@ export default function QRManagement() {
           setQrOnlyLoading(false);
         }}
       >
-        <DialogContent className="bg-card border-border max-w-md">
-          <div className="flex items-center justify-center">
+        <DialogContent className="bg-card border-border max-w-xl p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-0">
+            <DialogTitle className="text-xl font-bold flex items-center">
+              <QrCode className="mr-2 h-5 w-5 text-primary" />
+              QR Sticker Preview
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground mt-1">
+              Preview and download the stylized QR sticker for {qrOnlyTable?.tableName || "this table"}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col items-center justify-center p-10 bg-muted/30">
             {qrOnlyLoading ? (
-              <div className="w-64 h-64 bg-muted rounded-xl flex items-center justify-center">
-                <RefreshCw className="h-6 w-6 text-muted-foreground animate-spin" />
+              <div className="w-80 h-[480px] bg-background rounded-2xl flex flex-col items-center justify-center shadow-inner">
+                <RefreshCw className="h-10 w-10 text-primary animate-spin mb-4" />
+                <span className="text-sm text-muted-foreground animate-pulse font-medium">Generating high-quality sticker...</span>
               </div>
             ) : qrOnlyDataUrl ? (
-              <button
-                type="button"
-                onClick={downloadQrOnly}
-                className="bg-white rounded-2xl p-4 shadow-sm border border-border"
-                title="Click to download"
-              >
-                <img src={qrOnlyDataUrl} alt="QR sticker" className="w-80 max-w-full h-auto" />
-              </button>
+              <div className="relative group">
+                <div className="absolute -inset-2 bg-gradient-to-r from-primary/20 to-blue-400/20 rounded-[2.5rem] blur opacity-75 group-hover:opacity-100 transition duration-500"></div>
+                <button
+                  type="button"
+                  onClick={downloadQrOnly}
+                  className="relative bg-white rounded-[2rem] p-8 shadow-2xl border border-white/20 transform transition duration-500 hover:scale-[1.02]"
+                  title="Click to download"
+                >
+                  <img src={qrOnlyDataUrl} alt="QR sticker" className="w-[400px] max-w-full h-auto rounded-lg" />
+                </button>
+              </div>
             ) : (
-              <div className="w-full text-center text-sm text-muted-foreground">
-                {qrOnlyError || "QR not available"}
+              <div className="w-full py-16 text-center text-sm text-destructive bg-destructive/5 rounded-2xl border border-destructive/20">
+                <XCircle className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                {qrOnlyError || "Unable to render QR sticker"}
               </div>
             )}
           </div>
 
-          {qrOnlyDataUrl ? (
+          <div className="p-6 pt-0 flex gap-4">
             <Button
-              onClick={downloadQrOnly}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              variant="outline"
+              onClick={() => setQrOnlyTable(null)}
+              className="flex-1 border-border py-6"
             >
-              <Download className="mr-2 h-4 w-4" />
-              Download PNG
+              Cancel
             </Button>
-          ) : null}
+            {qrOnlyDataUrl ? (
+              <Button
+                onClick={downloadQrOnly}
+                className="flex-[2] bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 py-6"
+              >
+                <Download className="mr-2 h-5 w-5" />
+                Download PNG Sticker
+              </Button>
+            ) : null}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

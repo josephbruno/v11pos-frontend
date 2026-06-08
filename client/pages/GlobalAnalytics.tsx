@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   Card,
@@ -11,22 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
   PieChart,
   Pie,
   Cell,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -35,186 +25,127 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import {
-  BarChart3,
-  TrendingUp,
-  TrendingDown,
-  Globe,
   Building2,
   Users,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+  Shield,
+  Zap,
+  Clock,
   Database,
   Activity,
-  DollarSign,
-  Calendar,
-  Download,
-  RefreshCw,
-  Zap,
-  Shield,
-  Clock,
+  Globe,
 } from "lucide-react";
+import { getMyRestaurants, getUsers, getSuperAdminDashboard } from "@/lib/apiServices";
+import type { Restaurant } from "@/shared/api";
 
-// Mock global analytics data
-const systemMetrics = [
-  {
-    month: "Jan",
-    organizations: 12,
-    activeUsers: 450,
-    revenue: 125000,
-    dataPoints: 2400000,
-  },
-  {
-    month: "Feb",
-    organizations: 15,
-    activeUsers: 523,
-    revenue: 142000,
-    dataPoints: 2850000,
-  },
-  {
-    month: "Mar",
-    organizations: 18,
-    activeUsers: 598,
-    revenue: 165000,
-    dataPoints: 3200000,
-  },
-  {
-    month: "Apr",
-    organizations: 22,
-    activeUsers: 674,
-    revenue: 189000,
-    dataPoints: 3650000,
-  },
-  {
-    month: "May",
-    organizations: 26,
-    activeUsers: 742,
-    revenue: 212000,
-    dataPoints: 4100000,
-  },
-  {
-    month: "Jun",
-    organizations: 31,
-    activeUsers: 825,
-    revenue: 238000,
-    dataPoints: 4580000,
-  },
-];
+const PIE_COLORS = ["#22c55e", "#ef4444", "#f59e0b"];
 
-const performanceData = [
-  {
-    name: "API Response Time",
-    value: 125,
-    unit: "ms",
-    status: "good",
-    trend: -5,
-  },
-  {
-    name: "Database Queries/sec",
-    value: 1240,
-    unit: "qps",
-    status: "good",
-    trend: 12,
-  },
-  {
-    name: "System Uptime",
-    value: 99.8,
-    unit: "%",
-    status: "excellent",
-    trend: 0.2,
-  },
-  {
-    name: "Active Connections",
-    value: 3420,
-    unit: "",
-    status: "good",
-    trend: 8,
-  },
-  {
-    name: "Data Processing",
-    value: 2.4,
-    unit: "TB/day",
-    status: "good",
-    trend: 15,
-  },
-  {
-    name: "Error Rate",
-    value: 0.02,
-    unit: "%",
-    status: "excellent",
-    trend: -0.01,
-  },
-];
-
-const organizationUsage = [
-  { name: "Restaurant Chains", value: 45, color: "#8884d8" },
-  { name: "Independent Restaurants", value: 35, color: "#82ca9d" },
-  { name: "Food Courts", value: 15, color: "#ffc658" },
-  { name: "Cafeterias", value: 5, color: "#ff7300" },
-];
-
-const regionalData = [
-  { region: "North America", organizations: 18, revenue: 145000, growth: 12 },
-  { region: "Europe", organizations: 8, revenue: 89000, growth: 24 },
-  { region: "Asia Pacific", organizations: 5, revenue: 67000, growth: 45 },
-  { region: "Latin America", organizations: 2, revenue: 23000, growth: 67 },
-];
-
-const featureUsage = [
-  { feature: "POS System", usage: 98, organizations: 31 },
-  { feature: "QR Ordering", usage: 87, organizations: 27 },
-  { feature: "Analytics", usage: 76, organizations: 24 },
-  { feature: "Inventory", usage: 82, organizations: 25 },
-  { feature: "Reports", usage: 91, organizations: 28 },
-  { feature: "Customer Management", usage: 68, organizations: 21 },
-];
-
-const StatCard = ({ title, value, unit, icon: Icon, trend, status }: any) => {
-  const isPositive = trend >= 0;
-  const statusColor =
-    status === "excellent"
-      ? "text-green-600"
-      : status === "good"
-        ? "text-blue-600"
-        : "text-yellow-600";
-
-  return (
-    <Card>
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold text-foreground">
-              {value}
-              {unit && (
-                <span className="text-sm text-muted-foreground ml-1">
-                  {unit}
-                </span>
-              )}
-            </p>
-            {trend !== undefined && (
-              <p
-                className={`text-xs flex items-center ${isPositive ? "text-green-600" : "text-red-600"}`}
-              >
-                {isPositive ? (
-                  <TrendingUp className="h-3 w-3 mr-1" />
-                ) : (
-                  <TrendingDown className="h-3 w-3 mr-1" />
-                )}
-                {Math.abs(trend)}
-                {unit} from last month
-              </p>
-            )}
-          </div>
-          <div className={`p-3 rounded-full bg-slate-100 dark:bg-slate-800`}>
-            <Icon className={`h-6 w-6 ${statusColor}`} />
-          </div>
+const MetricCard = ({
+  title,
+  value,
+  sub,
+  icon: Icon,
+  iconColor = "text-blue-600",
+}: {
+  title: string;
+  value: string | number;
+  sub?: string;
+  icon: any;
+  iconColor?: string;
+}) => (
+  <Card>
+    <CardContent className="p-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">{title}</p>
+          <p className="text-3xl font-bold text-foreground mt-1">{value}</p>
+          {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
         </div>
-      </CardContent>
-    </Card>
-  );
-};
+        <div className="p-3 rounded-full bg-slate-100 dark:bg-slate-800">
+          <Icon className={`h-6 w-6 ${iconColor}`} />
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+);
 
 export default function GlobalAnalytics() {
-  const [timeRange, setTimeRange] = useState("6months");
-  const [selectedMetric, setSelectedMetric] = useState("revenue");
+  const [tab, setTab] = useState("overview");
+
+  const { data: platformDashboard } = useQuery({
+    queryKey: ["superAdminDashboard"],
+    queryFn: () => getSuperAdminDashboard("30d"),
+    select: (r: any) => r?.data ?? r,
+  });
+
+  const { data: restaurantsRaw, isLoading: loadingRestaurants, refetch: refetchRestaurants } = useQuery({
+    queryKey: ["superadmin-restaurants"],
+    queryFn: () => getMyRestaurants(0, 500),
+    select: (r: any) => {
+      const src = r?.data ?? r;
+      if (Array.isArray(src)) return src as Restaurant[];
+      if (src?.restaurants && Array.isArray(src.restaurants)) return src.restaurants as Restaurant[];
+      if (src?.items && Array.isArray(src.items)) return src.items as Restaurant[];
+      return [] as Restaurant[];
+    },
+  });
+
+  // Real data: users
+  const { data: usersRaw, isLoading: loadingUsers, refetch: refetchUsers } = useQuery({
+    queryKey: ["superadmin-users"],
+    queryFn: () => getUsers(0, 1000),
+    select: (r: any) => {
+      const src = r?.data ?? r;
+      return Array.isArray(src) ? src : [];
+    },
+  });
+
+  const restaurants: Restaurant[] = restaurantsRaw ?? [];
+  const users: any[] = usersRaw ?? [];
+
+  const totalRestaurants = restaurants.length;
+  const activeRestaurants = restaurants.filter((r) => r.status === "active").length;
+  const inactiveRestaurants = restaurants.filter((r) => r.status !== "active").length;
+
+  const totalUsers = users.length;
+  const activeUsers = users.filter((u) => u.is_active).length;
+  const inactiveUsers = totalUsers - activeUsers;
+
+  const restaurantStatusData = [
+    { name: "Active", value: activeRestaurants, color: PIE_COLORS[0] },
+    { name: "Inactive", value: inactiveRestaurants, color: PIE_COLORS[1] },
+  ].filter((d) => d.value > 0);
+
+  const userStatusData = [
+    { name: "Active", value: activeUsers, color: PIE_COLORS[0] },
+    { name: "Inactive", value: inactiveUsers, color: PIE_COLORS[1] },
+  ].filter((d) => d.value > 0);
+
+  // Per-restaurant user distribution for bar chart
+  const restaurantUserCounts = restaurants
+    .map((r) => ({
+      name: r.name?.length > 18 ? r.name.slice(0, 16) + "…" : r.name,
+      users: users.filter((u) => u.restaurant_id === r.id).length,
+    }))
+    .filter((d) => d.users > 0)
+    .sort((a, b) => b.users - a.users)
+    .slice(0, 10);
+
+  const platformMessage =
+    typeof platformDashboard?.message === "string"
+      ? platformDashboard.message
+      : platformDashboard?.order_statistics
+        ? null
+        : "Platform-wide metrics aggregate from restaurant and user data below.";
+
+  const isLoading = loadingRestaurants || loadingUsers;
+
+  const handleRefresh = () => {
+    refetchRestaurants();
+    refetchUsers();
+  };
 
   return (
     <motion.div
@@ -226,409 +157,257 @@ export default function GlobalAnalytics() {
       {/* Header */}
       <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">
-            Global Analytics
-          </h1>
-          <p className="text-muted-foreground">
-            Cross-system insights and performance metrics
-          </p>
+          <h1 className="text-3xl font-bold text-foreground">Super Admin Dashboard</h1>
+          <p className="text-muted-foreground">System-wide overview — restaurants & users</p>
         </div>
-        <div className="flex items-center space-x-2">
-          <Select value={timeRange} onValueChange={setTimeRange}>
-            <SelectTrigger className="w-[180px]">
-              <Calendar className="h-4 w-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1month">Last Month</SelectItem>
-              <SelectItem value="3months">Last 3 Months</SelectItem>
-              <SelectItem value="6months">Last 6 Months</SelectItem>
-              <SelectItem value="1year">Last Year</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-          <Button>
-            <Download className="h-4 w-4 mr-2" />
-            Export Report
-          </Button>
-        </div>
+        <Button variant="outline" onClick={handleRefresh} disabled={isLoading}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
       </div>
 
-      {/* Key Metrics */}
+      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          title="Total Organizations"
-          value={31}
+        <MetricCard
+          title="Total Restaurants"
+          value={isLoading ? "…" : totalRestaurants}
+          sub={`${activeRestaurants} active · ${inactiveRestaurants} inactive`}
           icon={Building2}
-          trend={5}
-          status="good"
+          iconColor="text-blue-600"
         />
-        <StatCard
-          title="Active Users"
-          value={825}
+        <MetricCard
+          title="Active Restaurants"
+          value={isLoading ? "…" : activeRestaurants}
+          sub={totalRestaurants > 0 ? `${Math.round((activeRestaurants / totalRestaurants) * 100)}% of total` : undefined}
+          icon={CheckCircle2}
+          iconColor="text-green-600"
+        />
+        <MetricCard
+          title="Total Users"
+          value={isLoading ? "…" : totalUsers}
+          sub={`${activeUsers} active · ${inactiveUsers} inactive`}
           icon={Users}
-          trend={83}
-          status="excellent"
+          iconColor="text-purple-600"
         />
-        <StatCard
-          title="Monthly Revenue"
-          value={238}
-          unit="K"
-          icon={DollarSign}
-          trend={26}
-          status="excellent"
-        />
-        <StatCard
-          title="Data Processed"
-          value={4.58}
-          unit="M"
-          icon={Database}
-          trend={0.48}
-          status="good"
+        <MetricCard
+          title="Active Users"
+          value={isLoading ? "…" : activeUsers}
+          sub={totalUsers > 0 ? `${Math.round((activeUsers / totalUsers) * 100)}% of total` : undefined}
+          icon={Activity}
+          iconColor="text-emerald-600"
         />
       </div>
 
-      {/* System Performance */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Activity className="h-5 w-5 mr-2" />
-            System Performance Metrics
-          </CardTitle>
-          <CardDescription>
-            Real-time system health and performance indicators
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {performanceData.map((metric) => (
-              <div key={metric.name} className="p-4 border rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">{metric.name}</span>
-                  <Badge
-                    variant={
-                      metric.status === "excellent"
-                        ? "default"
-                        : metric.status === "good"
-                          ? "secondary"
-                          : "outline"
-                    }
-                  >
-                    {metric.status}
-                  </Badge>
-                </div>
-                <div className="text-2xl font-bold">
-                  {metric.value}
-                  {metric.unit}
-                </div>
-                <div
-                  className={`text-xs flex items-center ${
-                    metric.trend >= 0 ? "text-green-600" : "text-red-600"
-                  }`}
-                >
-                  {metric.trend >= 0 ? (
-                    <TrendingUp className="h-3 w-3 mr-1" />
-                  ) : (
-                    <TrendingDown className="h-3 w-3 mr-1" />
-                  )}
-                  {Math.abs(metric.trend)}
-                  {metric.unit} vs last period
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Tabs defaultValue="growth" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="growth">Growth Analytics</TabsTrigger>
-          <TabsTrigger value="usage">Feature Usage</TabsTrigger>
-          <TabsTrigger value="regional">Regional Insights</TabsTrigger>
-          <TabsTrigger value="technical">Technical Metrics</TabsTrigger>
+      <Tabs value={tab} onValueChange={setTab} className="space-y-6">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="restaurants">Restaurants</TabsTrigger>
+          <TabsTrigger value="system">System Health</TabsTrigger>
         </TabsList>
 
-        {/* Growth Analytics */}
-        <TabsContent value="growth" className="space-y-6">
+        {/* Overview Tab */}
+        <TabsContent value="overview" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Restaurant Pie */}
             <Card>
               <CardHeader>
-                <CardTitle>System Growth Trends</CardTitle>
-                <CardDescription>
-                  Organizations and user growth over time
-                </CardDescription>
+                <CardTitle>Restaurant Status</CardTitle>
+                <CardDescription>Active vs inactive distribution</CardDescription>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={systemMetrics}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="hsl(var(--border))"
-                    />
-                    <XAxis
-                      dataKey="month"
-                      stroke="hsl(var(--muted-foreground))"
-                    />
-                    <YAxis stroke="hsl(var(--muted-foreground))" />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "6px",
-                      }}
-                    />
-                    <Legend />
-                    <Area
-                      type="monotone"
-                      dataKey="organizations"
-                      stackId="1"
-                      stroke="#8884d8"
-                      fill="#8884d8"
-                      name="Organizations"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="activeUsers"
-                      stackId="2"
-                      stroke="#82ca9d"
-                      fill="#82ca9d"
-                      name="Active Users"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
+                {totalRestaurants === 0 ? (
+                  <div className="flex items-center justify-center h-64 text-muted-foreground">
+                    {isLoading ? "Loading…" : "No restaurants found"}
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart>
+                      <Pie
+                        data={restaurantStatusData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        outerRadius={90}
+                        dataKey="value"
+                      >
+                        {restaurantStatusData.map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
               </CardContent>
             </Card>
 
+            {/* User Pie */}
             <Card>
               <CardHeader>
-                <CardTitle>Organization Types</CardTitle>
-                <CardDescription>
-                  Distribution by business category
-                </CardDescription>
+                <CardTitle>User Status</CardTitle>
+                <CardDescription>Active vs inactive users</CardDescription>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={organizationUsage}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) =>
-                        `${name} ${(percent * 100).toFixed(0)}%`
-                      }
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {organizationUsage.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
+                {totalUsers === 0 ? (
+                  <div className="flex items-center justify-center h-64 text-muted-foreground">
+                    {isLoading ? "Loading…" : "No users found"}
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart>
+                      <Pie
+                        data={userStatusData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        outerRadius={90}
+                        dataKey="value"
+                      >
+                        {userStatusData.map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
               </CardContent>
             </Card>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Revenue Growth</CardTitle>
-              <CardDescription>
-                Monthly recurring revenue across all organizations
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <LineChart data={systemMetrics}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="hsl(var(--border))"
-                  />
-                  <XAxis
-                    dataKey="month"
-                    stroke="hsl(var(--muted-foreground))"
-                  />
-                  <YAxis stroke="hsl(var(--muted-foreground))" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "6px",
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="revenue"
-                    stroke="#8884d8"
-                    strokeWidth={3}
-                    dot={{ fill: "#8884d8", r: 6 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Feature Usage */}
-        <TabsContent value="usage" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Feature Adoption</CardTitle>
-              <CardDescription>
-                Usage rates across different system features
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={featureUsage} layout="horizontal">
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="hsl(var(--border))"
-                  />
-                  <XAxis type="number" stroke="hsl(var(--muted-foreground))" />
-                  <YAxis
-                    dataKey="feature"
-                    type="category"
-                    stroke="hsl(var(--muted-foreground))"
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "6px",
-                    }}
-                  />
-                  <Bar dataKey="usage" fill="#8884d8" name="Usage %" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Regional Insights */}
-        <TabsContent value="regional" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Regional Performance</CardTitle>
-              <CardDescription>
-                Geographic distribution and growth metrics
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {regionalData.map((region) => (
-                  <div
-                    key={region.region}
-                    className="flex items-center justify-between p-4 border rounded-lg"
-                  >
-                    <div className="flex items-center space-x-4">
-                      <Globe className="h-8 w-8 text-blue-600" />
-                      <div>
-                        <h3 className="font-semibold">{region.region}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {region.organizations} organizations
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-lg font-bold">
-                        ${region.revenue.toLocaleString()}
-                      </div>
-                      <div className="text-sm text-green-600 flex items-center">
-                        <TrendingUp className="h-3 w-3 mr-1" />+{region.growth}%
-                        growth
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Technical Metrics */}
-        <TabsContent value="technical" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Users per Restaurant */}
+          {restaurantUserCounts.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Data Processing Volume</CardTitle>
-                <CardDescription>
-                  System data throughput over time
-                </CardDescription>
+                <CardTitle>Users per Restaurant</CardTitle>
+                <CardDescription>Staff/user count breakdown by restaurant</CardDescription>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={systemMetrics}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="hsl(var(--border))"
-                    />
-                    <XAxis
-                      dataKey="month"
-                      stroke="hsl(var(--muted-foreground))"
-                    />
-                    <YAxis stroke="hsl(var(--muted-foreground))" />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "6px",
-                      }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="dataPoints"
-                      stroke="#82ca9d"
-                      fill="#82ca9d"
-                      fillOpacity={0.3}
-                    />
-                  </AreaChart>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={restaurantUserCounts} layout="vertical" margin={{ left: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis type="number" allowDecimals={false} stroke="hsl(var(--muted-foreground))" />
+                    <YAxis dataKey="name" type="category" width={130} stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 12 }} />
+                    <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px" }} />
+                    <Bar dataKey="users" fill="#8884d8" name="Users" radius={[0, 4, 4, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
+          )}
+        </TabsContent>
 
+        {/* Restaurants Tab */}
+        <TabsContent value="restaurants" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5" />
+                All Restaurants
+              </CardTitle>
+              <CardDescription>{totalRestaurants} restaurant(s) registered in the system</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="text-center py-8 text-muted-foreground">Loading…</div>
+              ) : restaurants.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No restaurants found</div>
+              ) : (
+                <div className="space-y-3">
+                  {restaurants.map((r) => {
+                    const userCount = users.filter((u) => u.restaurant_id === r.id).length;
+                    return (
+                      <div key={r.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/30 transition-colors">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {(r.logo_url || r.logo) ? (
+                            <img src={r.logo_url || r.logo} alt={r.name} className="h-10 w-10 rounded-full object-cover shrink-0" />
+                          ) : (
+                            <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center shrink-0">
+                              <Building2 className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="font-semibold truncate">{r.name}</div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {[r.city, r.state, r.country].filter(Boolean).join(", ") || r.address || "—"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0 ml-4">
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Users className="h-3 w-3" />
+                            {userCount} user{userCount !== 1 ? "s" : ""}
+                          </span>
+                          <Badge
+                            variant={r.status === "active" ? "default" : r.status === "suspended" ? "destructive" : "secondary"}
+                          >
+                            {r.status ?? "unknown"}
+                          </Badge>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* System Health Tab */}
+        <TabsContent value="system" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
-                <CardTitle>System Health</CardTitle>
-                <CardDescription>
-                  Current system status and alerts
-                </CardDescription>
+                <CardTitle>System Status</CardTitle>
+                <CardDescription>Current service health indicators</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center">
-                      <Shield className="h-4 w-4 mr-2 text-green-600" />
-                      Security Status
-                    </span>
-                    <Badge variant="default">Secure</Badge>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center">
-                      <Zap className="h-4 w-4 mr-2 text-blue-600" />
-                      Performance
-                    </span>
-                    <Badge variant="default">Optimal</Badge>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center">
-                      <Clock className="h-4 w-4 mr-2 text-green-600" />
-                      Uptime
-                    </span>
-                    <Badge variant="default">99.8%</Badge>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center">
-                      <Database className="h-4 w-4 mr-2 text-blue-600" />
-                      Storage Health
-                    </span>
-                    <Badge variant="default">Good</Badge>
-                  </div>
+                  {[
+                    { label: "API Server", icon: Globe, status: "Operational", color: "text-green-600", badge: "default" as const },
+                    { label: "Database", icon: Database, status: "Healthy", color: "text-green-600", badge: "default" as const },
+                    { label: "Security", icon: Shield, status: "Secure", color: "text-green-600", badge: "default" as const },
+                    { label: "Performance", icon: Zap, status: "Optimal", color: "text-blue-600", badge: "secondary" as const },
+                    { label: "Uptime", icon: Clock, status: "99.8%", color: "text-green-600", badge: "default" as const },
+                  ].map(({ label, icon: Icon, status, color, badge }) => (
+                    <div key={label} className="flex items-center justify-between p-3 border rounded-lg">
+                      <span className="flex items-center gap-2 text-sm font-medium">
+                        <Icon className={`h-4 w-4 ${color}`} />
+                        {label}
+                      </span>
+                      <Badge variant={badge}>{status}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Quick Stats</CardTitle>
+                <CardDescription>Live counts from the database</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {[
+                    { label: "Total Restaurants", value: totalRestaurants, icon: Building2, color: "text-blue-600" },
+                    { label: "Active Restaurants", value: activeRestaurants, icon: CheckCircle2, color: "text-green-600" },
+                    { label: "Inactive Restaurants", value: inactiveRestaurants, icon: XCircle, color: "text-red-500" },
+                    { label: "Total Users", value: totalUsers, icon: Users, color: "text-purple-600" },
+                    { label: "Active Users", value: activeUsers, icon: Activity, color: "text-emerald-600" },
+                  ].map(({ label, value, icon: Icon, color }) => (
+                    <div key={label} className="flex items-center justify-between p-3 border rounded-lg">
+                      <span className="flex items-center gap-2 text-sm font-medium">
+                        <Icon className={`h-4 w-4 ${color}`} />
+                        {label}
+                      </span>
+                      <span className="text-lg font-bold">{isLoading ? "…" : value}</span>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>

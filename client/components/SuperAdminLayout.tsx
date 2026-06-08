@@ -2,24 +2,12 @@ import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard,
-  Settings,
-  Users,
-  Package,
   LogOut,
   Menu,
   X,
   Moon,
   Sun,
-  Database,
-  GitBranch,
-  Layers3,
-  Building2,
   Shield,
-  Network,
-  FileText,
-  BarChart3,
-  Workflow,
   Globe,
 } from "lucide-react";
 import { navigationConfig, UserRole } from "@/lib/navigation";
@@ -54,11 +42,6 @@ const categoryColors = {
   organizations: "bg-purple-500",
   configuration: "bg-green-500",
   data: "bg-orange-500",
-  automation: "bg-cyan-500",
-  insights: "bg-pink-500",
-  technical: "bg-indigo-500",
-  security: "bg-red-500",
-  settings: "bg-gray-500",
 };
 
 export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {

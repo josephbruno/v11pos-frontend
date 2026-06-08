@@ -29,15 +29,29 @@ export class ApiError extends Error {
 /**
  * Get the authentication token from localStorage
  */
-export function getAuthToken(): string | null {
+export function getAuthToken(endpoint?: string): string | null {
+  if (endpoint && (endpoint.includes("/customer-auth") || endpoint.includes("/carts"))) {
+    return localStorage.getItem("pos-customer-token") || localStorage.getItem("restaurant-pos-token");
+  }
+  if (typeof window !== "undefined" && window.location.pathname.includes("/qr-")) {
+    return localStorage.getItem("pos-customer-token") || localStorage.getItem("restaurant-pos-token");
+  }
   return localStorage.getItem("restaurant-pos-token");
 }
 
 /**
  * Get the token type from localStorage
  */
-export function getTokenType(): string {
-  const tokenType = localStorage.getItem("restaurant-pos-token-type") || "Bearer";
+export function getTokenType(endpoint?: string): string {
+  const isCustomerEndpoint = endpoint && (endpoint.includes("/customer-auth") || endpoint.includes("/carts"));
+  const isCustomerUrl = typeof window !== "undefined" && window.location.pathname.includes("/qr-");
+  
+  let tokenType;
+  if ((isCustomerEndpoint || isCustomerUrl) && localStorage.getItem("pos-customer-token")) {
+     tokenType = "Bearer"; // Customer tokens are always Bearer for now
+  } else {
+     tokenType = localStorage.getItem("restaurant-pos-token-type") || "Bearer";
+  }
   return tokenType.toLowerCase() === "bearer" ? "Bearer" : tokenType;
 }
 
@@ -53,9 +67,9 @@ export function isTokenExpired(): boolean {
 /**
  * Get authorization headers with stored token
  */
-function getAuthHeaders(): HeadersInit {
-  const token = getAuthToken();
-  const tokenType = getTokenType();
+function getAuthHeaders(endpoint?: string): HeadersInit {
+  const token = getAuthToken(endpoint);
+  const tokenType = getTokenType(endpoint);
 
   if (!token) {
     return {};
@@ -148,7 +162,7 @@ export async function apiPostTo<T = any>(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders(),
+      ...getAuthHeaders(endpoint),
       ...options?.headers,
     },
     body: data ? JSON.stringify(data) : undefined,
@@ -171,7 +185,7 @@ export async function apiPutTo<T = any>(
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders(),
+      ...getAuthHeaders(endpoint),
       ...options?.headers,
     },
     body: data ? JSON.stringify(data) : undefined,
@@ -193,7 +207,7 @@ export async function apiPost<T = any>(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders(),
+      ...getAuthHeaders(endpoint),
       ...options?.headers,
     },
     body: data ? JSON.stringify(data) : undefined,
@@ -215,7 +229,7 @@ export async function apiPut<T = any>(
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders(),
+      ...getAuthHeaders(endpoint),
       ...options?.headers,
     },
     body: data ? JSON.stringify(data) : undefined,
@@ -238,7 +252,7 @@ export async function apiPatchTo<T = any>(
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders(),
+      ...getAuthHeaders(endpoint),
       ...options?.headers,
     },
     body: data ? JSON.stringify(data) : undefined,
@@ -260,7 +274,7 @@ export async function apiPatch<T = any>(
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders(),
+      ...getAuthHeaders(endpoint),
       ...options?.headers,
     },
     body: data ? JSON.stringify(data) : undefined,
@@ -278,7 +292,7 @@ export async function apiDelete<T = any>(endpoint: string, options?: RequestInit
     method: "DELETE",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders(),
+      ...getAuthHeaders(endpoint),
       ...options?.headers,
     },
     ...options,
@@ -298,7 +312,7 @@ export async function apiUpload<T = any>(
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method: "POST",
     headers: {
-      ...getAuthHeaders(),
+      ...getAuthHeaders(endpoint),
       // Don't set Content-Type for FormData, browser will set it with boundary
       ...options?.headers,
     },
@@ -321,7 +335,7 @@ export async function apiUploadTo<T = any>(
   const response = await fetch(joinUrl(baseUrl, endpoint), {
     method: "POST",
     headers: {
-      ...getAuthHeaders(),
+      ...getAuthHeaders(endpoint),
       // Don't set Content-Type for FormData, browser will set it with boundary
       ...options?.headers,
     },
@@ -343,7 +357,7 @@ export async function apiUploadPut<T = any>(
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method: "PUT",
     headers: {
-      ...getAuthHeaders(),
+      ...getAuthHeaders(endpoint),
       ...options?.headers,
     },
     body: formData,
@@ -365,7 +379,7 @@ export async function apiUploadPutTo<T = any>(
   const response = await fetch(joinUrl(baseUrl, endpoint), {
     method: "PUT",
     headers: {
-      ...getAuthHeaders(),
+      ...getAuthHeaders(endpoint),
       ...options?.headers,
     },
     body: formData,
@@ -385,7 +399,7 @@ export async function apiFetch<T = any>(
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders(),
+      ...getAuthHeaders(endpoint),
       ...options?.headers,
     },
     ...options,

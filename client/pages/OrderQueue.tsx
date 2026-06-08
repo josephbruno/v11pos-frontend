@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Clock,
   AlertTriangle,
@@ -10,7 +11,6 @@ import {
   Hash,
   Timer,
   Play,
-  Pause,
   CheckSquare,
   RefreshCw,
   Volume2,
@@ -18,12 +18,11 @@ import {
   Maximize,
   Minimize,
   Filter,
-  QrCode,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -33,209 +32,102 @@ import {
 } from "@/components/ui/select";
 import { motion, AnimatePresence } from "framer-motion";
 import type { OrderQueueItem, KOTGroup } from "@/shared/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { getFilteredOrders, updateOrderStatus } from "@/lib/apiServices";
 
-// Mock data for live orders
-const mockOrderQueue: OrderQueueItem[] = [
-  {
-    orderId: "ord-001",
-    orderNumber: "101",
-    customerName: "John Smith",
-    tableNumber: "T-05",
-    status: "preparing",
-    orderType: "dine_in",
-    totalItems: 3,
+const API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string) || "http://localhost:8000/api/v1";
+
+function getWsUrl(restaurantId: string) {
+  const wsBase = API_BASE_URL.replace(/^http/, "ws");
+  return `${wsBase}/orders/ws/${restaurantId}`;
+}
+
+function elapsedMinutes(createdAt: string | Date | undefined): number {
+  if (!createdAt) return 0;
+  return Math.floor((Date.now() - new Date(createdAt as string).getTime()) / 60000);
+}
+
+function mapOrderToQueueItem(order: any): OrderQueueItem {
+  const elapsed = elapsedMinutes(order.created_at);
+  const itemCount = order.items?.length ?? order.total_items ?? 0;
+  const priority: OrderQueueItem["priority"] =
+    elapsed > 20 ? "urgent" : elapsed > 12 ? "high" : elapsed > 6 ? "normal" : "low";
+  const kotGroups: KOTGroup[] =
+    order.kotGroups ??
+    order.kot_groups ??
+    (itemCount > 0
+      ? [{ department: "kitchen", status: "preparing" as KOTGroup["status"], itemCount }]
+      : []);
+
+  return {
+    orderId: order.id,
+    id: order.id,
+    orderNumber: order.order_number ?? order.id?.slice(-4) ?? "–",
+    customerName: order.guest_name ?? order.customer?.name ?? undefined,
+    tableNumber: order.table_id ? `T-${order.table_id.slice(-3)}` : undefined,
+    status: (order.status === "delivered" || order.status === "completed"
+      ? "completed"
+      : order.status) as OrderQueueItem["status"],
+    orderType: (order.order_type ?? "dine_in") as OrderQueueItem["orderType"],
+    totalItems: itemCount,
     estimatedTime: 15,
-    elapsedTime: 8, // 8 minutes ago
-    priority: "high",
-    kotGroups: [
-      {
-        department: "kitchen",
-        status: "preparing",
-        itemCount: 2,
-      },
-      {
-        department: "bar",
-        status: "ready",
-        itemCount: 1,
-      },
-    ],
-  },
-  {
-    orderId: "ord-002",
-    orderNumber: "102",
-    customerName: "Sarah Johnson",
-    tableNumber: undefined,
-    status: "confirmed",
-    orderType: "takeaway",
-    totalItems: 5,
-    estimatedTime: 20,
-    elapsedTime: 3,
-    priority: "normal",
-    kotGroups: [
-      {
-        department: "kitchen",
-        status: "pending",
-        itemCount: 3,
-      },
-      {
-        department: "dessert",
-        status: "pending",
-        itemCount: 2,
-      },
-    ],
-  },
-  {
-    orderId: "ord-003",
-    orderNumber: "103",
-    customerName: "Mike Wilson",
-    tableNumber: "T-12",
-    status: "ready",
-    orderType: "dine_in",
-    totalItems: 2,
-    estimatedTime: 10,
-    elapsedTime: 12, // Overdue!
-    priority: "urgent",
-    kotGroups: [
-      {
-        department: "kitchen",
-        status: "ready",
-        itemCount: 1,
-      },
-      {
-        department: "bar",
-        status: "ready",
-        itemCount: 1,
-      },
-    ],
-  },
-  {
-    orderId: "ord-004",
-    orderNumber: "104",
-    customerName: "Emma Davis",
-    tableNumber: undefined,
-    status: "preparing",
-    orderType: "delivery",
-    totalItems: 4,
-    estimatedTime: 25,
-    elapsedTime: 15,
-    priority: "normal",
-    kotGroups: [
-      {
-        department: "kitchen",
-        status: "preparing",
-        itemCount: 3,
-      },
-      {
-        department: "dessert",
-        status: "ready",
-        itemCount: 1,
-      },
-    ],
-  },
-  {
-    orderId: "ord-005",
-    orderNumber: "105",
-    customerName: "Alex Chen",
-    tableNumber: "T-08",
-    status: "confirmed",
-    orderType: "dine_in",
-    totalItems: 6,
-    estimatedTime: 30,
-    elapsedTime: 1,
-    priority: "low",
-    kotGroups: [
-      {
-        department: "kitchen",
-        status: "pending",
-        itemCount: 4,
-      },
-      {
-        department: "bar",
-        status: "pending",
-        itemCount: 2,
-      },
-    ],
-  },
-];
+    elapsedTime: elapsed,
+    priority,
+    kotGroups,
+  };
+}
 
 interface OrderCardProps {
   order: OrderQueueItem;
   onStatusChange: (orderId: string, status: OrderQueueItem["status"]) => void;
-  onKotStatusChange: (
-    orderId: string,
-    department: string,
-    status: KOTGroup["status"],
-  ) => void;
+  onKotStatusChange: (orderId: string, department: string, status: KOTGroup["status"]) => void;
   fullScreen?: boolean;
 }
 
-function OrderCard({
-  order,
-  onStatusChange,
-  onKotStatusChange,
-  fullScreen = false,
-}: OrderCardProps) {
+function OrderCard({ order, onStatusChange, onKotStatusChange, fullScreen = false }: OrderCardProps) {
   const isOverdue = order.elapsedTime > (order.estimatedTime || 0);
   const isUrgent = order.priority === "urgent" || isOverdue;
 
   const getPriorityColor = () => {
-    if (isUrgent || order.priority === "urgent")
-      return "border-red-500 bg-red-500/10";
+    if (isUrgent || order.priority === "urgent") return "border-red-500 bg-red-500/10";
     if (order.priority === "high") return "border-yellow-500 bg-yellow-500/10";
     return "border-border bg-card";
   };
 
   const getStatusColor = () => {
     switch (order.status) {
-      case "confirmed":
-        return "bg-blue-500";
-      case "preparing":
-        return "bg-yellow-500";
-      case "ready":
-        return "bg-green-500";
-      case "completed":
-        return "bg-green-600";
-      case "cancelled":
-        return "bg-red-500";
-      default:
-        return "bg-muted";
+      case "confirmed": return "bg-blue-500";
+      case "preparing": return "bg-yellow-500";
+      case "ready": return "bg-green-500";
+      case "completed": return "bg-green-600";
+      case "cancelled": return "bg-red-500";
+      default: return "bg-muted";
     }
   };
 
   const getKotStatusColor = (status: KOTGroup["status"]) => {
     switch (status) {
-      case "pending":
-        return "bg-muted text-muted-foreground";
-      case "acknowledged":
-        return "bg-blue-500 text-white";
-      case "preparing":
-        return "bg-yellow-500 text-white";
-      case "ready":
-        return "bg-green-500 text-white";
-      case "served":
-        return "bg-green-600 text-white";
-      default:
-        return "bg-muted text-muted-foreground";
+      case "pending": return "bg-muted text-muted-foreground";
+      case "acknowledged": return "bg-blue-500 text-white";
+      case "preparing": return "bg-yellow-500 text-white";
+      case "ready": return "bg-green-500 text-white";
+      case "served": return "bg-green-600 text-white";
+      default: return "bg-muted text-muted-foreground";
     }
   };
 
   const getDepartmentIcon = (department: string) => {
     switch (department) {
-      case "kitchen":
-        return <ChefHat className="h-4 w-4" />;
-      case "bar":
-        return <Coffee className="h-4 w-4" />;
-      case "dessert":
-        return <IceCream className="h-4 w-4" />;
-      default:
-        return <Hash className="h-4 w-4" />;
+      case "kitchen": return <ChefHat className="h-4 w-4" />;
+      case "bar": return <Coffee className="h-4 w-4" />;
+      case "dessert": return <IceCream className="h-4 w-4" />;
+      default: return <Hash className="h-4 w-4" />;
     }
   };
 
   const formatElapsedTime = (minutes: number) => {
-    if (minutes < 60) {
-      return `${minutes}m`;
-    }
+    if (minutes < 60) return `${minutes}m`;
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
     return `${hours}h ${mins}m`;
@@ -260,9 +152,9 @@ function OrderCard({
               <div className="flex items-center space-x-2">
                 <Hash className="h-5 w-5 text-pos-accent" />
                 <CardTitle
-                  className={`text-xl font-bold ${
-                    fullScreen ? "text-2xl" : ""
-                  } ${isUrgent ? "text-red-500" : "text-foreground"}`}
+                  className={`text-xl font-bold ${fullScreen ? "text-2xl" : ""} ${
+                    isUrgent ? "text-red-500" : "text-foreground"
+                  }`}
                 >
                   {order.orderNumber}
                 </CardTitle>
@@ -275,21 +167,14 @@ function OrderCard({
               {isOverdue && (
                 <AlertTriangle className="h-5 w-5 text-pos-error animate-bounce" />
               )}
-              <div
-                className={`text-right ${
-                  isOverdue ? "text-pos-error" : "text-pos-text"
-                }`}
-              >
+              <div className={`text-right ${isOverdue ? "text-pos-error" : "text-pos-text"}`}>
                 <div className="text-sm text-pos-text-muted">Elapsed</div>
-                <div className="font-bold text-lg">
-                  {formatElapsedTime(order.elapsedTime)}
-                </div>
+                <div className="font-bold text-lg">{formatElapsedTime(order.elapsedTime)}</div>
               </div>
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Customer Info */}
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Users className="h-4 w-4 text-muted-foreground" />
@@ -318,24 +203,18 @@ function OrderCard({
             </div>
           </div>
 
-          {/* Timing Info */}
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center space-x-2">
               <Timer className="h-4 w-4 text-pos-text-muted" />
-              <span className="text-pos-text-muted">
-                Est: {order.estimatedTime}m
-              </span>
+              <span className="text-pos-text-muted">Est: {order.estimatedTime}m</span>
             </div>
             <div className="text-pos-text">
               {order.totalItems} item{order.totalItems !== 1 ? "s" : ""}
             </div>
           </div>
 
-          {/* KOT Groups */}
           <div className="space-y-2">
-            <div className="text-sm font-medium text-pos-text">
-              Department Status:
-            </div>
+            <div className="text-sm font-medium text-pos-text">Department Status:</div>
             <div className="grid grid-cols-1 gap-2">
               {order.kotGroups.map((kot, index) => (
                 <div
@@ -344,17 +223,11 @@ function OrderCard({
                 >
                   <div className="flex items-center space-x-2">
                     {getDepartmentIcon(kot.department)}
-                    <span className="text-pos-text text-sm capitalize">
-                      {kot.department}
-                    </span>
-                    <span className="text-pos-text-muted text-xs">
-                      ({kot.itemCount} items)
-                    </span>
+                    <span className="text-pos-text text-sm capitalize">{kot.department}</span>
+                    <span className="text-pos-text-muted text-xs">({kot.itemCount} items)</span>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Badge
-                      className={`${getKotStatusColor(kot.status)} text-xs`}
-                    >
+                    <Badge className={`${getKotStatusColor(kot.status)} text-xs`}>
                       {kot.status.replace("_", " ").toUpperCase()}
                     </Badge>
                     {kot.status !== "ready" && kot.status !== "served" && (
@@ -366,13 +239,9 @@ function OrderCard({
                             kot.status === "pending"
                               ? "acknowledged"
                               : kot.status === "acknowledged"
-                                ? "preparing"
-                                : "ready";
-                          onKotStatusChange(
-                            order.orderId,
-                            kot.department,
-                            nextStatus,
-                          );
+                              ? "preparing"
+                              : "ready";
+                          onKotStatusChange(order.orderId, kot.department, nextStatus);
                         }}
                         className="h-6 w-6 p-0 border-pos-secondary"
                       >
@@ -391,7 +260,6 @@ function OrderCard({
             </div>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex items-center space-x-2 pt-2">
             {order.status === "confirmed" && (
               <Button
@@ -434,73 +302,157 @@ function OrderCard({
 }
 
 export default function OrderQueue() {
-  const [orders, setOrders] = useState<OrderQueueItem[]>(mockOrderQueue);
-  const [filter, setFilter] = useState<
-    "all" | "pending" | "preparing" | "ready"
-  >("all");
-  const [departmentFilter, setDepartmentFilter] = useState<
-    "all" | "kitchen" | "bar" | "dessert"
-  >("all");
+  const { user } = useAuth();
+  const restaurantId = user?.branchId ?? "";
+  const queryClient = useQueryClient();
+
+  const [filter, setFilter] = useState<"all" | "pending" | "preparing" | "ready">("all");
+  const [departmentFilter, setDepartmentFilter] = useState<"all" | "kitchen" | "bar" | "dessert">("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const dateRange = useMemo(() => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 7);
+    return {
+      start_date: start.toISOString().split("T")[0],
+      end_date: end.toISOString().split("T")[0],
+    };
+  }, []);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [localOrders, setLocalOrders] = useState<OrderQueueItem[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
 
-  // Simulate real-time updates
+  const { data: ordersRaw, refetch } = useQuery({
+    queryKey: ["activeOrders", restaurantId, filter, searchQuery, dateRange],
+    queryFn: () =>
+      getFilteredOrders(restaurantId, {
+        skip: 0,
+        limit: 100,
+        status: filter === "all" ? undefined : filter,
+        start_date: dateRange.start_date,
+        end_date: dateRange.end_date,
+        search: searchQuery.trim() || undefined,
+      }),
+    enabled: !!restaurantId,
+    select: (r: any) => {
+      const src = r?.data ?? r;
+      const arr = Array.isArray(src) ? src : Array.isArray(src?.orders) ? src.orders : [];
+      return arr
+        .filter((o: any) =>
+          ["pending", "confirmed", "preparing", "ready", "pending_approval"].includes(
+            o.status,
+          ),
+        )
+        .map(mapOrderToQueueItem);
+    },
+    staleTime: 15_000,
+    refetchInterval: autoRefresh ? 30_000 : false,
+  });
+
+  useEffect(() => {
+    if (ordersRaw) setLocalOrders(ordersRaw);
+  }, [ordersRaw]);
+
+  // WebSocket for real-time updates
+  useEffect(() => {
+    if (!restaurantId) return;
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(getWsUrl(restaurantId));
+      wsRef.current = ws;
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          const order = data?.order ?? data?.data?.order ?? data?.data ?? data;
+          if (!order?.id) return;
+          const mapped = mapOrderToQueueItem(order);
+          setLocalOrders((prev) => {
+            const exists = prev.find((o) => o.orderId === mapped.orderId);
+            if (exists) {
+              if (mapped.status === "completed" || mapped.status === "cancelled") {
+                return prev.filter((o) => o.orderId !== mapped.orderId);
+              }
+              return prev.map((o) => (o.orderId === mapped.orderId ? mapped : o));
+            }
+            return [mapped, ...prev];
+          });
+          if (soundEnabled && data?.event_type === "new_order") {
+            const audio = new AudioContext();
+            const osc = audio.createOscillator();
+            osc.connect(audio.destination);
+            osc.frequency.value = 880;
+            osc.start();
+            setTimeout(() => osc.stop(), 200);
+          }
+        } catch {}
+      };
+    } catch {}
+    return () => {
+      wsRef.current?.close();
+    };
+  }, [restaurantId, soundEnabled]);
+
+  // Tick elapsed time every minute
   useEffect(() => {
     if (!autoRefresh) return;
-
     const interval = setInterval(() => {
-      setOrders((prevOrders) =>
-        prevOrders.map((order) => ({
-          ...order,
-          elapsedTime: order.elapsedTime + 1,
-        })),
-      );
-    }, 60000); // Update every minute
-
+      setLocalOrders((prev) => prev.map((o) => ({ ...o, elapsedTime: o.elapsedTime + 1 })));
+    }, 60000);
     return () => clearInterval(interval);
   }, [autoRefresh]);
 
-  const handleStatusChange = (
-    orderId: string,
-    status: OrderQueueItem["status"],
-  ) => {
-    setOrders((prevOrders) =>
-      prevOrders.map((order) =>
-        order.id === orderId ? { ...order, status } : order,
-      ),
-    );
+  const statusMutation = useMutation({
+    mutationFn: ({ orderId, status }: { orderId: string; status: string }) =>
+      updateOrderStatus(orderId, status),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["activeOrders", restaurantId] }),
+  });
 
-    if (soundEnabled) {
-      // Play notification sound
-      const audio = new Audio(
-        "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmAcBDuMzMLDdSsCJ33J8N2QQwoUXrTp66hVFAlFnt/xwV8dBDuMzMLDdSsCJ33J8N2QQwoUXrTp66hVFAlFnt/xwV8dBDyMzMLDdSsBJn3J8N2QQwoUXrTp66hVFAlFnt/xwV8dBDyMzMLDdSsBJn3J8N2QQwoUXrTp66hVFAlFnt/xwV8dBDwLzMLDdSsBJn3J8N2QQwoUXrTp66hVFAlFnt/xwV8dBDwLzMLDdSsBJn3J8N2QQwoUXrTp66hVFAlFnt/xwV8dBDwLzMLDdSsBJn3J8N2QQwoUXrTp66hVFAlFnt/xwV8dBDwLzMLDdSsBJn3J8N2QQwoUXrTp66hVFAlFnt/xwV8dBDwL",
+  const handleStatusChange = useCallback(
+    (orderId: string, status: OrderQueueItem["status"]) => {
+      const apiStatus = status === "completed" ? "delivered" : status;
+      setLocalOrders((prev) => {
+        if (status === "completed" || status === "cancelled") {
+          return prev.filter((o) => o.orderId !== orderId);
+        }
+        return prev.map((o) => (o.orderId === orderId ? { ...o, status } : o));
+      });
+      statusMutation.mutate({ orderId, status: apiStatus });
+      if (soundEnabled) {
+        try {
+          const audio = new AudioContext();
+          const osc = audio.createOscillator();
+          osc.connect(audio.destination);
+          osc.frequency.value = 660;
+          osc.start();
+          setTimeout(() => osc.stop(), 150);
+        } catch {}
+      }
+    },
+    [statusMutation, soundEnabled],
+  );
+
+  const handleKotStatusChange = useCallback(
+    (orderId: string, department: string, status: KOTGroup["status"]) => {
+      setLocalOrders((prev) =>
+        prev.map((order) =>
+          order.orderId === orderId
+            ? {
+                ...order,
+                kotGroups: order.kotGroups.map((kot) =>
+                  kot.department === department ? { ...kot, status } : kot,
+                ),
+              }
+            : order,
+        ),
       );
-      audio.volume = 0.3;
-      audio.play().catch(() => {});
-    }
-  };
+    },
+    [],
+  );
 
-  const handleKotStatusChange = (
-    orderId: string,
-    department: string,
-    status: KOTGroup["status"],
-  ) => {
-    setOrders((prevOrders) =>
-      prevOrders.map((order) =>
-        order.orderId === orderId
-          ? {
-              ...order,
-              kotGroups: order.kotGroups.map((kot) =>
-                kot.department === department ? { ...kot, status } : kot,
-              ),
-            }
-          : order,
-      ),
-    );
-  };
-
-  const filteredOrders = orders.filter((order) => {
+  const filteredOrders = localOrders.filter((order) => {
     const statusMatch = filter === "all" || order.status === filter;
     const departmentMatch =
       departmentFilter === "all" ||
@@ -508,37 +460,26 @@ export default function OrderQueue() {
     return statusMatch && departmentMatch;
   });
 
-  const sortedOrders = filteredOrders.sort((a, b) => {
-    // Sort by priority (urgent first), then by elapsed time
+  const sortedOrders = [...filteredOrders].sort((a, b) => {
     const priorityOrder = { urgent: 4, high: 3, normal: 2, low: 1 };
     const priorityDiff = priorityOrder[b.priority] - priorityOrder[a.priority];
     if (priorityDiff !== 0) return priorityDiff;
     return b.elapsedTime - a.elapsedTime;
   });
 
-  const getOrderCounts = () => {
-    return {
-      total: orders.length,
-      pending: orders.filter((o) => o.status === "confirmed").length,
-      preparing: orders.filter((o) => o.status === "preparing").length,
-      ready: orders.filter((o) => o.status === "ready").length,
-      overdue: orders.filter((o) => o.elapsedTime > (o.estimatedTime || 0))
-        .length,
-    };
+  const counts = {
+    total: localOrders.length,
+    pending: localOrders.filter((o) => o.status === "confirmed" || o.status === "pending").length,
+    preparing: localOrders.filter((o) => o.status === "preparing").length,
+    ready: localOrders.filter((o) => o.status === "ready").length,
+    overdue: localOrders.filter((o) => o.elapsedTime > (o.estimatedTime || 0)).length,
   };
-
-  const counts = getOrderCounts();
 
   return (
     <div className={`space-y-6 ${isFullScreen ? "min-h-screen p-4" : ""}`}>
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1
-            className={`font-bold text-foreground ${
-              isFullScreen ? "text-4xl" : "text-3xl"
-            }`}
-          >
+          <h1 className={`font-bold text-foreground ${isFullScreen ? "text-4xl" : "text-3xl"}`}>
             Live Order Queue
           </h1>
           <p className="text-muted-foreground mt-1">
@@ -551,30 +492,20 @@ export default function OrderQueue() {
             size="sm"
             onClick={() => setSoundEnabled(!soundEnabled)}
             className={`border-pos-secondary ${
-              soundEnabled
-                ? "text-pos-accent hover:text-pos-accent"
-                : "text-pos-text-muted"
+              soundEnabled ? "text-pos-accent hover:text-pos-accent" : "text-pos-text-muted"
             }`}
           >
-            {soundEnabled ? (
-              <Volume2 className="h-4 w-4" />
-            ) : (
-              <VolumeX className="h-4 w-4" />
-            )}
+            {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
           </Button>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setAutoRefresh(!autoRefresh)}
+            onClick={() => { setAutoRefresh(!autoRefresh); refetch(); }}
             className={`border-pos-secondary ${
-              autoRefresh
-                ? "text-pos-success hover:text-pos-success"
-                : "text-pos-text-muted"
+              autoRefresh ? "text-pos-success hover:text-pos-success" : "text-pos-text-muted"
             }`}
           >
-            <RefreshCw
-              className={`h-4 w-4 ${autoRefresh ? "animate-spin" : ""}`}
-            />
+            <RefreshCw className={`h-4 w-4 ${autoRefresh ? "animate-spin" : ""}`} />
           </Button>
           <Button
             variant="outline"
@@ -582,23 +513,16 @@ export default function OrderQueue() {
             onClick={() => setIsFullScreen(!isFullScreen)}
             className="border-pos-secondary text-pos-text-muted hover:text-pos-text"
           >
-            {isFullScreen ? (
-              <Minimize className="h-4 w-4" />
-            ) : (
-              <Maximize className="h-4 w-4" />
-            )}
+            {isFullScreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
           </Button>
         </div>
       </div>
 
-      {/* Statistics */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card className="bg-card border-border">
           <CardContent className="p-4">
             <div className="text-center">
-              <div className="text-2xl font-bold text-foreground">
-                {counts.total}
-              </div>
+              <div className="text-2xl font-bold text-foreground">{counts.total}</div>
               <div className="text-sm text-muted-foreground">Total Orders</div>
             </div>
           </CardContent>
@@ -606,9 +530,7 @@ export default function OrderQueue() {
         <Card className="bg-pos-surface border-pos-secondary">
           <CardContent className="p-4">
             <div className="text-center">
-              <div className="text-2xl font-bold text-blue-500">
-                {counts.pending}
-              </div>
+              <div className="text-2xl font-bold text-blue-500">{counts.pending}</div>
               <div className="text-sm text-pos-text-muted">Pending</div>
             </div>
           </CardContent>
@@ -616,9 +538,7 @@ export default function OrderQueue() {
         <Card className="bg-pos-surface border-pos-secondary">
           <CardContent className="p-4">
             <div className="text-center">
-              <div className="text-2xl font-bold text-pos-warning">
-                {counts.preparing}
-              </div>
+              <div className="text-2xl font-bold text-pos-warning">{counts.preparing}</div>
               <div className="text-sm text-pos-text-muted">Preparing</div>
             </div>
           </CardContent>
@@ -626,9 +546,7 @@ export default function OrderQueue() {
         <Card className="bg-pos-surface border-pos-secondary">
           <CardContent className="p-4">
             <div className="text-center">
-              <div className="text-2xl font-bold text-pos-success">
-                {counts.ready}
-              </div>
+              <div className="text-2xl font-bold text-pos-success">{counts.ready}</div>
               <div className="text-sm text-pos-text-muted">Ready</div>
             </div>
           </CardContent>
@@ -636,16 +554,13 @@ export default function OrderQueue() {
         <Card className="bg-pos-surface border-pos-secondary">
           <CardContent className="p-4">
             <div className="text-center">
-              <div className="text-2xl font-bold text-pos-error">
-                {counts.overdue}
-              </div>
+              <div className="text-2xl font-bold text-pos-error">{counts.overdue}</div>
               <div className="text-sm text-pos-text-muted">Overdue</div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filters */}
       <Card className="bg-pos-surface border-pos-secondary">
         <CardContent className="p-4">
           <div className="flex items-center space-x-4">
@@ -653,10 +568,7 @@ export default function OrderQueue() {
               <Filter className="h-4 w-4 text-pos-text-muted" />
               <span className="text-sm text-pos-text-muted">Filters:</span>
             </div>
-            <Select
-              value={filter}
-              onValueChange={(value: any) => setFilter(value)}
-            >
+            <Select value={filter} onValueChange={(value: any) => setFilter(value)}>
               <SelectTrigger className="w-40 bg-pos-surface border-pos-secondary text-pos-text">
                 <SelectValue />
               </SelectTrigger>
@@ -681,11 +593,16 @@ export default function OrderQueue() {
                 <SelectItem value="dessert">Dessert</SelectItem>
               </SelectContent>
             </Select>
+            <Input
+              placeholder="Search order #, guest..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="max-w-xs bg-pos-surface border-pos-secondary text-pos-text"
+            />
           </div>
         </CardContent>
       </Card>
 
-      {/* Orders Grid */}
       <div
         className={`grid gap-6 ${
           isFullScreen
@@ -710,9 +627,7 @@ export default function OrderQueue() {
         <Card className="bg-pos-surface border-pos-secondary">
           <CardContent className="text-center py-12">
             <ChefHat className="mx-auto h-12 w-12 text-pos-text-muted mb-4" />
-            <h3 className="text-lg font-semibold text-pos-text mb-2">
-              No orders found
-            </h3>
+            <h3 className="text-lg font-semibold text-pos-text mb-2">No orders found</h3>
             <p className="text-pos-text-muted">
               {filter !== "all" || departmentFilter !== "all"
                 ? "Try adjusting your filters"

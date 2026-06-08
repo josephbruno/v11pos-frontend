@@ -21,6 +21,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { CustomerLoginModal } from "@/components/CustomerLoginModal";
+import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import type { QRTable, QRSettings } from "@/shared/api";
 
 // Mock data - in real app, this would be fetched based on table token
@@ -86,152 +88,7 @@ const mockBusinessInfo = {
   wifiPassword: "delicious123",
 };
 
-interface CustomerInfoFormProps {
-  onSubmit: (info: {
-    name?: string;
-    phone?: string;
-    email?: string;
-    guestCount?: number;
-  }) => void;
-  onSkip: () => void;
-  required: boolean;
-}
-
-function CustomerInfoForm({
-  onSubmit,
-  onSkip,
-  required,
-}: CustomerInfoFormProps) {
-  const [formData, setFormData] = useState({
-    name: "",
-    phone: "",
-    email: "",
-    guestCount: 1,
-  });
-
-  const handleSubmit = () => {
-    onSubmit(formData);
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="space-y-6"
-    >
-      <div className="text-center">
-        <h2 className="text-xl font-bold text-gray-900 mb-2">
-          {required
-            ? "Please provide your details"
-            : "Help us serve you better"}
-        </h2>
-        <p className="text-gray-600 text-sm">
-          {required
-            ? "This information is required to place your order"
-            : "Optional information to enhance your dining experience"}
-        </p>
-      </div>
-
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label className="text-gray-900">
-            Name {required && <span className="text-red-500">*</span>}
-          </Label>
-          <Input
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            placeholder="Your name"
-            className="bg-gray-50 border-gray-200"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-gray-900">
-            Phone Number {required && <span className="text-red-500">*</span>}
-          </Label>
-          <Input
-            value={formData.phone}
-            onChange={(e) =>
-              setFormData({ ...formData, phone: e.target.value })
-            }
-            placeholder="+1 (555) 123-4567"
-            type="tel"
-            className="bg-gray-50 border-gray-200"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-gray-900">Email (Optional)</Label>
-          <Input
-            value={formData.email}
-            onChange={(e) =>
-              setFormData({ ...formData, email: e.target.value })
-            }
-            placeholder="your@email.com"
-            type="email"
-            className="bg-gray-50 border-gray-200"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-gray-900">Number of Guests</Label>
-          <div className="flex items-center space-x-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setFormData({
-                  ...formData,
-                  guestCount: Math.max(1, formData.guestCount - 1),
-                })
-              }
-              className="h-10 w-10 p-0"
-            >
-              -
-            </Button>
-            <span className="text-lg font-medium w-12 text-center">
-              {formData.guestCount}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setFormData({
-                  ...formData,
-                  guestCount: formData.guestCount + 1,
-                })
-              }
-              className="h-10 w-10 p-0"
-            >
-              +
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <Button
-          onClick={handleSubmit}
-          disabled={required && (!formData.name || !formData.phone)}
-          className="w-full bg-primary hover:bg-primary/90 text-white"
-        >
-          Continue to Menu
-          <ArrowRight className="ml-2 h-4 w-4" />
-        </Button>
-
-        {!required && (
-          <Button
-            variant="outline"
-            onClick={onSkip}
-            className="w-full border-gray-200 text-gray-600"
-          >
-            Skip for now
-          </Button>
-        )}
-      </div>
-    </motion.div>
-  );
-}
+// Removed old CustomerInfoForm as we use CustomerLoginModal now
 
 export default function QRMenuLanding() {
   const { tableToken } = useParams<{ tableToken: string }>();
@@ -240,8 +97,9 @@ export default function QRMenuLanding() {
   const [error, setError] = useState<string | null>(null);
   const [table, setTable] = useState<QRTable | null>(null);
   const [settings, setSettings] = useState<QRSettings | null>(null);
-  const [showCustomerForm, setShowCustomerForm] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const { customer, logout } = useCustomerAuth();
 
   // Update time every minute
   useEffect(() => {
@@ -300,19 +158,9 @@ export default function QRMenuLanding() {
     );
   };
 
-  const handleCustomerInfoSubmit = (info: any) => {
-    // Store customer info in session
-    sessionStorage.setItem("customerInfo", JSON.stringify(info));
-    navigate(`/qr-menu/${tableToken}/menu`);
-  };
-
-  const handleSkipCustomerInfo = () => {
-    navigate(`/qr-menu/${tableToken}/menu`);
-  };
-
   const proceedToMenu = () => {
-    if (settings?.enableCustomerInfo) {
-      setShowCustomerForm(true);
+    if (!customer && settings?.enableCustomerInfo) {
+      setIsLoginModalOpen(true);
     } else {
       navigate(`/qr-menu/${tableToken}/menu`);
     }
@@ -357,21 +205,7 @@ export default function QRMenuLanding() {
 
   const restaurantOpen = isRestaurantOpen();
 
-  if (showCustomerForm) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <Card className="max-w-md w-full bg-white">
-          <CardContent className="p-6">
-            <CustomerInfoForm
-              onSubmit={handleCustomerInfoSubmit}
-              onSkip={handleSkipCustomerInfo}
-              required={false}
-            />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // Removed local showCustomerForm view
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -541,14 +375,22 @@ export default function QRMenuLanding() {
         {/* Action Button */}
         <div className="sticky bottom-0 bg-gray-50 p-4 -mx-4">
           {restaurantOpen ? (
-            <Button
-              onClick={proceedToMenu}
-              className="w-full bg-primary hover:bg-primary/90 text-white py-4 text-lg"
-            >
-              <ChefHat className="mr-3 h-5 w-5" />
-              View Menu & Order
-              <ArrowRight className="ml-3 h-5 w-5" />
-            </Button>
+            <div className="space-y-2">
+              {customer && (
+                <div className="text-sm text-center text-gray-600 mb-2">
+                  Welcome back, {customer.name || customer.email}!
+                  <button onClick={logout} className="ml-2 text-blue-500 hover:underline">Logout</button>
+                </div>
+              )}
+              <Button
+                onClick={proceedToMenu}
+                className="w-full bg-primary hover:bg-primary/90 text-white py-4 text-lg"
+              >
+                <ChefHat className="mr-3 h-5 w-5" />
+                View Menu & Order
+                <ArrowRight className="ml-3 h-5 w-5" />
+              </Button>
+            </div>
           ) : (
             <div className="text-center">
               <div className="bg-red-100 text-red-800 p-4 rounded-lg mb-4">
@@ -575,6 +417,12 @@ export default function QRMenuLanding() {
           </div>
         )}
       </div>
+
+      <CustomerLoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        restaurantId={table.restaurant_id || "mock-restaurant-id"}
+      />
     </div>
   );
 }

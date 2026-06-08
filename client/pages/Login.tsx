@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -174,12 +175,12 @@ export default function Login() {
               </div>
 
               <div className="flex justify-end">
-                <a
-                  href="/forgot-password"
+                <Link
+                  to="/forgot-password"
                   className="text-sm text-pos-accent hover:text-pos-accent/80 transition-colors"
                 >
                   Forgot password?
-                </a>
+                </Link>
               </div>
 
               <Button

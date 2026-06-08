@@ -34,10 +34,19 @@ export default function ForgotPassword() {
 
     try {
       const result = await forgotPassword(email);
-      setExpiresIn(result.data?.expires_in || 600);
+      setExpiresIn((result as any).data?.expires_in || 600);
       setStep(2);
     } catch (err: any) {
-      setError(err.message || "Failed to send OTP. Please try again.");
+      const msg: string = err.message || "";
+      if (
+        msg.toLowerCase().includes("not found") ||
+        msg.toLowerCase().includes("does not exist") ||
+        err.status === 404
+      ) {
+        setError("No account found with this email address. Please check and try again.");
+      } else {
+        setError(msg || "Failed to send OTP. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -75,7 +84,7 @@ export default function ForgotPassword() {
       // Provide helpful error message
       const errorMsg = err.message || "Failed to reset password";
       if (errorMsg.toLowerCase().includes("invalid") || errorMsg.toLowerCase().includes("expired")) {
-        setError("Invalid or expired OTP. Please check your email or request a new OTP. Note: OTP is only sent if the email exists in our system.");
+        setError("Invalid or expired OTP. Please check your email or request a new OTP.");
       } else if (errorMsg.toLowerCase().includes("user not found")) {
         setError("Email address not found in our system. Please check the email address and try again.");
       } else {
@@ -136,7 +145,7 @@ export default function ForgotPassword() {
               {step === 3 && "Password Reset!"}
             </CardTitle>
             <p className="text-gray-600 dark:text-gray-400 mt-2">
-              {step === 1 && "Enter your email to receive a password reset OTP"}
+              {step === 1 && "Enter your registered email to receive a reset OTP"}
               {step === 2 && `OTP sent to ${email}`}
               {step === 3 && "Your password has been successfully reset"}
             </p>
@@ -192,9 +201,6 @@ export default function ForgotPassword() {
                 </Button>
 
                 <div className="space-y-2 text-xs text-center text-gray-600 dark:text-gray-400 mt-4">
-                  <p>
-                    An OTP will be sent if your email is registered in our system.
-                  </p>
                   <p className="text-gray-500 dark:text-gray-500">
                     OTP expires in 10 minutes • Check spam folder if not received
                   </p>
@@ -208,8 +214,8 @@ export default function ForgotPassword() {
                 <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
                   <AlertDescription className="text-blue-800 dark:text-blue-200">
                     <div className="space-y-1">
-                      <p className="font-medium">Check your email for the OTP code</p>
-                      <p className="text-sm">If <strong>{email}</strong> exists in our system, you'll receive an OTP within a few minutes. Valid for {Math.floor(expiresIn / 60)} minutes.</p>
+                      <p className="font-medium">OTP sent! Check your email inbox</p>
+                      <p className="text-sm">A reset OTP has been sent to <strong>{email}</strong>. Valid for {Math.floor(expiresIn / 60)} minutes.</p>
                     </div>
                   </AlertDescription>
                 </Alert>

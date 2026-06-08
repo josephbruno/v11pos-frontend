@@ -1,4 +1,8 @@
 import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getCart, addCartItem, updateCartItemQuantity, removeCartItem } from "@/lib/apiServices";
+import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
+import { CustomerLoginModal } from "@/components/CustomerLoginModal";
 import {
   Plus,
   Minus,
@@ -19,6 +23,9 @@ import {
   Search,
   Filter,
   Heart,
+  Home,
+  Menu as MenuIcon,
+  User,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
@@ -598,16 +605,44 @@ export default function CustomerMenu() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedItem, setSelectedItem] = useState<QRMenuItem | null>(null);
-  const [cart, setCart] = useState<QRCart>({
-    sessionId: "session-123",
+  const [showCart, setShowCart] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+  const { customer } = useCustomerAuth();
+  const queryClient = useQueryClient();
+  const restaurantId = customer?.restaurant_id || mockTableInfo.tableNumber;
+
+  const { data: cartData } = useQuery({
+    queryKey: ["cart", restaurantId, customer?.id],
+    queryFn: () => getCart(restaurantId, customer!.id),
+    enabled: !!customer,
+  });
+
+  const cart = (cartData as any)?.data || cartData || {
     items: [],
     subtotal: 0,
     taxes: [],
     serviceCharge: 0,
     totalAmount: 0,
-    lastUpdated: new Date(),
+  };
+
+  const addToCartMutation = useMutation({
+    mutationFn: addCartItem,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
+      setSelectedItem(null);
+    },
   });
-  const [showCart, setShowCart] = useState(false);
+
+  const updateQuantityMutation = useMutation({
+    mutationFn: ({ itemId, quantity }: { itemId: string; quantity: number }) => updateCartItemQuantity(itemId, quantity),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["cart"] }),
+  });
+
+  const removeCartItemMutation = useMutation({
+    mutationFn: removeCartItem,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["cart"] }),
+  });
 
   const categories = [
     "All",
@@ -624,88 +659,48 @@ export default function CustomerMenu() {
   });
 
   const addToCart = (cartItem: QRCartItem) => {
-    setCart((prev) => {
-      const newItems = [...prev.items, cartItem];
-      const subtotal = newItems.reduce((sum, item) => sum + item.itemTotal, 0);
-      const serviceCharge = subtotal * 0.1; // 10% service charge
-      const totalAmount = subtotal + serviceCharge;
-
-      return {
-        ...prev,
-        items: newItems,
-        subtotal,
-        serviceCharge,
-        totalAmount,
-        lastUpdated: new Date(),
-      };
+    if (!customer) {
+      setIsLoginModalOpen(true);
+      return;
+    }
+    
+    addToCartMutation.mutate({
+      restaurant_id: restaurantId,
+      customer_id: customer.id,
+      item_type: "product",
+      product_id: cartItem.productId,
+      quantity: cartItem.quantity,
+      modifier_option_ids: cartItem.modifiers?.map(m => m.optionId) || [],
+      notes: cartItem.specialInstructions || null,
     });
   };
 
   const updateCartQuantity = (itemId: string, newQuantity: number) => {
-    setCart((prev) => {
-      const newItems = prev.items.map((item) => {
-        if (item.id === itemId) {
-          const basePrice =
-            item.price +
-            item.modifiers.reduce((sum, mod) => sum + mod.price, 0);
-          return {
-            ...item,
-            quantity: newQuantity,
-            itemTotal: basePrice * newQuantity,
-          };
-        }
-        return item;
-      });
-
-      const subtotal = newItems.reduce((sum, item) => sum + item.itemTotal, 0);
-      const serviceCharge = subtotal * 0.1;
-      const totalAmount = subtotal + serviceCharge;
-
-      return {
-        ...prev,
-        items: newItems,
-        subtotal,
-        serviceCharge,
-        totalAmount,
-        lastUpdated: new Date(),
-      };
-    });
+    updateQuantityMutation.mutate({ itemId, quantity: newQuantity });
   };
 
   const removeFromCart = (itemId: string) => {
-    setCart((prev) => {
-      const newItems = prev.items.filter((item) => item.id !== itemId);
-      const subtotal = newItems.reduce((sum, item) => sum + item.itemTotal, 0);
-      const serviceCharge = subtotal * 0.1;
-      const totalAmount = subtotal + serviceCharge;
-
-      return {
-        ...prev,
-        items: newItems,
-        subtotal,
-        serviceCharge,
-        totalAmount,
-        lastUpdated: new Date(),
-      };
-    });
+    removeCartItemMutation.mutate(itemId);
   };
 
   const handleCheckout = () => {
-    // Store cart in session storage for checkout
-    sessionStorage.setItem("qrCart", JSON.stringify(cart));
+    if (!customer) {
+      setIsLoginModalOpen(true);
+      return;
+    }
     // Navigate to checkout page
     window.location.href = `/qr-checkout/${mockTableInfo.tableNumber.toLowerCase()}`;
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 pb-20 md:pb-0">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
         <div className="px-4 py-3">
           <div className="flex items-center justify-between mb-3">
             <div>
               <h1 className="text-lg font-bold text-gray-900">RestaurantPOS</h1>
-              <div className="flex items-center space-x-2 text-sm text-gray-600">
+              <div className="hidden md:flex items-center space-x-2 text-sm text-gray-600">
                 <MapPin className="h-3 w-3" />
                 <span>
                   {mockTableInfo.tableName} • {mockTableInfo.location}
@@ -899,8 +894,9 @@ export default function CustomerMenu() {
       )}
 
       {/* Mobile Cart Button */}
+      {/* Mobile Cart Button - Moved up to not overlap with bottom nav */}
       {!showCart && cart.items.length > 0 && (
-        <div className="fixed bottom-4 left-4 right-4 md:hidden">
+        <div className="fixed bottom-20 left-4 right-4 md:hidden z-40">
           <Button
             onClick={() => setShowCart(true)}
             className="w-full bg-primary hover:bg-primary/90 text-white shadow-lg"
@@ -912,6 +908,47 @@ export default function CustomerMenu() {
           </Button>
         </div>
       )}
+
+      {/* Bottom Navigation (Mobile Only) */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around items-center h-16 md:hidden z-50 px-2 pb-safe">
+        <button className="flex flex-col items-center justify-center w-full h-full text-gray-500 hover:text-primary">
+          <Home className="h-5 w-5 mb-1" />
+          <span className="text-[10px] font-medium">Home</span>
+        </button>
+        <button className="flex flex-col items-center justify-center w-full h-full text-primary">
+          <MenuIcon className="h-5 w-5 mb-1" />
+          <span className="text-[10px] font-medium">Menu</span>
+        </button>
+        <button 
+          onClick={() => {
+             if (!customer) setIsLoginModalOpen(true);
+          }}
+          className="flex flex-col items-center justify-center w-full h-full text-gray-500 hover:text-primary"
+        >
+          <User className="h-5 w-5 mb-1" />
+          <span className="text-[10px] font-medium">Account</span>
+        </button>
+        <button 
+          onClick={() => setShowCart(true)}
+          className="flex flex-col items-center justify-center w-full h-full text-gray-500 hover:text-primary relative"
+        >
+          <div className="relative">
+            <ShoppingCart className="h-5 w-5 mb-1" />
+            {cart.items.length > 0 && (
+              <Badge className="absolute -top-2 -right-3 bg-red-500 text-white text-[10px] min-w-[18px] h-[18px] p-0 flex items-center justify-center rounded-full">
+                {cart.items.reduce((sum, item) => sum + item.quantity, 0)}
+              </Badge>
+            )}
+          </div>
+          <span className="text-[10px] font-medium">Cart</span>
+        </button>
+      </div>
+
+      <CustomerLoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        restaurantId={restaurantId}
+      />
     </div>
   );
 }

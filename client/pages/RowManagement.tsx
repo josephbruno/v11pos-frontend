@@ -229,7 +229,7 @@ export default function RowManagementPage() {
 
   const products = useMemo(() => {
     const raw = productsQuery.data as any;
-    const source = raw?.data ?? raw;
+    const source = raw?.data?.items ?? raw?.data ?? raw;
     const items = Array.isArray(source) ? source : Array.isArray(source?.data) ? source.data : [];
     return items
       .filter((p: any) => p?.id && p?.name)

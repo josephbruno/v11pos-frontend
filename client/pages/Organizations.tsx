@@ -53,11 +53,15 @@ import {
 import {
   createRestaurant,
   getRestaurantById,
-  getMyRestaurants,
+  getAllRestaurantsAdmin,
   uploadFile,
   updateRestaurant,
+  assignRestaurantSubscription,
+  updateRestaurantSubscriptionStatus,
+  getAllSubscriptionPlansAdmin,
+  getUsageLimits,
 } from "@/lib/apiServices";
-import { Restaurant } from "@shared/api";
+import { Restaurant, SubscriptionPlan } from "@shared/api";
 import { useToast } from "@/contexts/ToastContext";
 
 function toSlug(value: string) {
@@ -121,6 +125,7 @@ type OrganizationForm = {
   postal_code: string;
   country: string;
   status: "active" | "inactive";
+  website_url: string;
 };
 
 type OrganizationEditForm = OrganizationForm & {
@@ -142,12 +147,21 @@ type OrganizationEditForm = OrganizationForm & {
   holiday_mode: boolean;
   timezone: string;
   currency: string;
+  cash_enabled: boolean;
+  card_enabled: boolean;
+  upi_enabled: boolean;
+  wallet_enabled: boolean;
+  online_payment_enabled: boolean;
+  payment_gateway: string;
   enable_online_ordering: boolean;
+  enable_table_booking: boolean;
   enable_dine_in: boolean;
   enable_takeaway: boolean;
   enable_delivery: boolean;
   delivery_radius: string;
+  delivery_charge: string;
   minimum_order_value: string;
+  free_delivery_above: string;
   enable_kot: boolean;
   enable_kds: boolean;
   auto_accept_orders: boolean;
@@ -168,6 +182,11 @@ export default function Organizations() {
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
   const [isViewLoading, setIsViewLoading] = useState(false);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  const [subManageOrg, setSubManageOrg] = useState<Restaurant | null>(null);
+  const [subPlans, setSubPlans] = useState<SubscriptionPlan[]>([]);
+  const [assignPlanName, setAssignPlanName] = useState("basic");
+  const [subUsage, setSubUsage] = useState<Record<string, unknown> | null>(null);
+  const [subManageLoading, setSubManageLoading] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{
     restaurant: Restaurant;
     active: boolean;
@@ -188,6 +207,7 @@ export default function Organizations() {
     postal_code: "",
     country: "",
     status: "active",
+    website_url: "",
   });
   const { addToast } = useToast();
   const [editingOrganization, setEditingOrganization] = useState<Restaurant | null>(null);
@@ -207,6 +227,7 @@ export default function Organizations() {
     postal_code: "",
     country: "",
     status: "active",
+    website_url: "",
   };
   const initialEditForm: OrganizationEditForm = {
     ...initialForm,
@@ -228,12 +249,21 @@ export default function Organizations() {
     holiday_mode: false,
     timezone: "",
     currency: "",
+    cash_enabled: true,
+    card_enabled: true,
+    upi_enabled: true,
+    wallet_enabled: false,
+    online_payment_enabled: false,
+    payment_gateway: "",
     enable_online_ordering: false,
+    enable_table_booking: false,
     enable_dine_in: true,
     enable_takeaway: true,
     enable_delivery: true,
     delivery_radius: "",
+    delivery_charge: "",
     minimum_order_value: "",
+    free_delivery_above: "",
     enable_kot: false,
     enable_kds: false,
     auto_accept_orders: false,
@@ -521,13 +551,30 @@ export default function Organizations() {
       return "";
     }
 
+    if (field === "payment_gateway") {
+      if (trimmed.length > 50) return "Payment gateway must be 50 characters or less.";
+      return "";
+    }
+
     if (field === "delivery_radius") {
       if (!isValidNonNegativeFloat(trimmed)) return "Delivery radius must be a non-negative number.";
       return "";
     }
 
+    if (field === "delivery_charge") {
+      if (!isValidNonNegativeFloat(trimmed)) return "Delivery charge must be a non-negative number.";
+      return "";
+    }
+
     if (field === "minimum_order_value") {
       if (!isValidNonNegativeFloat(trimmed)) return "Minimum order value must be a non-negative number.";
+      return "";
+    }
+
+    if (field === "free_delivery_above") {
+      if (!isValidNonNegativeFloat(trimmed)) {
+        return "Free delivery amount must be a non-negative number.";
+      }
       return "";
     }
 
@@ -583,12 +630,21 @@ export default function Organizations() {
       "closing_time",
       "is_24_hours",
       "holiday_mode",
+      "cash_enabled",
+      "card_enabled",
+      "upi_enabled",
+      "wallet_enabled",
+      "online_payment_enabled",
+      "payment_gateway",
       "enable_online_ordering",
+      "enable_table_booking",
       "enable_dine_in",
       "enable_takeaway",
       "enable_delivery",
       "delivery_radius",
+      "delivery_charge",
       "minimum_order_value",
+      "free_delivery_above",
       "enable_kot",
       "enable_kds",
       "auto_accept_orders",
@@ -687,7 +743,7 @@ export default function Organizations() {
   const loadOrganizations = async () => {
     setIsLoading(true);
     try {
-      const response = await getMyRestaurants(0, 200);
+      const response = await getAllRestaurantsAdmin(0, 500);
       setOrganizations(extractRestaurants(response));
     } catch (error: any) {
       addToast({
@@ -698,6 +754,62 @@ export default function Organizations() {
       setOrganizations([]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const openSubManage = async (org: Restaurant) => {
+    setSubManageOrg(org);
+    setAssignPlanName(org.subscription_plan ?? "basic");
+    setSubManageLoading(true);
+    try {
+      const [plansRes, usageRes]: any[] = await Promise.all([
+        getAllSubscriptionPlansAdmin(),
+        getUsageLimits(org.id),
+      ]);
+      setSubPlans((plansRes?.data ?? plansRes ?? []) as SubscriptionPlan[]);
+      setSubUsage(usageRes?.data ?? usageRes ?? null);
+    } catch {
+      setSubPlans([]);
+      setSubUsage(null);
+    } finally {
+      setSubManageLoading(false);
+    }
+  };
+
+  const handleAssignPlan = async () => {
+    if (!subManageOrg) return;
+    setSubManageLoading(true);
+    try {
+      await assignRestaurantSubscription(subManageOrg.id, assignPlanName);
+      addToast({ type: "success", title: "Plan assigned" });
+      await loadOrganizations();
+      setSubManageOrg(null);
+    } catch (error: any) {
+      addToast({ type: "error", title: "Assign failed", description: error?.message });
+    } finally {
+      setSubManageLoading(false);
+    }
+  };
+
+  const handleSuspendRestaurant = async (suspend: boolean) => {
+    if (!subManageOrg) return;
+    setSubManageLoading(true);
+    try {
+      await updateRestaurantSubscriptionStatus(subManageOrg.id, {
+        subscription_status: suspend ? "suspended" : "active",
+        is_suspended: suspend,
+        suspension_reason: suspend ? "Suspended by platform admin" : undefined,
+      });
+      addToast({
+        type: "success",
+        title: suspend ? "Restaurant suspended" : "Restaurant reactivated",
+      });
+      await loadOrganizations();
+      setSubManageOrg(null);
+    } catch (error: any) {
+      addToast({ type: "error", title: "Update failed", description: error?.message });
+    } finally {
+      setSubManageLoading(false);
     }
   };
 
@@ -738,6 +850,7 @@ export default function Organizations() {
         state: form.state.trim() || undefined,
         postal_code: form.postal_code.trim() || undefined,
         country: form.country.trim() || undefined,
+        website_url: form.website_url.trim() || undefined,
         status: "active",
       });
 
@@ -776,6 +889,7 @@ export default function Organizations() {
       state: organization.state || "",
       postal_code: organization.postal_code || "",
       country: organization.country || "",
+      website_url: (organization as any).website_url || "",
       logo: String((organization as any).logo ?? (organization as any).logo_url ?? ""),
       banner_image: String(
         (organization as any).banner_image ?? (organization as any).banner_url ?? "",
@@ -794,12 +908,21 @@ export default function Organizations() {
       holiday_mode: Boolean((organization as any).holiday_mode ?? false),
       timezone: String((organization as any).timezone ?? ""),
       currency: String((organization as any).currency ?? ""),
+      cash_enabled: Boolean((organization as any).cash_enabled ?? true),
+      card_enabled: Boolean((organization as any).card_enabled ?? true),
+      upi_enabled: Boolean((organization as any).upi_enabled ?? true),
+      wallet_enabled: Boolean((organization as any).wallet_enabled ?? false),
+      online_payment_enabled: Boolean((organization as any).online_payment_enabled ?? false),
+      payment_gateway: String((organization as any).payment_gateway ?? ""),
       enable_online_ordering: Boolean((organization as any).enable_online_ordering ?? false),
+      enable_table_booking: Boolean((organization as any).enable_table_booking ?? false),
       enable_dine_in: Boolean((organization as any).enable_dine_in ?? true),
       enable_takeaway: Boolean((organization as any).enable_takeaway ?? true),
       enable_delivery: Boolean((organization as any).enable_delivery ?? true),
       delivery_radius: String((organization as any).delivery_radius ?? ""),
+      delivery_charge: String((organization as any).delivery_charge ?? ""),
       minimum_order_value: String((organization as any).minimum_order_value ?? ""),
+      free_delivery_above: String((organization as any).free_delivery_above ?? ""),
       enable_kot: Boolean((organization as any).enable_kot ?? false),
       enable_kds: Boolean((organization as any).enable_kds ?? false),
       auto_accept_orders: Boolean((organization as any).auto_accept_orders ?? false),
@@ -922,6 +1045,7 @@ export default function Organizations() {
         state: editForm.state.trim() || undefined,
         postal_code: editForm.postal_code.trim() || undefined,
         country: editForm.country.trim() || undefined,
+        website_url: editForm.website_url.trim() || undefined,
         ...(logoValue
           ? {
               logo: logoValue,
@@ -950,16 +1074,29 @@ export default function Organizations() {
         closing_time: editForm.is_24_hours ? undefined : editForm.closing_time.trim() || undefined,
         is_24_hours: editForm.is_24_hours,
         holiday_mode: editForm.holiday_mode,
+        cash_enabled: editForm.cash_enabled,
+        card_enabled: editForm.card_enabled,
+        upi_enabled: editForm.upi_enabled,
+        wallet_enabled: editForm.wallet_enabled,
+        online_payment_enabled: editForm.online_payment_enabled,
+        payment_gateway: editForm.payment_gateway.trim() || null,
         enable_online_ordering: editForm.enable_online_ordering,
+        enable_table_booking: editForm.enable_table_booking,
         enable_dine_in: editForm.enable_dine_in,
         enable_takeaway: editForm.enable_takeaway,
         enable_delivery: editForm.enable_delivery,
         delivery_radius: editForm.delivery_radius.trim()
           ? Number(editForm.delivery_radius.trim())
           : undefined,
+        delivery_charge: editForm.delivery_charge.trim()
+          ? Number(editForm.delivery_charge.trim())
+          : null,
         minimum_order_value: editForm.minimum_order_value.trim()
           ? Number(editForm.minimum_order_value.trim())
           : undefined,
+        free_delivery_above: editForm.free_delivery_above.trim()
+          ? Number(editForm.free_delivery_above.trim())
+          : null,
         enable_kot: editForm.enable_kot,
         enable_kds: editForm.enable_kds,
         auto_accept_orders: editForm.auto_accept_orders,
@@ -1011,6 +1148,29 @@ export default function Organizations() {
                 country: editForm.country.trim() || undefined,
                 ...(logoValue ? { logo_url: logoValue } : {}),
                 ...(bannerValue ? { banner_url: bannerValue } : {}),
+                cash_enabled: editForm.cash_enabled,
+                card_enabled: editForm.card_enabled,
+                upi_enabled: editForm.upi_enabled,
+                wallet_enabled: editForm.wallet_enabled,
+                online_payment_enabled: editForm.online_payment_enabled,
+                payment_gateway: editForm.payment_gateway.trim() || null,
+                enable_online_ordering: editForm.enable_online_ordering,
+                enable_table_booking: editForm.enable_table_booking,
+                enable_dine_in: editForm.enable_dine_in,
+                enable_takeaway: editForm.enable_takeaway,
+                enable_delivery: editForm.enable_delivery,
+                delivery_radius: editForm.delivery_radius.trim()
+                  ? Number(editForm.delivery_radius.trim())
+                  : undefined,
+                delivery_charge: editForm.delivery_charge.trim()
+                  ? Number(editForm.delivery_charge.trim())
+                  : null,
+                minimum_order_value: editForm.minimum_order_value.trim()
+                  ? Number(editForm.minimum_order_value.trim())
+                  : undefined,
+                free_delivery_above: editForm.free_delivery_above.trim()
+                  ? Number(editForm.free_delivery_above.trim())
+                  : null,
                 status: editForm.status,
               }
             : restaurant,
@@ -1218,6 +1378,15 @@ export default function Organizations() {
                   {errors.phone && (
                     <p className="text-xs text-red-500">{errors.phone}</p>
                   )}
+                </div>
+                <div className="sm:col-span-2 space-y-2">
+                  <Label htmlFor="org-website">Website URL</Label>
+                  <Input
+                    id="org-website"
+                    value={form.website_url}
+                    onChange={(e) => handleFieldChange("website_url", e.target.value)}
+                    placeholder="https://restaurant.com"
+                  />
                 </div>
                 <div className="sm:col-span-2 space-y-2">
                   <Label htmlFor="org-address">Address</Label>
@@ -1434,6 +1603,15 @@ export default function Organizations() {
                     {editErrors.alternate_phone && (
                       <p className="text-xs text-red-500">{editErrors.alternate_phone}</p>
                     )}
+                  </div>
+                  <div className="sm:col-span-2 space-y-2">
+                    <Label htmlFor="edit-org-website">Website URL</Label>
+                    <Input
+                      id="edit-org-website"
+                      value={editForm.website_url}
+                      onChange={(e) => handleEditFieldChange("website_url", e.target.value)}
+                      placeholder="https://restaurant.com"
+                    />
                   </div>
                   <div className="sm:col-span-2 space-y-2">
                     <Label htmlFor="edit-org-address">Address</Label>
@@ -1817,6 +1995,86 @@ export default function Organizations() {
                     />
                   </div>
                   <div className="sm:col-span-2 pt-2">
+                    <p className="text-sm font-semibold text-foreground">Payment Settings</p>
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border p-3">
+                    <div>
+                      <Label htmlFor="edit-org-cash">Cash</Label>
+                      <p className="text-xs text-muted-foreground">Accept cash payments</p>
+                    </div>
+                    <Switch
+                      id="edit-org-cash"
+                      checked={editForm.cash_enabled}
+                      onCheckedChange={(checked) => handleEditFieldChange("cash_enabled", checked)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border p-3">
+                    <div>
+                      <Label htmlFor="edit-org-card">Card</Label>
+                      <p className="text-xs text-muted-foreground">Accept card payments</p>
+                    </div>
+                    <Switch
+                      id="edit-org-card"
+                      checked={editForm.card_enabled}
+                      onCheckedChange={(checked) => handleEditFieldChange("card_enabled", checked)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border p-3">
+                    <div>
+                      <Label htmlFor="edit-org-upi">UPI</Label>
+                      <p className="text-xs text-muted-foreground">Accept UPI payments</p>
+                    </div>
+                    <Switch
+                      id="edit-org-upi"
+                      checked={editForm.upi_enabled}
+                      onCheckedChange={(checked) => handleEditFieldChange("upi_enabled", checked)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border p-3">
+                    <div>
+                      <Label htmlFor="edit-org-wallet">Wallet</Label>
+                      <p className="text-xs text-muted-foreground">Accept wallet payments</p>
+                    </div>
+                    <Switch
+                      id="edit-org-wallet"
+                      checked={editForm.wallet_enabled}
+                      onCheckedChange={(checked) =>
+                        handleEditFieldChange("wallet_enabled", checked)
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border p-3">
+                    <div>
+                      <Label htmlFor="edit-org-online-payment">Online Payment</Label>
+                      <p className="text-xs text-muted-foreground">Enable online payment gateway</p>
+                    </div>
+                    <Switch
+                      id="edit-org-online-payment"
+                      checked={editForm.online_payment_enabled}
+                      onCheckedChange={(checked) =>
+                        handleEditFieldChange("online_payment_enabled", checked)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-org-payment-gateway">Payment Gateway</Label>
+                    <Input
+                      id="edit-org-payment-gateway"
+                      value={editForm.payment_gateway}
+                      onChange={(e) => handleEditFieldChange("payment_gateway", e.target.value)}
+                      onBlur={() => handleEditFieldBlur("payment_gateway")}
+                      placeholder="Razorpay"
+                      className={
+                        editErrors.payment_gateway
+                          ? "border-red-500 focus-visible:ring-red-500"
+                          : ""
+                      }
+                    />
+                    {editErrors.payment_gateway && (
+                      <p className="text-xs text-red-500">{editErrors.payment_gateway}</p>
+                    )}
+                  </div>
+                  <div className="sm:col-span-2 pt-2">
                     <p className="text-sm font-semibold text-foreground">Ordering & Service</p>
                   </div>
                   <div className="flex items-center justify-between rounded-md border p-3">
@@ -1829,6 +2087,19 @@ export default function Organizations() {
                       checked={editForm.enable_online_ordering}
                       onCheckedChange={(checked) =>
                         handleEditFieldChange("enable_online_ordering", checked)
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border p-3">
+                    <div>
+                      <Label htmlFor="edit-org-table-booking">Table Booking</Label>
+                      <p className="text-xs text-muted-foreground">Enable table reservations</p>
+                    </div>
+                    <Switch
+                      id="edit-org-table-booking"
+                      checked={editForm.enable_table_booking}
+                      onCheckedChange={(checked) =>
+                        handleEditFieldChange("enable_table_booking", checked)
                       }
                     />
                   </div>
@@ -1885,6 +2156,25 @@ export default function Organizations() {
                     )}
                   </div>
                   <div className="space-y-2">
+                    <Label htmlFor="edit-org-delivery-charge">Delivery Charge</Label>
+                    <Input
+                      id="edit-org-delivery-charge"
+                      value={editForm.delivery_charge}
+                      onChange={(e) => handleEditFieldChange("delivery_charge", e.target.value)}
+                      onBlur={() => handleEditFieldBlur("delivery_charge")}
+                      inputMode="decimal"
+                      placeholder="40"
+                      className={
+                        editErrors.delivery_charge
+                          ? "border-red-500 focus-visible:ring-red-500"
+                          : ""
+                      }
+                    />
+                    {editErrors.delivery_charge && (
+                      <p className="text-xs text-red-500">{editErrors.delivery_charge}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="edit-org-min-order">Minimum Order Value</Label>
                     <Input
                       id="edit-org-min-order"
@@ -1901,6 +2191,25 @@ export default function Organizations() {
                     />
                     {editErrors.minimum_order_value && (
                       <p className="text-xs text-red-500">{editErrors.minimum_order_value}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-org-free-delivery-above">Free Delivery Above</Label>
+                    <Input
+                      id="edit-org-free-delivery-above"
+                      value={editForm.free_delivery_above}
+                      onChange={(e) => handleEditFieldChange("free_delivery_above", e.target.value)}
+                      onBlur={() => handleEditFieldBlur("free_delivery_above")}
+                      inputMode="decimal"
+                      placeholder="499"
+                      className={
+                        editErrors.free_delivery_above
+                          ? "border-red-500 focus-visible:ring-red-500"
+                          : ""
+                      }
+                    />
+                    {editErrors.free_delivery_above && (
+                      <p className="text-xs text-red-500">{editErrors.free_delivery_above}</p>
                     )}
                   </div>
                   <div className="sm:col-span-2 pt-2">
@@ -2436,6 +2745,8 @@ export default function Organizations() {
                     <TableRow>
                       <TableHead>Restaurant</TableHead>
                       <TableHead>Contact</TableHead>
+                      <TableHead>Plan</TableHead>
+                      <TableHead>Subscription</TableHead>
                       <TableHead>Location</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead className="text-center">Action</TableHead>
@@ -2445,7 +2756,7 @@ export default function Organizations() {
                   <TableBody>
                     {pagedOrganizations.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        <TableCell colSpan={8} className="text-center text-muted-foreground">
                           No results found for current search/filter.
                         </TableCell>
                       </TableRow>
@@ -2454,6 +2765,23 @@ export default function Organizations() {
                         <TableRow key={org.id}>
                           <TableCell className="font-medium">{org.name}</TableCell>
                           <TableCell>{org.email || org.phone || "N/A"}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{org.subscription_plan ?? "trial"}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                org.subscription_status === "active" ? "default" : "secondary"
+                              }
+                            >
+                              {org.subscription_status ?? "active"}
+                            </Badge>
+                            {org.trial_ends_at && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                Trial: {new Date(org.trial_ends_at).toLocaleDateString()}
+                              </div>
+                            )}
+                          </TableCell>
                           <TableCell>
                             {[
                               org.address,
@@ -2479,6 +2807,15 @@ export default function Organizations() {
                               >
                                 <Eye className="h-4 w-4 mr-2" />
                                 View
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                title="Manage Subscription"
+                                onClick={() => openSubManage(org)}
+                                className="h-9"
+                              >
+                                Plan
                               </Button>
                               <Button
                                 variant="secondary"
@@ -2574,6 +2911,62 @@ export default function Organizations() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!subManageOrg} onOpenChange={(open) => !open && setSubManageOrg(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Manage Subscription — {subManageOrg?.name}</DialogTitle>
+            <DialogDescription>
+              Assign a plan or suspend this restaurant&apos;s SaaS access.
+            </DialogDescription>
+          </DialogHeader>
+          {subManageLoading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : (
+            <div className="space-y-4 py-2">
+              {subUsage && (
+                <div className="text-sm text-muted-foreground">
+                  Usage: {(subUsage as any).users?.current}/{(subUsage as any).users?.max} users,{" "}
+                  {(subUsage as any).products?.current}/{(subUsage as any).products?.max} products
+                </div>
+              )}
+              <div>
+                <Label>Assign plan</Label>
+                <select
+                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  value={assignPlanName}
+                  onChange={(e) => setAssignPlanName(e.target.value)}
+                >
+                  {subPlans.map((p) => (
+                    <option key={p.id} value={p.name}>
+                      {p.display_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="destructive"
+              onClick={() => handleSuspendRestaurant(true)}
+              disabled={subManageLoading}
+            >
+              Suspend
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => handleSuspendRestaurant(false)}
+              disabled={subManageLoading}
+            >
+              Reactivate
+            </Button>
+            <Button onClick={handleAssignPlan} disabled={subManageLoading}>
+              Assign Plan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 }

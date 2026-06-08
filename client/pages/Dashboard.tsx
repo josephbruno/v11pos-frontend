@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   TrendingUp,
   DollarSign,
@@ -7,7 +8,6 @@ import {
   Clock,
   AlertTriangle,
   Plus,
-  MoreVertical,
   ArrowUp,
   ArrowDown,
   Zap,
@@ -16,93 +16,144 @@ import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/contexts/ToastContext";
-
-interface DashboardStats {
-  todaySales: number;
-  todayOrders: number;
-  activeStaff: number;
-  avgOrderValue: number;
-  peakHour: string;
-  lowStockItems: number;
-  salesGrowth: number;
-  orderGrowth: number;
-  avgGrowth: number;
-}
+import { useAuth } from "@/contexts/AuthContext";
+import { getOrderStatistics, getFilteredOrders, getDashboardStats, getLowStockAlerts } from "@/lib/apiServices";
 
 interface RecentOrder {
   id: string;
   table: string;
   amount: number;
-  status: "Preparing" | "Ready" | "Delivered" | "Ordered";
+  status: "pending" | "confirmed" | "preparing" | "ready" | "delivered" | "cancelled";
   time: string;
   items: string[];
   customer?: string;
-  avatar?: string;
+}
+
+function formatTimeAgo(dateStr: string | Date | undefined) {
+  if (!dateStr) return "–";
+  const date = new Date(dateStr as string);
+  const diff = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return date.toLocaleDateString();
+}
+
+function todayISORange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+function yesterdayISORange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59);
+  return { start: start.toISOString(), end: end.toISOString() };
 }
 
 export default function Dashboard() {
-  const [stats, setStats] = useState<DashboardStats>({
-    todaySales: 2850.75,
-    todayOrders: 127,
-    activeStaff: 8,
-    avgOrderValue: 22.45,
-    peakHour: "7:30 PM",
-    lowStockItems: 3,
-    salesGrowth: 12.5,
-    orderGrowth: 8.1,
-    avgGrowth: 5.2,
+  const { addToast } = useToast();
+  const { user } = useAuth();
+  const restaurantId = user?.branchId ?? "";
+
+  const todayRange = useMemo(() => todayISORange(), []);
+  const yesterdayRange = useMemo(() => yesterdayISORange(), []);
+
+  const { data: todayStats } = useQuery({
+    queryKey: ["orderStatistics", restaurantId, "today"],
+    queryFn: () => getOrderStatistics(restaurantId, todayRange.start, todayRange.end),
+    enabled: !!restaurantId,
+    select: (r: any) => r?.data ?? r,
+    staleTime: 60_000,
   });
 
-  const { addToast } = useToast();
+  const { data: yesterdayStats } = useQuery({
+    queryKey: ["orderStatistics", restaurantId, "yesterday"],
+    queryFn: () => getOrderStatistics(restaurantId, yesterdayRange.start, yesterdayRange.end),
+    enabled: !!restaurantId,
+    select: (r: any) => r?.data ?? r,
+    staleTime: 60_000,
+  });
 
-  const recentOrders: RecentOrder[] = [
-    {
-      id: "#1234",
-      table: "Table 5",
-      amount: 45.5,
-      status: "Preparing",
-      time: "2 min ago",
-      items: ["Grilled Chicken", "Caesar Salad"],
-      customer: "John Smith",
-      avatar:
-        "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=40&h=40&fit=crop&crop=face",
+  const { data: recentOrdersRaw } = useQuery({
+    queryKey: ["recentOrders", restaurantId],
+    queryFn: () => getFilteredOrders(restaurantId, { limit: 6, skip: 0 }),
+    enabled: !!restaurantId,
+    select: (r: any) => {
+      const src = r?.data ?? r;
+      if (Array.isArray(src)) return src;
+      if (Array.isArray(src?.orders)) return src.orders;
+      return [];
     },
-    {
-      id: "#1235",
-      table: "Takeaway",
-      amount: 28.75,
-      status: "Ready",
-      time: "5 min ago",
-      items: ["Fish & Chips", "Coca Cola"],
-      customer: "Sarah Wilson",
-      avatar:
-        "https://images.unsplash.com/photo-1494790108755-2616b612c29d?w=40&h=40&fit=crop&crop=face",
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  });
+
+  const { data: dashboardRaw } = useQuery({
+    queryKey: ["dashboardStats", restaurantId],
+    queryFn: () => getDashboardStats(restaurantId, "today"),
+    enabled: !!restaurantId,
+    select: (r: any) => r?.data ?? r,
+    staleTime: 60_000,
+  });
+
+  const { data: alertsRaw } = useQuery({
+    queryKey: ["lowStockAlerts", restaurantId],
+    queryFn: () => getLowStockAlerts(restaurantId),
+    enabled: !!restaurantId,
+    select: (r: any) => {
+      const src = r?.data ?? r;
+      if (Array.isArray(src)) return src;
+      if (src && typeof src === "object" && Array.isArray((src as any).alerts)) {
+        return (src as any).alerts;
+      }
+      return [];
     },
-    {
-      id: "#1236",
-      table: "Table 2",
-      amount: 67.25,
-      status: "Delivered",
-      time: "8 min ago",
-      items: ["Burger Deluxe", "Fries", "Milkshake"],
-      customer: "Mike Johnson",
-      avatar:
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&crop=face",
-    },
-    {
-      id: "#1237",
-      table: "Table 8",
-      amount: 34.0,
-      status: "Ordered",
-      time: "12 min ago",
-      items: ["Pasta Carbonara"],
-      customer: "Emily Davis",
-      avatar:
-        "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=40&h=40&fit=crop&crop=face",
-    },
-  ];
+    staleTime: 120_000,
+  });
+
+  const todaySales = (todayStats?.total_revenue ?? 0) / 100;
+  const todayOrders = todayStats?.total_orders ?? 0;
+  const avgOrderValue = (todayStats?.avg_order_value ?? 0) / 100;
+
+  const yesterdaySales = (yesterdayStats?.total_revenue ?? 0) / 100;
+  const yesterdayOrders = yesterdayStats?.total_orders ?? 0;
+  const yesterdayAvg = (yesterdayStats?.avg_order_value ?? 0) / 100;
+
+  const salesGrowth =
+    yesterdaySales > 0 ? (((todaySales - yesterdaySales) / yesterdaySales) * 100).toFixed(1) : null;
+  const orderGrowth =
+    yesterdayOrders > 0
+      ? (((todayOrders - yesterdayOrders) / yesterdayOrders) * 100).toFixed(1)
+      : null;
+  const avgGrowth =
+    yesterdayAvg > 0
+      ? (((avgOrderValue - yesterdayAvg) / yesterdayAvg) * 100).toFixed(1)
+      : null;
+
+  const lowStockItems = alertsRaw?.length ?? 0;
+
+  const topProducts = useMemo(() => {
+    const items = dashboardRaw?.top_products ?? [];
+    return Array.isArray(items) ? items.slice(0, 5) : [];
+  }, [dashboardRaw]);
+
+  const recentOrders: RecentOrder[] = useMemo(() => {
+    if (!recentOrdersRaw) return [];
+    return recentOrdersRaw.slice(0, 5).map((o: any) => ({
+      id: o.order_number ? `#${o.order_number}` : `#${o.id?.slice(-4)}`,
+      table: o.table_id ? `Table ${o.table_id}` : o.order_type === "takeaway" ? "Takeaway" : o.order_type ?? "–",
+      amount: o.total_amount ?? 0,
+      status: o.status ?? "pending",
+      time: formatTimeAgo(o.created_at),
+      items: (o.items ?? []).map((item: any) => item.product_name ?? item.name ?? "Item"),
+      customer: o.guest_name ?? o.customer?.name ?? undefined,
+    }));
+  }, [recentOrdersRaw]);
 
   const quickActions = [
     {
@@ -145,14 +196,16 @@ export default function Dashboard() {
 
   const getStatusColor = (status: RecentOrder["status"]) => {
     switch (status) {
-      case "Delivered":
+      case "delivered":
         return "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400";
-      case "Ready":
+      case "ready":
         return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400";
-      case "Preparing":
+      case "preparing":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400";
-      case "Ordered":
-        return "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400";
+      case "confirmed":
+        return "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400";
+      case "cancelled":
+        return "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400";
       default:
         return "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400";
     }
@@ -160,23 +213,12 @@ export default function Dashboard() {
 
   const containerVariants = {
     hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-      },
-    },
+    visible: { opacity: 1, transition: { staggerChildren: 0.1 } },
   };
 
   const itemVariants = {
     hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        duration: 0.5,
-      },
-    },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
   };
 
   return (
@@ -192,9 +234,7 @@ export default function Dashboard() {
         className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0"
       >
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold text-foreground">
-            Dashboard
-          </h1>
+          <h1 className="text-2xl lg:text-3xl font-bold text-foreground">Dashboard</h1>
           <p className="text-muted-foreground mt-1">
             Welcome back! Here's what's happening today.
           </p>
@@ -220,18 +260,22 @@ export default function Dashboard() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Today's Sales
-                  </p>
+                  <p className="text-sm font-medium text-muted-foreground">Today's Sales</p>
                   <p className="text-2xl font-bold text-foreground">
-                    ${stats.todaySales.toLocaleString()}
+                    ₹{todaySales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
-                  <div className="flex items-center mt-1">
-                    <ArrowUp className="h-3 w-3 text-green-500 mr-1" />
-                    <span className="text-xs text-green-500 font-medium">
-                      +{stats.salesGrowth}%
-                    </span>
-                  </div>
+                  {salesGrowth !== null && (
+                    <div className="flex items-center mt-1">
+                      {Number(salesGrowth) >= 0 ? (
+                        <ArrowUp className="h-3 w-3 text-green-500 mr-1" />
+                      ) : (
+                        <ArrowDown className="h-3 w-3 text-red-500 mr-1" />
+                      )}
+                      <span className={`text-xs font-medium ${Number(salesGrowth) >= 0 ? "text-green-500" : "text-red-500"}`}>
+                        {Number(salesGrowth) >= 0 ? "+" : ""}{salesGrowth}%
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div className="h-12 w-12 bg-green-500/10 rounded-full flex items-center justify-center">
                   <DollarSign className="h-6 w-6 text-green-500" />
@@ -246,18 +290,20 @@ export default function Dashboard() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Orders Today
-                  </p>
-                  <p className="text-2xl font-bold text-foreground">
-                    {stats.todayOrders}
-                  </p>
-                  <div className="flex items-center mt-1">
-                    <ArrowUp className="h-3 w-3 text-blue-500 mr-1" />
-                    <span className="text-xs text-blue-500 font-medium">
-                      +{stats.orderGrowth}%
-                    </span>
-                  </div>
+                  <p className="text-sm font-medium text-muted-foreground">Orders Today</p>
+                  <p className="text-2xl font-bold text-foreground">{todayOrders}</p>
+                  {orderGrowth !== null && (
+                    <div className="flex items-center mt-1">
+                      {Number(orderGrowth) >= 0 ? (
+                        <ArrowUp className="h-3 w-3 text-blue-500 mr-1" />
+                      ) : (
+                        <ArrowDown className="h-3 w-3 text-red-500 mr-1" />
+                      )}
+                      <span className={`text-xs font-medium ${Number(orderGrowth) >= 0 ? "text-blue-500" : "text-red-500"}`}>
+                        {Number(orderGrowth) >= 0 ? "+" : ""}{orderGrowth}%
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div className="h-12 w-12 bg-blue-500/10 rounded-full flex items-center justify-center">
                   <ShoppingBag className="h-6 w-6 text-blue-500" />
@@ -272,14 +318,12 @@ export default function Dashboard() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Active Staff
-                  </p>
+                  <p className="text-sm font-medium text-muted-foreground">Active Orders</p>
                   <p className="text-2xl font-bold text-foreground">
-                    {stats.activeStaff}
+                    {(todayStats?.pending_orders ?? 0) + (todayStats?.confirmed_orders ?? 0) + (todayStats?.preparing_orders ?? 0)}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    All shifts covered
+                    {todayStats?.ready_orders ?? 0} ready
                   </p>
                 </div>
                 <div className="h-12 w-12 bg-purple-500/10 rounded-full flex items-center justify-center">
@@ -295,18 +339,22 @@ export default function Dashboard() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Avg Order Value
-                  </p>
+                  <p className="text-sm font-medium text-muted-foreground">Avg Order Value</p>
                   <p className="text-2xl font-bold text-foreground">
-                    ${stats.avgOrderValue}
+                    ${avgOrderValue.toFixed(2)}
                   </p>
-                  <div className="flex items-center mt-1">
-                    <ArrowUp className="h-3 w-3 text-orange-500 mr-1" />
-                    <span className="text-xs text-orange-500 font-medium">
-                      +{stats.avgGrowth}%
-                    </span>
-                  </div>
+                  {avgGrowth !== null && (
+                    <div className="flex items-center mt-1">
+                      {Number(avgGrowth) >= 0 ? (
+                        <ArrowUp className="h-3 w-3 text-orange-500 mr-1" />
+                      ) : (
+                        <ArrowDown className="h-3 w-3 text-red-500 mr-1" />
+                      )}
+                      <span className={`text-xs font-medium ${Number(avgGrowth) >= 0 ? "text-orange-500" : "text-red-500"}`}>
+                        {Number(avgGrowth) >= 0 ? "+" : ""}{avgGrowth}%
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div className="h-12 w-12 bg-orange-500/10 rounded-full flex items-center justify-center">
                   <TrendingUp className="h-6 w-6 text-orange-500" />
@@ -319,9 +367,7 @@ export default function Dashboard() {
 
       {/* Quick Actions */}
       <motion.div variants={itemVariants}>
-        <h2 className="text-lg font-semibold text-foreground mb-4">
-          Quick Actions
-        </h2>
+        <h2 className="text-lg font-semibold text-foreground mb-4">Quick Actions</h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {quickActions.map((action, index) => (
             <motion.div
@@ -329,11 +375,7 @@ export default function Dashboard() {
               whileHover={{ scale: 1.05, y: -5 }}
               whileTap={{ scale: 0.95 }}
               initial={{ opacity: 0, y: 20 }}
-              animate={{
-                opacity: 1,
-                y: 0,
-                transition: { delay: index * 0.1 },
-              }}
+              animate={{ opacity: 1, y: 0, transition: { delay: index * 0.1 } }}
             >
               <Card
                 className="bg-card border-border hover:shadow-lg cursor-pointer transition-all duration-300 group"
@@ -348,9 +390,7 @@ export default function Dashboard() {
                   <h3 className="font-medium text-foreground group-hover:text-pos-accent transition-colors">
                     {action.name}
                   </h3>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {action.description}
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">{action.description}</p>
                 </CardContent>
               </Card>
             </motion.div>
@@ -367,57 +407,51 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {recentOrders.map((order, index) => (
-                  <motion.div
-                    key={order.id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{
-                      opacity: 1,
-                      x: 0,
-                      transition: { delay: index * 0.1 },
-                    }}
-                    whileHover={{ scale: 1.02 }}
-                    className="flex items-center justify-between p-4 rounded-lg bg-muted/50 border border-border hover:shadow-md transition-all duration-200"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={order.avatar} alt={order.customer} />
-                        <AvatarFallback className="bg-pos-accent text-white text-sm">
-                          {order.customer
-                            ?.split(" ")
-                            .map((n) => n[0])
-                            .join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium text-foreground">
-                            {order.id}
-                          </span>
-                          <Badge
-                            className={`text-xs ${getStatusColor(order.status)}`}
-                          >
-                            {order.status}
-                          </Badge>
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {order.table} • {order.customer}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {order.items.join(", ")}
+                {recentOrders.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-6">No orders yet today</p>
+                ) : (
+                  recentOrders.map((order, index) => (
+                    <motion.div
+                      key={order.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0, transition: { delay: index * 0.1 } }}
+                      whileHover={{ scale: 1.02 }}
+                      className="flex items-center justify-between p-4 rounded-lg bg-muted/50 border border-border hover:shadow-md transition-all duration-200"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <Avatar className="h-10 w-10">
+                          <AvatarFallback className="bg-pos-accent text-white text-sm">
+                            {order.customer
+                              ? order.customer.split(" ").map((n) => n[0]).join("")
+                              : order.id.slice(-2)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <span className="font-medium text-foreground">{order.id}</span>
+                            <Badge className={`text-xs ${getStatusColor(order.status)}`}>
+                              {order.status}
+                            </Badge>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {order.table}
+                            {order.customer ? ` • ${order.customer}` : ""}
+                          </div>
+                          {order.items.length > 0 && (
+                            <div className="text-xs text-muted-foreground">
+                              {order.items.slice(0, 3).join(", ")}
+                              {order.items.length > 3 ? ` +${order.items.length - 3}` : ""}
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-medium text-foreground">
-                        ${order.amount}
+                      <div className="text-right">
+                        <div className="font-medium text-foreground">${order.amount.toFixed(2)}</div>
+                        <div className="text-sm text-muted-foreground">{order.time}</div>
                       </div>
-                      <div className="text-sm text-muted-foreground">
-                        {order.time}
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
@@ -439,15 +473,13 @@ export default function Dashboard() {
                     <Clock className="h-5 w-5 text-blue-500" />
                   </div>
                   <div>
-                    <div className="font-medium text-foreground">Peak Hour</div>
-                    <div className="text-sm text-muted-foreground">
-                      Today's busiest time
-                    </div>
+                    <div className="font-medium text-foreground">Active Orders</div>
+                    <div className="text-sm text-muted-foreground">Pending + Preparing</div>
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="font-bold text-foreground">
-                    {stats.peakHour}
+                    {(todayStats?.pending_orders ?? 0) + (todayStats?.preparing_orders ?? 0)}
                   </div>
                 </div>
               </motion.div>
@@ -461,17 +493,13 @@ export default function Dashboard() {
                     <AlertTriangle className="h-5 w-5 text-yellow-500" />
                   </div>
                   <div>
-                    <div className="font-medium text-foreground">
-                      Low Stock Alert
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      Items need restocking
-                    </div>
+                    <div className="font-medium text-foreground">Low Stock Alert</div>
+                    <div className="text-sm text-muted-foreground">Items need restocking</div>
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="font-bold text-yellow-600 dark:text-yellow-400">
-                    {stats.lowStockItems} items
+                    {lowStockItems} items
                   </div>
                 </div>
               </motion.div>
@@ -482,20 +510,22 @@ export default function Dashboard() {
               >
                 <div className="flex items-center space-x-3">
                   <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
-                    <Users className="h-5 w-5 text-green-500" />
+                    <ShoppingBag className="h-5 w-5 text-green-500" />
                   </div>
                   <div>
-                    <div className="font-medium text-foreground">
-                      Table Occupancy
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      Currently occupied
-                    </div>
+                    <div className="font-medium text-foreground">Completed Orders</div>
+                    <div className="text-sm text-muted-foreground">Delivered today</div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-bold text-foreground">12/20 tables</div>
-                  <div className="text-xs text-green-500">60% occupied</div>
+                  <div className="font-bold text-foreground">
+                    {todayStats?.delivered_orders ?? 0}
+                  </div>
+                  {todayOrders > 0 && (
+                    <div className="text-xs text-green-500">
+                      {Math.round(((todayStats?.delivered_orders ?? 0) / todayOrders) * 100)}% rate
+                    </div>
+                  )}
                 </div>
               </motion.div>
             </CardContent>

@@ -40,11 +40,14 @@ function normalizeTokenType(tokenType?: string): string {
 
 function normalizeUserRole(role?: string): User["role"] {
   const normalizedRole = (role || "").toLowerCase().trim();
-  if (normalizedRole === "superadmin" || normalizedRole === "super_admin") {
-    return "super_admin";
-  }
+  if (normalizedRole === "superadmin" || normalizedRole === "super_admin") return "super_admin";
   if (normalizedRole === "admin") return "admin";
   if (normalizedRole === "supervisor") return "supervisor";
+  if (normalizedRole === "cashier") return "cashier";
+  if (normalizedRole === "waiter") return "waiter";
+  if (normalizedRole === "mobile-kds" || normalizedRole === "mobile_kds") return "mobile-kds";
+  if (normalizedRole === "kitchen-kds" || normalizedRole === "kitchen_kds") return "kitchen-kds";
+  if (normalizedRole === "kiosk-machine" || normalizedRole === "kiosk_machine") return "kiosk-machine";
   return "user";
 }
 

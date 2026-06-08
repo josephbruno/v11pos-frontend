@@ -48,6 +48,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { CustomerAuthProvider } from "./contexts/CustomerAuthContext";
 import { UserRole } from "./lib/navigation";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ToastProvider } from "./contexts/ToastContext";
@@ -61,27 +62,25 @@ import Analytics from "./pages/Analytics";
 import Reports from "./pages/Reports";
 import CategoryConfiguration from "./pages/CategoryConfiguration";
 import Organizations from "./pages/Organizations";
-import Branches from "./pages/Branches";
 import Migration from "./pages/Migration";
-import Workflows from "./pages/Workflows";
 import GlobalAnalytics from "./pages/GlobalAnalytics";
-import Network from "./pages/Network";
-import Security from "./pages/Security";
-import SuperAdminSettings from "./pages/SuperAdminSettings";
+import KitchenDisplay from "./pages/KitchenDisplay";
+import StaffManagement from "./pages/StaffManagement";
+import InventoryManagement from "./pages/InventoryManagement";
+import { CustomerAppRedirect } from "./components/CustomerAppRedirect";
 import TableBooking from "./pages/TableBooking";
-import CustomerBooking from "./pages/CustomerBooking";
 import ProductManagement from "./pages/ProductManagement";
 import ModifierOptionsManagement from "./pages/ModifierOptionsManagement";
 import ComboManagement from "./pages/ComboManagement";
-import TaxManagement from "./pages/TaxManagement";
 import CustomerManagement from "./pages/CustomerManagement";
 import QRManagement from "./pages/QRManagement";
-import CustomerMenu from "./pages/CustomerMenu";
-import QRMenuLanding from "./pages/QRMenuLanding";
-import QRCheckout from "./pages/QRCheckout";
-import OrderTracking from "./pages/OrderTracking";
+import TableTransferApprovals from "./pages/TableTransferApprovals";
+import TableOrderApprovals from "./pages/TableOrderApprovals";
 import UserManagement from "./pages/UserManagement";
 import Settings from "./pages/Settings";
+import Billing from "./pages/Billing";
+import SubscriptionPlans from "./pages/SubscriptionPlans";
+import SubscriptionGuard from "./components/SubscriptionGuard";
 import HomebannerManagement from "./pages/HomebannerManagement";
 import RowManagementPage from "./pages/RowManagement";
 import Login from "./pages/Login";
@@ -92,7 +91,10 @@ const queryClient = new QueryClient();
 
 function getRoleBasePath(role?: string) {
   const normalized = String(role || "").toLowerCase().trim();
-  return normalized === "super_admin" ? "/super-admin" : "/admin";
+  if (normalized === "super_admin") return "/super-admin";
+  if (normalized === "mobile-kds" || normalized === "kitchen-kds") return "/admin/kds";
+  if (normalized === "kiosk-machine") return "/admin/order";
+  return "/admin";
 }
 
 function RolePreservingRedirect({ suffix }: { suffix?: string }) {
@@ -164,7 +166,10 @@ function LayoutWrapper({ children }: { children: React.ReactNode }) {
     return <SuperAdminLayout>{children}</SuperAdminLayout>;
   }
 
-  return <Layout>{children}</Layout>;
+  const inner =
+    user?.role === "admin" ? <SubscriptionGuard>{children}</SubscriptionGuard> : children;
+
+  return <Layout>{inner}</Layout>;
 }
 
 function AppRoutes() {
@@ -182,12 +187,12 @@ function AppRoutes() {
           path="/forgot-password"
           element={user ? <Navigate to={defaultAppPath} replace /> : <ForgotPassword />}
         />
-        {/* Public QR Menu Routes */}
-        <Route path="/qr-menu/:tableToken" element={<QRMenuLanding />} />
-        <Route path="/qr-menu/:tableToken/menu" element={<CustomerMenu />} />
-        <Route path="/qr-checkout/:tableToken" element={<QRCheckout />} />
-        <Route path="/qr-order/:orderId/track" element={<OrderTracking />} />
-        <Route path="/book-table" element={<CustomerBooking />} />
+        {/* Legacy QR routes → customer app (client-frontend) */}
+        <Route path="/qr-menu/:tableToken" element={<CustomerAppRedirect path="/order" />} />
+        <Route path="/qr-menu/:tableToken/menu" element={<CustomerAppRedirect path="/order" />} />
+        <Route path="/qr-checkout/:tableToken" element={<CustomerAppRedirect path="/order" />} />
+        <Route path="/qr-order/:orderId/track" element={<CustomerAppRedirect path="/orders" />} />
+        <Route path="/book-table" element={<CustomerAppRedirect path="/tables" />} />
         <Route
           path="/"
           element={
@@ -199,7 +204,7 @@ function AppRoutes() {
         <Route
           path="/admin"
           element={
-            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user"]}>
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user", "cashier", "waiter"]}>
               <LayoutWrapper>
                 <Dashboard />
               </LayoutWrapper>
@@ -211,7 +216,7 @@ function AppRoutes() {
           element={
             <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
-                <Dashboard />
+                <GlobalAnalytics />
               </LayoutWrapper>
             </RoleProtectedRoute>
           }
@@ -307,11 +312,11 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/super-admin/branches"
+          path="/super-admin/subscription-plans"
           element={
             <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
-                <Branches />
+                <SubscriptionPlans />
               </LayoutWrapper>
             </RoleProtectedRoute>
           }
@@ -327,16 +332,6 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/super-admin/workflows"
-          element={
-            <RoleProtectedRoute allowedRoles={["super_admin"]}>
-              <LayoutWrapper>
-                <Workflows />
-              </LayoutWrapper>
-            </RoleProtectedRoute>
-          }
-        />
-        <Route
           path="/super-admin/analytics"
           element={
             <RoleProtectedRoute allowedRoles={["super_admin"]}>
@@ -346,42 +341,12 @@ function AppRoutes() {
             </RoleProtectedRoute>
           }
         />
-        <Route
-          path="/super-admin/network"
-          element={
-            <RoleProtectedRoute allowedRoles={["super_admin"]}>
-              <LayoutWrapper>
-                <Network />
-              </LayoutWrapper>
-            </RoleProtectedRoute>
-          }
-        />
-        <Route
-          path="/super-admin/security"
-          element={
-            <RoleProtectedRoute allowedRoles={["super_admin"]}>
-              <LayoutWrapper>
-                <Security />
-              </LayoutWrapper>
-            </RoleProtectedRoute>
-          }
-        />
-        <Route
-          path="/super-admin/settings"
-          element={
-            <RoleProtectedRoute allowedRoles={["super_admin"]}>
-              <LayoutWrapper>
-                <SuperAdminSettings />
-              </LayoutWrapper>
-            </RoleProtectedRoute>
-          }
-        />
 
         {/* Admin scoped routes */}
         <Route
           path="/admin/order"
           element={
-            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user"]}>
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user", "cashier", "waiter", "kiosk-machine"]}>
               <LayoutWrapper>
                 <OrderPanel />
               </LayoutWrapper>
@@ -391,9 +356,39 @@ function AppRoutes() {
         <Route
           path="/admin/queue"
           element={
-            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user"]}>
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user", "cashier", "waiter", "mobile-kds", "kitchen-kds"]}>
               <LayoutWrapper>
                 <OrderQueue />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/kds"
+          element={
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user", "mobile-kds", "kitchen-kds"]}>
+              <LayoutWrapper>
+                <KitchenDisplay />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/staff"
+          element={
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor"]}>
+              <LayoutWrapper>
+                <StaffManagement />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/inventory"
+          element={
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor"]}>
+              <LayoutWrapper>
+                <InventoryManagement />
               </LayoutWrapper>
             </RoleProtectedRoute>
           }
@@ -459,16 +454,6 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/admin/tax"
-          element={
-            <RoleProtectedRoute allowedRoles={["admin"]}>
-              <LayoutWrapper>
-                <TaxManagement />
-              </LayoutWrapper>
-            </RoleProtectedRoute>
-          }
-        />
-        <Route
           path="/admin/customers"
           element={
             <RoleProtectedRoute allowedRoles={["admin", "supervisor"]}>
@@ -521,9 +506,29 @@ function AppRoutes() {
         <Route
           path="/admin/table-booking"
           element={
-            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user"]}>
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user", "waiter"]}>
               <LayoutWrapper>
                 <TableBooking />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/table-transfers"
+          element={
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user", "waiter", "cashier"]}>
+              <LayoutWrapper>
+                <TableTransferApprovals />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/table-order-approvals"
+          element={
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user", "waiter", "cashier"]}>
+              <LayoutWrapper>
+                <TableOrderApprovals />
               </LayoutWrapper>
             </RoleProtectedRoute>
           }
@@ -544,6 +549,16 @@ function AppRoutes() {
             <RoleProtectedRoute allowedRoles={["admin"]}>
               <LayoutWrapper>
                 <Settings />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/billing"
+          element={
+            <RoleProtectedRoute allowedRoles={["admin"]}>
+              <LayoutWrapper>
+                <Billing />
               </LayoutWrapper>
             </RoleProtectedRoute>
           }
@@ -576,16 +591,6 @@ function AppRoutes() {
             <RoleProtectedRoute allowedRoles={["super_admin"]}>
               <LayoutWrapper>
                 <Reports />
-              </LayoutWrapper>
-            </RoleProtectedRoute>
-          }
-        />
-        <Route
-          path="/super-admin/tax"
-          element={
-            <RoleProtectedRoute allowedRoles={["super_admin"]}>
-              <LayoutWrapper>
-                <TaxManagement />
               </LayoutWrapper>
             </RoleProtectedRoute>
           }
@@ -753,15 +758,17 @@ const App = () => (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <ToastProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Sonner />
-              <BrowserRouter>
-                <AppRoutes />
-              </BrowserRouter>
-            </TooltipProvider>
-          </ToastProvider>
+          <CustomerAuthProvider>
+            <ToastProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Sonner />
+                <BrowserRouter>
+                  <AppRoutes />
+                </BrowserRouter>
+              </TooltipProvider>
+            </ToastProvider>
+          </CustomerAuthProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
