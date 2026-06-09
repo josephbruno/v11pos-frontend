@@ -9,7 +9,6 @@ import {
     FileText,
     Heart,
     Monitor,
-    QrCode,
     ClipboardCheck,
     ArrowRightLeft,
     Calendar,
@@ -21,6 +20,7 @@ import {
     LayoutGrid,
     CreditCard,
     Receipt,
+    ClipboardList,
 } from "lucide-react";
 
 export type UserRole = "super_admin" | "admin" | "supervisor" | "user" | "cashier" | "waiter" | "mobile-kds" | "kitchen-kds" | "kiosk-machine";
@@ -141,34 +141,14 @@ export const navigationConfig: NavItem[] = [
         category: "data",
     },
 
-    // Regular Admin, Supervisor, User
+    // Restaurant admin, supervisor, and staff
     {
         name: "Dashboard",
         href: "/admin",
         icon: LayoutDashboard,
         description: "Overview & Quick Stats",
         roles: ["admin", "supervisor", "user", "cashier", "waiter"],
-    },
-    {
-        name: "Order Terminal",
-        href: "/admin/order",
-        icon: ShoppingCart,
-        description: "POS & Billing",
-        roles: ["admin", "supervisor", "user", "cashier", "waiter", "kiosk-machine"],
-    },
-    {
-        name: "Kitchen Queue",
-        href: "/admin/queue",
-        icon: Monitor,
-        description: "Live Order Queue",
-        roles: ["admin", "supervisor", "user", "cashier", "waiter", "mobile-kds", "kitchen-kds"],
-    },
-    {
-        name: "Kitchen Display",
-        href: "/admin/kds",
-        icon: ChefHat,
-        description: "KDS stations & KOT",
-        roles: ["admin", "supervisor", "user", "mobile-kds", "kitchen-kds"],
+        category: "overview",
     },
     {
         name: "Analytics",
@@ -176,6 +156,7 @@ export const navigationConfig: NavItem[] = [
         icon: BarChart3,
         description: "Reports & Insights",
         roles: ["admin", "supervisor"],
+        category: "overview",
     },
     {
         name: "Reports",
@@ -183,6 +164,39 @@ export const navigationConfig: NavItem[] = [
         icon: FileText,
         description: "Business Analytics",
         roles: ["admin", "supervisor"],
+        category: "overview",
+    },
+    {
+        name: "Order Terminal",
+        href: "/admin/order",
+        icon: ShoppingCart,
+        description: "POS & Billing",
+        roles: ["admin", "supervisor", "user", "cashier", "waiter", "kiosk-machine"],
+        category: "operations",
+    },
+    {
+        name: "Orders",
+        href: "/admin/orders",
+        icon: ClipboardList,
+        description: "View & manage orders",
+        roles: ["admin", "supervisor", "user", "cashier", "waiter"],
+        category: "operations",
+    },
+    {
+        name: "Kitchen Queue",
+        href: "/admin/queue",
+        icon: Monitor,
+        description: "Live Order Queue",
+        roles: ["admin", "supervisor", "user", "cashier", "waiter", "mobile-kds", "kitchen-kds"],
+        category: "operations",
+    },
+    {
+        name: "Kitchen Display",
+        href: "/admin/kds",
+        icon: ChefHat,
+        description: "KDS stations & KOT",
+        roles: ["admin", "supervisor", "user", "mobile-kds", "kitchen-kds"],
+        category: "operations",
     },
     {
         name: "Category",
@@ -190,20 +204,15 @@ export const navigationConfig: NavItem[] = [
         icon: Layers3,
         description: "Category Management",
         roles: ["admin"],
+        category: "configuration",
     },
     {
-        name: "Products",
+        name: "Product",
         href: "/admin/products",
         icon: Package,
-        description: "Menu management",
+        description: "Product Management",
         roles: ["admin", "supervisor"],
-    },
-    {
-        name: "Inventory",
-        href: "/admin/inventory",
-        icon: Package,
-        description: "Stock & ingredients",
-        roles: ["admin", "supervisor"],
+        category: "configuration",
     },
     {
         name: "Modifiers",
@@ -211,6 +220,7 @@ export const navigationConfig: NavItem[] = [
         icon: FileText,
         description: "Modifier Management",
         roles: ["admin", "supervisor"],
+        category: "configuration",
     },
     {
         name: "Modifier Options",
@@ -218,13 +228,15 @@ export const navigationConfig: NavItem[] = [
         icon: GitBranch,
         description: "Option Management",
         roles: ["admin", "supervisor", "user"],
+        category: "configuration",
     },
     {
-        name: "Combos",
+        name: "Combo Product",
         href: "/admin/combos",
         icon: ChefHat,
-        description: "Combo Products",
+        description: "Combo Product Management",
         roles: ["admin", "supervisor"],
+        category: "configuration",
     },
     {
         name: "Customers",
@@ -232,13 +244,15 @@ export const navigationConfig: NavItem[] = [
         icon: Heart,
         description: "Customer & Loyalty",
         roles: ["admin", "supervisor"],
+        category: "configuration",
     },
     {
         name: "Home Banners",
         href: "/admin/homebanners",
         icon: Globe,
-        description: "Homepage Banners",
+        description: "Homepage Banner Management",
         roles: ["admin", "supervisor"],
+        category: "configuration",
     },
     {
         name: "Row Management",
@@ -246,13 +260,15 @@ export const navigationConfig: NavItem[] = [
         icon: LayoutGrid,
         description: "Homepage Rows & Sections",
         roles: ["admin", "supervisor"],
+        category: "configuration",
     },
     {
-        name: "QR Orders",
-        href: "/admin/qr-management",
-        icon: QrCode,
-        description: "QR Code & Tables",
+        name: "Tables",
+        href: "/admin/tables",
+        icon: Calendar,
+        description: "Table Management",
         roles: ["admin", "supervisor"],
+        category: "dining",
     },
     {
         name: "QR Order Approvals",
@@ -260,6 +276,7 @@ export const navigationConfig: NavItem[] = [
         icon: ClipboardCheck,
         description: "Approve customer QR table orders",
         roles: ["admin", "supervisor", "user", "waiter", "cashier"],
+        category: "dining",
     },
     {
         name: "Table Transfers",
@@ -267,6 +284,7 @@ export const navigationConfig: NavItem[] = [
         icon: ArrowRightLeft,
         description: "Approve QR table transfer requests",
         roles: ["admin", "supervisor", "user", "waiter", "cashier"],
+        category: "dining",
     },
     {
         name: "Table Booking",
@@ -274,27 +292,23 @@ export const navigationConfig: NavItem[] = [
         icon: Calendar,
         description: "Reservations & Tables",
         roles: ["admin", "supervisor", "user", "waiter"],
+        category: "dining",
     },
     {
         name: "Users",
         href: "/admin/users",
         icon: Users,
-        description: "System users & roles",
+        description: "User & Role Management",
         roles: ["admin"],
-    },
-    {
-        name: "Staff & HR",
-        href: "/admin/staff",
-        icon: Users,
-        description: "Employees, attendance, shifts",
-        roles: ["admin", "supervisor"],
+        category: "administration",
     },
     {
         name: "Settings",
         href: "/admin/settings",
         icon: Settings,
-        description: "Configuration",
+        description: "Restaurant Configuration",
         roles: ["admin"],
+        category: "administration",
     },
     {
         name: "Billing",
@@ -302,9 +316,40 @@ export const navigationConfig: NavItem[] = [
         icon: Receipt,
         description: "Subscription & invoices",
         roles: ["admin"],
+        category: "administration",
     },
 ];
 
+export const adminNavCategoryOrder = [
+    "overview",
+    "operations",
+    "configuration",
+    "dining",
+    "administration",
+] as const;
+
+export const adminNavCategoryLabels: Record<string, string> = {
+    overview: "Overview",
+    operations: "Operations",
+    configuration: "Configuration",
+    dining: "Tables & Dining",
+    administration: "Administration",
+};
+
 export const getNavigationForRole = (role: UserRole) => {
     return navigationConfig.filter((item) => item.roles.includes(role));
+};
+
+export const groupNavigationByCategory = (items: NavItem[]) => {
+    return items.reduce(
+        (acc, item) => {
+            const category = item.category || "other";
+            if (!acc[category]) {
+                acc[category] = [];
+            }
+            acc[category].push(item);
+            return acc;
+        },
+        {} as Record<string, NavItem[]>,
+    );
 };

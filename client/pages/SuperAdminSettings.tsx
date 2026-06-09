@@ -60,9 +60,9 @@ const systemSettings = {
   general: {
     systemName: "RestaurantPOS Global System",
     systemVersion: "v2.1.3",
-    defaultTimezone: "UTC",
-    defaultLanguage: "en-US",
-    defaultCurrency: "USD",
+    defaultTimezone: "Asia/Kolkata",
+    defaultLanguage: "en-IN",
+    defaultCurrency: "INR",
     maintenanceMode: false,
     debugMode: false,
     systemDescription: "Global restaurant management platform",
@@ -116,31 +116,14 @@ const systemSettings = {
 };
 
 const timezones = [
-  { value: "UTC", label: "UTC (Coordinated Universal Time)" },
-  { value: "America/New_York", label: "Eastern Time (New York)" },
-  { value: "America/Los_Angeles", label: "Pacific Time (Los Angeles)" },
-  { value: "Europe/London", label: "Greenwich Mean Time (London)" },
-  { value: "Asia/Tokyo", label: "Japan Standard Time (Tokyo)" },
-  { value: "Australia/Sydney", label: "Australian Eastern Time (Sydney)" },
+  { value: "Asia/Kolkata", label: "India Standard Time (IST)" },
 ];
 
 const languages = [
-  { value: "en-US", label: "English (US)" },
-  { value: "en-GB", label: "English (UK)" },
-  { value: "es-ES", label: "Spanish" },
-  { value: "fr-FR", label: "French" },
-  { value: "de-DE", label: "German" },
-  { value: "ja-JP", label: "Japanese" },
-  { value: "zh-CN", label: "Chinese (Simplified)" },
+  { value: "en-IN", label: "English (India)" },
 ];
 
 const currencies = [
-  { value: "USD", label: "US Dollar ($)" },
-  { value: "EUR", label: "Euro (€)" },
-  { value: "GBP", label: "British Pound (£)" },
-  { value: "JPY", label: "Japanese Yen (¥)" },
-  { value: "CAD", label: "Canadian Dollar (C$)" },
-  { value: "AUD", label: "Australian Dollar (A$)" },
   { value: "INR", label: "Indian Rupee (₹)" },
 ];
 

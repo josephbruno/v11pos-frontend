@@ -85,7 +85,7 @@ const mockSettings: QRSettings = {
       enabled: true,
       config: {
         publicKey: "rzp_test_1234567890",
-        currency: "USD",
+        currency: "INR",
         supportedMethods: ["card", "upi", "netbanking"],
       },
     },
@@ -96,7 +96,7 @@ const mockSettings: QRSettings = {
       enabled: true,
       config: {
         publicKey: "pk_test_1234567890",
-        currency: "USD",
+        currency: "INR",
         supportedMethods: ["card"],
       },
     },
@@ -446,14 +446,14 @@ export default function QRCheckout() {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span>Subtotal:</span>
-                <span>${cart.subtotal.toFixed(2)}</span>
+                <span>₹{cart.subtotal.toFixed(2)}</span>
               </div>
               {cart.serviceCharge > 0 && (
                 <div className="flex justify-between text-sm">
                   <span>
                     Service Charge ({mockSettings.serviceChargePercentage}%):
                   </span>
-                  <span>${cart.serviceCharge.toFixed(2)}</span>
+                  <span>₹{cart.serviceCharge.toFixed(2)}</span>
                 </div>
               )}
               {cart.taxes.map((tax) => (
@@ -464,13 +464,13 @@ export default function QRCheckout() {
                   <span>
                     {tax.taxName} ({tax.taxPercentage}%):
                   </span>
-                  <span>${tax.taxAmount.toFixed(2)}</span>
+                  <span>₹{tax.taxAmount.toFixed(2)}</span>
                 </div>
               ))}
               <Separator />
               <div className="flex justify-between font-bold text-lg">
                 <span>Total:</span>
-                <span>${cart.totalAmount.toFixed(2)}</span>
+                <span>₹{cart.totalAmount.toFixed(2)}</span>
               </div>
             </div>
 

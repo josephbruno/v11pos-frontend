@@ -24,6 +24,7 @@ import {
   StaffMember, SalesReport, ItemWiseReport, CategoryWiseReport,
 } from "@shared/api";
 import { validateUserPayload } from "./userValidation";
+import { encodeBookingNotes } from "./tableBooking";
 
 // ==================== Health & System ====================
 
@@ -109,6 +110,20 @@ export async function getCurrentUser() {
  */
 export async function getUsers(skip = 0, limit = 100) {
   return apiGet<User[]>(`/users?skip=${skip}&limit=${limit}`);
+}
+
+/**
+ * Get users for a specific restaurant
+ * GET /api/v1/users/restaurant/{restaurant_id}
+ */
+export async function getUsersByRestaurant(
+  restaurantId: string,
+  skip = 0,
+  limit = 100,
+) {
+  return apiGet<{ restaurant_id: string; count: number; users: User[] }>(
+    `/users/restaurant/${restaurantId}?skip=${skip}&limit=${limit}`,
+  );
 }
 
 /**
@@ -1101,8 +1116,36 @@ export async function deleteCategory(categoryId: string) {
 export async function getProducts(restaurantId: string, filters?: any) {
   const params = new URLSearchParams();
   if (filters) {
+    if (filters.page !== undefined) params.append("page", String(filters.page));
+    if (filters.page_size !== undefined) params.append("page_size", String(filters.page_size));
+    if (filters.search) params.append("search", String(filters.search));
+    if (filters.category_id) params.append("category_id", String(filters.category_id));
+    if (filters.featured_only !== undefined) {
+      params.append("featured_only", String(filters.featured_only));
+    }
+    if (
+      filters.available_only === true ||
+      filters.available === true ||
+      filters.active === true
+    ) {
+      params.append("available_only", "true");
+    }
     Object.entries(filters).forEach(([key, value]) => {
-      if (value !== undefined) params.append(key, String(value));
+      if (
+        value === undefined ||
+        value === null ||
+        key === "page" ||
+        key === "page_size" ||
+        key === "search" ||
+        key === "category_id" ||
+        key === "featured_only" ||
+        key === "available_only" ||
+        key === "available" ||
+        key === "active"
+      ) {
+        return;
+      }
+      params.append(key, String(value));
     });
   }
   return apiGet<Product[]>(`/products/restaurant/${restaurantId}?${params.toString()}`);
@@ -1520,12 +1563,85 @@ export async function listModifierOptions(filters?: {
 
 // ==================== Order & Table Services ====================
 
+export type TableListFilters = {
+  skip?: number;
+  limit?: number;
+  status?: string;
+  floor?: string;
+  section?: string;
+  is_active?: boolean;
+  is_bookable?: boolean;
+  min_capacity?: number;
+};
+
 /**
  * Get all tables for a restaurant
  * GET /api/v1/tables/restaurant/{restaurant_id}
  */
-export async function getTables(restaurantId: string) {
-  return apiGet(`/tables/restaurant/${restaurantId}`);
+export async function getTables(
+  restaurantId: string,
+  filters?: TableListFilters,
+) {
+  const params = new URLSearchParams();
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined) return;
+      params.append(key, String(value));
+    });
+  }
+  const query = params.toString();
+  return apiGet(
+    `/tables/restaurant/${restaurantId}${query ? `?${query}` : ""}`,
+  );
+}
+
+/**
+ * Get available tables for a restaurant
+ * GET /api/v1/tables/restaurant/{restaurant_id}/available
+ */
+export async function getAvailableTables(
+  restaurantId: string,
+  capacity?: number,
+) {
+  const params = new URLSearchParams();
+  if (capacity !== undefined) {
+    params.append("capacity", String(capacity));
+  }
+  const query = params.toString();
+  return apiGet(
+    `/tables/restaurant/${restaurantId}/available${query ? `?${query}` : ""}`,
+  );
+}
+
+/**
+ * Get table statistics for a restaurant
+ * GET /api/v1/tables/restaurant/{restaurant_id}/statistics
+ */
+export async function getTableStatistics(restaurantId: string) {
+  return apiGet(`/tables/restaurant/${restaurantId}/statistics`);
+}
+
+/**
+ * Reserve a table with booking metadata stored in notes
+ * PATCH /api/v1/tables/{table_id}
+ */
+export async function reserveTable(
+  tableId: string,
+  bookingData: {
+    customerName: string;
+    customerPhone?: string;
+    customerEmail?: string;
+    partySize: number;
+    bookingDate: Date;
+    bookingTime: string;
+    occasion?: string;
+    specialRequests?: string;
+  },
+) {
+  return updateTable(tableId, {
+    status: "reserved",
+    notes: encodeBookingNotes(bookingData),
+  });
 }
 
 /**
@@ -1916,6 +2032,33 @@ export async function getFilteredOrders(
 }
 
 /**
+ * Fetch ALL orders for a restaurant by paginating through the API (max 100 per page).
+ */
+export async function fetchAllFilteredOrders(
+  restaurantId: string,
+  filters?: Omit<Parameters<typeof getFilteredOrders>[1], "skip" | "limit">,
+): Promise<any[]> {
+  const PAGE = 100;
+  const allOrders: any[] = [];
+  let skip = 0;
+  while (true) {
+    const res = await getFilteredOrders(restaurantId, { ...filters, skip, limit: PAGE });
+    const src = (res as any)?.data ?? res;
+    const page: any[] = Array.isArray(src)
+      ? src
+      : Array.isArray(src?.orders)
+      ? src.orders
+      : Array.isArray(src?.items)
+      ? src.items
+      : [];
+    allOrders.push(...page);
+    if (page.length < PAGE) break;
+    skip += PAGE;
+  }
+  return allOrders;
+}
+
+/**
  * Cancel an order
  * POST /api/v1/orders/{order_id}/cancel
  */
@@ -1940,6 +2083,25 @@ export async function updateOrderPayment(
  */
 export async function getOrderById(orderId: string) {
   return apiGet<Order>(`/orders/${orderId}`);
+}
+
+/**
+ * Update order fields
+ * PUT /api/v1/orders/{order_id}
+ */
+export async function updateOrder(orderId: string, orderData: Record<string, unknown>) {
+  return apiPut<Order>(`/orders/${orderId}`, orderData);
+}
+
+/**
+ * Update an order line item
+ * PUT /api/v1/orders/items/{item_id}
+ */
+export async function updateOrderItem(
+  itemId: string,
+  itemData: { quantity?: number; notes?: string; customization?: string },
+) {
+  return apiPut(`/orders/items/${itemId}`, itemData);
 }
 
 // ==================== Table Delete ====================

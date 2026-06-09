@@ -22,7 +22,13 @@ import {
   Calendar,
   Bell,
 } from "lucide-react";
-import { navigationConfig, UserRole } from "@/lib/navigation";
+import {
+  navigationConfig,
+  UserRole,
+  adminNavCategoryOrder,
+  adminNavCategoryLabels,
+  groupNavigationByCategory,
+} from "@/lib/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import {
@@ -84,10 +90,46 @@ export default function Layout({ children }: LayoutProps) {
 
   const closeSidebar = () => setSidebarOpen(false);
 
+  const userRole = (user?.role as UserRole) || "user";
   const visibleNavItems = navigationConfig.filter((item) =>
-    item.roles.includes((user?.role as UserRole) || "user"),
+    item.roles.includes(userRole),
   );
   const activeNavHref = getActiveNavHref(visibleNavItems, location);
+  const useGroupedNav =
+    userRole === "admin" && visibleNavItems.some((item) => item.category);
+  const groupedNavigation = useGroupedNav
+    ? groupNavigationByCategory(visibleNavItems)
+    : null;
+
+  const renderNavLink = (item: (typeof visibleNavItems)[number]) => {
+    const isActive = item.href === activeNavHref;
+    return (
+      <Link
+        key={item.name}
+        to={item.href}
+        onClick={closeSidebar}
+        className={cn(
+          "group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-all duration-200",
+          isActive
+            ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-lg"
+            : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        )}
+      >
+        <item.icon
+          className={cn(
+            "mr-3 h-5 w-5 shrink-0 transition-colors",
+            isActive
+              ? "text-sidebar-primary-foreground"
+              : "text-sidebar-foreground group-hover:text-sidebar-accent-foreground",
+          )}
+        />
+        <div className="flex-1 min-w-0">
+          <div className="font-medium truncate">{item.name}</div>
+          <div className="text-xs opacity-75 truncate">{item.description}</div>
+        </div>
+      </Link>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -143,36 +185,26 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-            {visibleNavItems.map((item) => {
-              const isActive = item.href === activeNavHref;
-              return (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  onClick={closeSidebar}
-                  className={cn(
-                    "group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-all duration-200",
-                    isActive
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-lg"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                  )}
-                >
-                  <item.icon
-                    className={cn(
-                      "mr-3 h-5 w-5 transition-colors",
-                      isActive
-                        ? "text-sidebar-primary-foreground"
-                        : "text-sidebar-foreground group-hover:text-sidebar-accent-foreground",
-                    )}
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium">{item.name}</div>
-                    <div className="text-xs opacity-75">{item.description}</div>
-                  </div>
-                </Link>
-              );
-            })}
+          <nav
+            className={cn(
+              "flex-1 px-4 py-6 overflow-y-auto",
+              useGroupedNav ? "space-y-6" : "space-y-2",
+            )}
+          >
+            {useGroupedNav && groupedNavigation
+              ? adminNavCategoryOrder
+                  .filter((category) => groupedNavigation[category]?.length)
+                  .map((category) => (
+                    <div key={category} className="space-y-2">
+                      <h3 className="text-xs font-semibold text-sidebar-foreground/60 uppercase tracking-wider px-2">
+                        {adminNavCategoryLabels[category] ?? category}
+                      </h3>
+                      <div className="space-y-1">
+                        {groupedNavigation[category].map(renderNavLink)}
+                      </div>
+                    </div>
+                  ))
+              : visibleNavItems.map(renderNavLink)}
           </nav>
 
           {/* User section */}

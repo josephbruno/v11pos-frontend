@@ -57,6 +57,7 @@ import Layout from "./components/Layout";
 import SuperAdminLayout from "./components/SuperAdminLayout";
 import Dashboard from "./pages/Dashboard";
 import OrderPanel from "./pages/OrderPanel";
+import Orders from "./pages/Orders";
 import OrderQueue from "./pages/OrderQueue";
 import Analytics from "./pages/Analytics";
 import Reports from "./pages/Reports";
@@ -349,6 +350,16 @@ function AppRoutes() {
             <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user", "cashier", "waiter", "kiosk-machine"]}>
               <LayoutWrapper>
                 <OrderPanel />
+              </LayoutWrapper>
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/orders"
+          element={
+            <RoleProtectedRoute allowedRoles={["admin", "supervisor", "user", "cashier", "waiter"]}>
+              <LayoutWrapper>
+                <Orders />
               </LayoutWrapper>
             </RoleProtectedRoute>
           }

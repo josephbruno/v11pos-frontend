@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Clock,
@@ -34,6 +34,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { OrderQueueItem, KOTGroup } from "@/shared/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { getFilteredOrders, updateOrderStatus } from "@/lib/apiServices";
+import {
+  formatOrderSourceLabel,
+  isPosOrder,
+  isQrTableOrder,
+} from "@/lib/orderLabels";
 
 const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string) || "http://localhost:8000/api/v1";
@@ -48,11 +53,49 @@ function elapsedMinutes(createdAt: string | Date | undefined): number {
   return Math.floor((Date.now() - new Date(createdAt as string).getTime()) / 60000);
 }
 
-function mapOrderToQueueItem(order: any): OrderQueueItem {
+function normalizeStatus(status: unknown): string {
+  return String(status ?? "").toLowerCase();
+}
+
+const ACTIVE_QUEUE_STATUSES = new Set([
+  "pending",
+  "pending_approval",
+  "confirmed",
+  "preparing",
+  "ready",
+  "on_hold",
+]);
+
+function unwrapOrdersFromApi(res: unknown): any[] {
+  const payload = (res as any)?.data ?? res;
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.orders)) return payload.orders;
+  if (Array.isArray(payload?.items)) return payload.items;
+  return [];
+}
+
+function formatOrderType(order: any): OrderQueueItem["orderType"] {
+  if (isQrTableOrder(order)) return "qr_order";
+  const type = normalizeStatus(order.order_type);
+  if (type === "takeaway" || type === "delivery" || type === "dine_in") {
+    return type;
+  }
+  return "dine_in";
+}
+
+type QueueOrder = OrderQueueItem & {
+  paymentStatus?: string;
+  itemsPreview?: string[];
+  sourceLabel: string;
+  isPosSource: boolean;
+};
+
+function mapOrderToQueueItem(order: any): QueueOrder {
   const elapsed = elapsedMinutes(order.created_at);
   const itemCount = order.items?.length ?? order.total_items ?? 0;
   const priority: OrderQueueItem["priority"] =
     elapsed > 20 ? "urgent" : elapsed > 12 ? "high" : elapsed > 6 ? "normal" : "low";
+  const status = normalizeStatus(order.status);
   const kotGroups: KOTGroup[] =
     order.kotGroups ??
     order.kot_groups ??
@@ -63,23 +106,29 @@ function mapOrderToQueueItem(order: any): OrderQueueItem {
   return {
     orderId: order.id,
     id: order.id,
-    orderNumber: order.order_number ?? order.id?.slice(-4) ?? "–",
+    orderNumber: order.order_number ?? order.id?.slice(-6) ?? "–",
     customerName: order.guest_name ?? order.customer?.name ?? undefined,
-    tableNumber: order.table_id ? `T-${order.table_id.slice(-3)}` : undefined,
-    status: (order.status === "delivered" || order.status === "completed"
+    tableNumber: order.table_id ? `Table ${order.table_id.slice(-4)}` : undefined,
+    status: (status === "delivered" || status === "completed"
       ? "completed"
-      : order.status) as OrderQueueItem["status"],
-    orderType: (order.order_type ?? "dine_in") as OrderQueueItem["orderType"],
+      : status) as OrderQueueItem["status"],
+    orderType: formatOrderType(order),
     totalItems: itemCount,
     estimatedTime: 15,
     elapsedTime: elapsed,
     priority,
     kotGroups,
+    paymentStatus: normalizeStatus(order.payment_status),
+    itemsPreview: (order.items ?? []).map(
+      (item: any) => `${item.quantity ?? 1}x ${item.product_name ?? item.name ?? "Item"}`,
+    ),
+    sourceLabel: formatOrderSourceLabel(order),
+    isPosSource: isPosOrder(order),
   };
 }
 
 interface OrderCardProps {
-  order: OrderQueueItem;
+  order: QueueOrder;
   onStatusChange: (orderId: string, status: OrderQueueItem["status"]) => void;
   onKotStatusChange: (orderId: string, department: string, status: KOTGroup["status"]) => void;
   fullScreen?: boolean;
@@ -188,13 +237,18 @@ function OrderCard({ order, onStatusChange, onKotStatusChange, fullScreen = fals
                 className={`text-xs ${
                   order.orderType === "qr_order"
                     ? "bg-blue-100 text-blue-800 border-blue-200"
-                    : "text-gray-600 border-gray-200"
+                    : order.isPosSource
+                      ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                      : "text-gray-600 border-gray-200"
                 }`}
               >
-                {order.orderType === "qr_order"
-                  ? "QR Order"
-                  : order.orderType.replace("_", " ").toUpperCase()}
+                {order.sourceLabel}
               </Badge>
+              {order.isPosSource && order.orderType !== "qr_order" && (
+                <Badge variant="outline" className="text-xs text-gray-600 border-gray-200">
+                  {order.orderType.replace("_", " ").toUpperCase()}
+                </Badge>
+              )}
               {order.tableNumber && (
                 <Badge variant="outline" className="text-xs">
                   {order.tableNumber}
@@ -208,10 +262,25 @@ function OrderCard({ order, onStatusChange, onKotStatusChange, fullScreen = fals
               <Timer className="h-4 w-4 text-pos-text-muted" />
               <span className="text-pos-text-muted">Est: {order.estimatedTime}m</span>
             </div>
-            <div className="text-pos-text">
-              {order.totalItems} item{order.totalItems !== 1 ? "s" : ""}
+            <div className="flex items-center gap-2">
+              {order.paymentStatus && (
+                <Badge variant="outline" className="text-xs capitalize">
+                  {order.paymentStatus}
+                </Badge>
+              )}
+              <span className="text-pos-text">
+                {order.totalItems} item{order.totalItems !== 1 ? "s" : ""}
+              </span>
             </div>
           </div>
+
+          {order.itemsPreview && order.itemsPreview.length > 0 && (
+            <ul className="text-sm text-pos-text-muted space-y-1">
+              {order.itemsPreview.map((line, index) => (
+                <li key={index}>{line}</li>
+              ))}
+            </ul>
+          )}
 
           <div className="space-y-2">
             <div className="text-sm font-medium text-pos-text">Department Status:</div>
@@ -307,54 +376,38 @@ export default function OrderQueue() {
   const queryClient = useQueryClient();
 
   const [filter, setFilter] = useState<"all" | "pending" | "preparing" | "ready">("all");
-  const [departmentFilter, setDepartmentFilter] = useState<"all" | "kitchen" | "bar" | "dessert">("all");
   const [searchQuery, setSearchQuery] = useState("");
-
-  const dateRange = useMemo(() => {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - 7);
-    return {
-      start_date: start.toISOString().split("T")[0],
-      end_date: end.toISOString().split("T")[0],
-    };
-  }, []);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [localOrders, setLocalOrders] = useState<OrderQueueItem[]>([]);
+  const [localOrders, setLocalOrders] = useState<QueueOrder[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
   const { data: ordersRaw, refetch } = useQuery({
-    queryKey: ["activeOrders", restaurantId, filter, searchQuery, dateRange],
+    queryKey: ["activeOrders", restaurantId, filter, searchQuery],
     queryFn: () =>
       getFilteredOrders(restaurantId, {
         skip: 0,
         limit: 100,
         status: filter === "all" ? undefined : filter,
-        start_date: dateRange.start_date,
-        end_date: dateRange.end_date,
         search: searchQuery.trim() || undefined,
       }),
     enabled: !!restaurantId,
-    select: (r: any) => {
-      const src = r?.data ?? r;
-      const arr = Array.isArray(src) ? src : Array.isArray(src?.orders) ? src.orders : [];
-      return arr
-        .filter((o: any) =>
-          ["pending", "confirmed", "preparing", "ready", "pending_approval"].includes(
-            o.status,
-          ),
-        )
-        .map(mapOrderToQueueItem);
-    },
+    select: (r: any) =>
+      unwrapOrdersFromApi(r)
+        .filter((order: any) => ACTIVE_QUEUE_STATUSES.has(normalizeStatus(order.status)))
+        .map(mapOrderToQueueItem),
     staleTime: 15_000,
     refetchInterval: autoRefresh ? 30_000 : false,
   });
 
   useEffect(() => {
-    if (ordersRaw) setLocalOrders(ordersRaw);
+    if (ordersRaw !== undefined) setLocalOrders(ordersRaw);
   }, [ordersRaw]);
+
+  useEffect(() => {
+    setLocalOrders([]);
+  }, [restaurantId]);
 
   // WebSocket for real-time updates
   useEffect(() => {
@@ -453,11 +506,7 @@ export default function OrderQueue() {
   );
 
   const filteredOrders = localOrders.filter((order) => {
-    const statusMatch = filter === "all" || order.status === filter;
-    const departmentMatch =
-      departmentFilter === "all" ||
-      order.kotGroups.some((kot) => kot.department === departmentFilter);
-    return statusMatch && departmentMatch;
+    return filter === "all" || normalizeStatus(order.status) === filter;
   });
 
   const sortedOrders = [...filteredOrders].sort((a, b) => {
@@ -469,9 +518,9 @@ export default function OrderQueue() {
 
   const counts = {
     total: localOrders.length,
-    pending: localOrders.filter((o) => o.status === "confirmed" || o.status === "pending").length,
-    preparing: localOrders.filter((o) => o.status === "preparing").length,
-    ready: localOrders.filter((o) => o.status === "ready").length,
+    pending: localOrders.filter((o) => normalizeStatus(o.status) === "pending").length,
+    preparing: localOrders.filter((o) => normalizeStatus(o.status) === "preparing").length,
+    ready: localOrders.filter((o) => normalizeStatus(o.status) === "ready").length,
     overdue: localOrders.filter((o) => o.elapsedTime > (o.estimatedTime || 0)).length,
   };
 
@@ -579,20 +628,6 @@ export default function OrderQueue() {
                 <SelectItem value="ready">Ready</SelectItem>
               </SelectContent>
             </Select>
-            <Select
-              value={departmentFilter}
-              onValueChange={(value: any) => setDepartmentFilter(value)}
-            >
-              <SelectTrigger className="w-40 bg-pos-surface border-pos-secondary text-pos-text">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-pos-surface border-pos-secondary">
-                <SelectItem value="all">All Departments</SelectItem>
-                <SelectItem value="kitchen">Kitchen</SelectItem>
-                <SelectItem value="bar">Bar</SelectItem>
-                <SelectItem value="dessert">Dessert</SelectItem>
-              </SelectContent>
-            </Select>
             <Input
               placeholder="Search order #, guest..."
               value={searchQuery}
@@ -629,9 +664,9 @@ export default function OrderQueue() {
             <ChefHat className="mx-auto h-12 w-12 text-pos-text-muted mb-4" />
             <h3 className="text-lg font-semibold text-pos-text mb-2">No orders found</h3>
             <p className="text-pos-text-muted">
-              {filter !== "all" || departmentFilter !== "all"
+              {filter !== "all" || searchQuery.trim()
                 ? "Try adjusting your filters"
-                : "No active orders in the queue"}
+                : "No active orders in the queue (completed orders are hidden)"}
             </p>
           </CardContent>
         </Card>

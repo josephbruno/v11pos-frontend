@@ -573,7 +573,7 @@ export default function OrderTracking() {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span>Subtotal:</span>
-                <span>${order.subtotal?.toFixed(2) ?? "0.00"}</span>
+                <span>₹{order.subtotal?.toFixed(2) ?? "0.00"}</span>
               </div>
               {order.taxes?.map((tax: any) => (
                 <div
@@ -581,13 +581,13 @@ export default function OrderTracking() {
                   className="flex justify-between text-sm"
                 >
                   <span>{tax.taxName}:</span>
-                  <span>${tax.taxAmount.toFixed(2)}</span>
+                  <span>₹{tax.taxAmount.toFixed(2)}</span>
                 </div>
               ))}
               <Separator />
               <div className="flex justify-between font-bold">
                 <span>Total:</span>
-                <span>${order.finalTotal.toFixed(2)}</span>
+                <span>₹{order.finalTotal.toFixed(2)}</span>
               </div>
             </div>
 

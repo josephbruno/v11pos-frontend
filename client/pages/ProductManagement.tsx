@@ -6,7 +6,7 @@
 	  Edit,
 	  Trash2,
 	  Package,
-	  DollarSign,
+	  IndianRupee,
 	  AlertTriangle,
 	  Star,
 	  ImageIcon,

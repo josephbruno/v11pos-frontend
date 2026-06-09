@@ -13,7 +13,7 @@ import {
   Phone,
   Mail,
   MapPin,
-  DollarSign,
+  IndianRupee,
   AlertTriangle,
   Crown,
   Ban,

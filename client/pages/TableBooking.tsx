@@ -49,7 +49,6 @@ import {
   Search,
   Filter,
   MoreVertical,
-  Clock,
   Users,
   MapPin,
   Phone,
@@ -59,7 +58,6 @@ import {
   AlertCircle,
   Eye,
   Edit,
-  Trash2,
   UserCheck,
   Calendar as CalendarSchedule,
   Settings,
@@ -67,119 +65,26 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
-import { createTable, getMyRestaurants, getTables } from "@/lib/apiServices";
-
-// Mock data for table bookings
-const mockBookings = [
-  {
-    id: "booking-001",
-    bookingNumber: "BK-2024-001",
-    customerName: "John Smith",
-    customerEmail: "john.smith@email.com",
-    customerPhone: "+1-555-0123",
-    tableId: "table-1",
-    tableName: "Table 1",
-    partySize: 4,
-    bookingDate: new Date("2024-01-16"),
-    bookingTime: "19:00",
-    duration: 120,
-    status: "confirmed",
-    occasion: "anniversary",
-    specialRequests: "Window seat, anniversary decoration",
-    source: "online",
-    createdAt: new Date("2024-01-15"),
-  },
-  {
-    id: "booking-002",
-    bookingNumber: "BK-2024-002",
-    customerName: "Sarah Johnson",
-    customerEmail: "sarah.j@email.com",
-    customerPhone: "+1-555-0456",
-    tableId: "table-5",
-    tableName: "Table 5",
-    partySize: 2,
-    bookingDate: new Date("2024-01-16"),
-    bookingTime: "18:30",
-    duration: 90,
-    status: "pending",
-    occasion: "date",
-    source: "phone",
-    createdAt: new Date("2024-01-15"),
-  },
-  {
-    id: "booking-003",
-    bookingNumber: "BK-2024-003",
-    customerName: "Michael Chen",
-    customerEmail: "m.chen@email.com",
-    customerPhone: "+1-555-0789",
-    tableId: "table-3",
-    tableName: "Table 3",
-    partySize: 6,
-    bookingDate: new Date("2024-01-17"),
-    bookingTime: "20:00",
-    duration: 150,
-    status: "seated",
-    occasion: "business",
-    source: "admin",
-    createdAt: new Date("2024-01-16"),
-  },
-  {
-    id: "booking-004",
-    bookingNumber: "BK-2024-004",
-    customerName: "Emma Davis",
-    customerEmail: "emma.davis@email.com",
-    customerPhone: "+1-555-0321",
-    tableId: "table-2",
-    tableName: "Table 2",
-    partySize: 8,
-    bookingDate: new Date("2024-01-15"),
-    bookingTime: "19:30",
-    duration: 180,
-    status: "completed",
-    occasion: "birthday",
-    specialRequests: "Birthday cake, group seating",
-    source: "online",
-    createdAt: new Date("2024-01-14"),
-  },
-];
-
-const mockTables = [
-  {
-    id: "table-1",
-    tableNumber: "Table 1",
-    capacity: 4,
-    location: "Main Dining",
-    type: "regular",
-  },
-  {
-    id: "table-2",
-    tableNumber: "Table 2",
-    capacity: 8,
-    location: "Main Dining",
-    type: "regular",
-  },
-  {
-    id: "table-3",
-    tableNumber: "Table 3",
-    capacity: 6,
-    location: "Window Side",
-    type: "vip",
-  },
-  {
-    id: "table-4",
-    tableNumber: "Table 4",
-    capacity: 2,
-    location: "Terrace",
-    type: "outdoor",
-  },
-  {
-    id: "table-5",
-    tableNumber: "Table 5",
-    capacity: 4,
-    location: "Private Room",
-    type: "private",
-  },
-];
+import {
+  createTable,
+  getAvailableTables,
+  getMyRestaurants,
+  getTableStatistics,
+  getTables,
+  reserveTable,
+  updateTable,
+} from "@/lib/apiServices";
+import {
+  bookingStatusToTableUpdate,
+  mapTableRecord,
+  normalizeTableStatistics,
+  normalizeTablesResponse,
+  tableToBooking,
+  tableToOccupiedDetail,
+  type BookingStatus,
+  type OccupiedTableDetail,
+  type TableBooking as TableBookingRecord,
+} from "@/lib/tableBooking";
 
 const statusColors = {
   pending: "bg-yellow-500",
@@ -199,6 +104,22 @@ const statusIcons = {
   no_show: XCircle,
 };
 
+const tableStatusLabels: Record<string, string> = {
+  available: "Available",
+  occupied: "Occupied",
+  reserved: "Reserved",
+  cleaning: "Cleaning",
+  maintenance: "Maintenance",
+};
+
+const tableStatusColors: Record<string, string> = {
+  available: "bg-green-500",
+  occupied: "bg-orange-500",
+  reserved: "bg-blue-500",
+  cleaning: "bg-yellow-500",
+  maintenance: "bg-gray-500",
+};
+
 const initialNewTableState = {
   tableNumber: "",
   tableName: "",
@@ -215,7 +136,7 @@ export default function TableBooking() {
     String(user?.role || "").toLowerCase().trim(),
   );
   const [mounted, setMounted] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [isNewBookingOpen, setIsNewBookingOpen] = useState(false);
@@ -227,6 +148,7 @@ export default function TableBooking() {
   const [tableStatusFilter, setTableStatusFilter] = useState<
     "all" | "active" | "inactive"
   >("all");
+  const [tableOperationalFilter, setTableOperationalFilter] = useState("all");
   const [selectedRestaurantId, setSelectedRestaurantId] = useState(
     isSuperAdmin ? "" : String(user?.branchId || ""),
   );
@@ -312,40 +234,55 @@ export default function TableBooking() {
     }
   }, [isNewTableOpen]);
 
-  const { data: tablesResponse, refetch: refetchTables } = useQuery({
+  const {
+    data: tablesResponse,
+    refetch: refetchTables,
+    isLoading: isTablesLoading,
+  } = useQuery({
     queryKey: ["tables", selectedRestaurantId],
-    queryFn: () => getTables(selectedRestaurantId),
+    queryFn: () => getTables(selectedRestaurantId, { limit: 100 }),
     enabled: Boolean(selectedRestaurantId),
     staleTime: 60000,
   });
 
-  const tablesDataSource = (() => {
-    const payload: any = tablesResponse;
-    const source =
-      payload?.data?.data ??
-      payload?.data?.items ??
-      payload?.data?.tables ??
-      payload?.data ??
-      payload;
-    const items = Array.isArray(source) ? source : [];
-    if (!items.length) {
-      return mockTables.map((table) => ({
-        ...table,
-        isActive: true,
-        tableName: (table as any).tableName ?? "",
-      }));
-    }
-    return items.map((table: any) => ({
-      id: String(table.id ?? table.table_id ?? table.tableId ?? ""),
-      tableNumber:
-        String(table.table_number ?? table.tableNumber ?? table.table_name ?? table.tableName ?? table.name ?? ""),
-      tableName: String(table.table_name ?? table.tableName ?? ""),
-      capacity: Number(table.capacity ?? table.seats ?? 0),
-      location: String(table.location ?? table.area ?? ""),
-      type: String(table.type ?? table.table_type ?? "regular"),
-      isActive: table.is_active ?? table.isActive ?? true,
-    }));
-  })();
+  const { data: statisticsResponse, refetch: refetchStatistics } = useQuery({
+    queryKey: ["table-statistics", selectedRestaurantId],
+    queryFn: () => getTableStatistics(selectedRestaurantId),
+    enabled: Boolean(selectedRestaurantId),
+    staleTime: 60000,
+  });
+
+  const { data: availableTablesResponse } = useQuery({
+    queryKey: ["available-tables", selectedRestaurantId, newBooking.partySize],
+    queryFn: () =>
+      getAvailableTables(selectedRestaurantId, newBooking.partySize),
+    enabled: Boolean(selectedRestaurantId) && isNewBookingOpen,
+    staleTime: 30000,
+  });
+
+  const rawTables = normalizeTablesResponse(tablesResponse);
+  const tablesDataSource = rawTables.map(mapTableRecord);
+
+  const bookingsDataSource = rawTables
+    .map((table) => tableToBooking(table))
+    .filter((booking): booking is TableBookingRecord => booking !== null);
+
+  const occupiedTables = rawTables
+    .map((table) => tableToOccupiedDetail(table))
+    .filter((table): table is OccupiedTableDetail => table !== null);
+
+  const tableStatistics = normalizeTableStatistics(statisticsResponse);
+
+  const availableTablesForBooking = normalizeTablesResponse(
+    availableTablesResponse,
+  )
+    .map(mapTableRecord)
+    .filter((table) => table.isBookable && table.isActive);
+
+  const bookingTableOptions =
+    availableTablesForBooking.length > 0
+      ? availableTablesForBooking
+      : tablesDataSource.filter((table) => table.isActive);
 
   const tableLocations = Array.from(
     new Set(
@@ -367,7 +304,92 @@ export default function TableBooking() {
     const matchesStatus =
       tableStatusFilter === "all" ||
       (tableStatusFilter === "active" ? table.isActive : !table.isActive);
-    return matchesSearch && matchesLocation && matchesStatus;
+    const matchesOperationalStatus =
+      tableOperationalFilter === "all" ||
+      String(table.status || "").toLowerCase() === tableOperationalFilter;
+    return (
+      matchesSearch && matchesLocation && matchesStatus && matchesOperationalStatus
+    );
+  });
+
+  const createBookingMutation = useMutation({
+    mutationFn: reserveTable,
+    onSuccess: () => {
+      addToast({
+        type: "success",
+        title: "Booking Created",
+        description: "Table reservation has been created successfully",
+      });
+      setIsNewBookingOpen(false);
+      setNewBooking({
+        customerName: "",
+        customerEmail: "",
+        customerPhone: "",
+        partySize: 2,
+        bookingDate: new Date(),
+        bookingTime: "",
+        tableId: "",
+        specialRequests: "",
+        occasion: "",
+      });
+      refetchTables();
+      refetchStatistics();
+    },
+    onError: (error: any) => {
+      addToast({
+        type: "error",
+        title: "Failed to Create Booking",
+        description:
+          error?.message || "An error occurred while creating the booking",
+      });
+    },
+  });
+
+  const releaseTableMutation = useMutation({
+    mutationFn: (tableId: string) =>
+      updateTable(tableId, { status: "available", notes: "" }),
+    onSuccess: () => {
+      addToast({
+        type: "success",
+        title: "Table Released",
+        description: "Table is now available",
+      });
+      refetchTables();
+      refetchStatistics();
+    },
+    onError: (error: any) => {
+      addToast({
+        type: "error",
+        title: "Failed to Release Table",
+        description:
+          error?.message || "An error occurred while releasing the table",
+      });
+    },
+  });
+
+  const updateBookingStatusMutation = useMutation({
+    mutationFn: async ({
+      booking,
+      status,
+    }: {
+      booking: TableBookingRecord;
+      status: BookingStatus;
+    }) => {
+      const update = bookingStatusToTableUpdate(booking, status);
+      return updateTable(booking.tableId, update);
+    },
+    onSuccess: () => {
+      refetchTables();
+      refetchStatistics();
+    },
+    onError: (error: any) => {
+      addToast({
+        type: "error",
+        title: "Failed to Update Booking",
+        description:
+          error?.message || "An error occurred while updating the booking",
+      });
+    },
   });
 
   const createTableMutation = useMutation({
@@ -398,10 +420,13 @@ export default function TableBooking() {
     },
   });
 
-  const filteredBookings = mockBookings.filter((booking) => {
+  const filteredBookings = bookingsDataSource.filter((booking) => {
+    const query = searchQuery.trim().toLowerCase();
     const matchesSearch =
-      booking.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      booking.bookingNumber.toLowerCase().includes(searchQuery.toLowerCase());
+      !query ||
+      booking.customerName.toLowerCase().includes(query) ||
+      booking.bookingNumber.toLowerCase().includes(query) ||
+      booking.tableName.toLowerCase().includes(query);
     const matchesStatus =
       filterStatus === "all" || booking.status === filterStatus;
     const matchesDate = selectedDate
@@ -417,24 +442,49 @@ export default function TableBooking() {
     return <IconComponent className="h-4 w-4" />;
   };
 
-  const handleStatusChange = (bookingId: string, newStatus: string) => {
-    console.log(`Changing booking ${bookingId} status to ${newStatus}`);
+  const handleStatusChange = (
+    booking: TableBookingRecord,
+    newStatus: BookingStatus,
+  ) => {
+    updateBookingStatusMutation.mutate({ booking, status: newStatus });
   };
 
   const handleCreateBooking = () => {
-    console.log("Creating new booking:", newBooking);
-    setIsNewBookingOpen(false);
-    // Reset form
-    setNewBooking({
-      customerName: "",
-      customerEmail: "",
-      customerPhone: "",
-      partySize: 2,
-      bookingDate: new Date(),
-      bookingTime: "",
-      tableId: "",
-      specialRequests: "",
-      occasion: "",
+    if (!newBooking.customerName.trim()) {
+      addToast({
+        type: "error",
+        title: "Customer Name Required",
+        description: "Please enter the customer name.",
+      });
+      return;
+    }
+    if (!newBooking.tableId) {
+      addToast({
+        type: "error",
+        title: "Table Required",
+        description: "Please select a table for this booking.",
+      });
+      return;
+    }
+    if (!newBooking.bookingTime) {
+      addToast({
+        type: "error",
+        title: "Booking Time Required",
+        description: "Please select a booking time.",
+      });
+      return;
+    }
+
+    createBookingMutation.mutate({
+      tableId: newBooking.tableId,
+      customerName: newBooking.customerName.trim(),
+      customerPhone: newBooking.customerPhone.trim() || undefined,
+      customerEmail: newBooking.customerEmail.trim() || undefined,
+      partySize: newBooking.partySize,
+      bookingDate: newBooking.bookingDate,
+      bookingTime: newBooking.bookingTime,
+      occasion: newBooking.occasion || undefined,
+      specialRequests: newBooking.specialRequests.trim() || undefined,
     });
   };
 
@@ -663,7 +713,7 @@ export default function TableBooking() {
                       <SelectValue placeholder="Select table" />
                     </SelectTrigger>
                     <SelectContent>
-                      {tablesDataSource.map((table: any) => (
+                      {bookingTableOptions.map((table: any) => (
                         <SelectItem key={table.id} value={table.id}>
                           {table.tableNumber} - {table.capacity} seats (
                           {table.location || "Unspecified"})
@@ -716,24 +766,31 @@ export default function TableBooking() {
                 >
                   Cancel
                 </Button>
-                <Button onClick={handleCreateBooking}>Create Booking</Button>
+                <Button
+                  onClick={handleCreateBooking}
+                  disabled={createBookingMutation.isPending}
+                >
+                  {createBookingMutation.isPending
+                    ? "Creating..."
+                    : "Create Booking"}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards — from GET /tables/restaurant/{id}/statistics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center space-x-2">
-              <CalendarSchedule className="h-8 w-8 text-blue-600" />
+              <MapPin className="h-8 w-8 text-blue-600" />
               <div>
-                <p className="text-2xl font-bold">24</p>
-                <p className="text-sm text-muted-foreground">
-                  Today's Bookings
+                <p className="text-2xl font-bold">
+                  {tableStatistics?.totalTables ?? "—"}
                 </p>
+                <p className="text-sm text-muted-foreground">Total Tables</p>
               </div>
             </div>
           </CardContent>
@@ -741,10 +798,12 @@ export default function TableBooking() {
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center space-x-2">
-              <CheckCircle2 className="h-8 w-8 text-green-600" />
+              <UserCheck className="h-8 w-8 text-orange-600" />
               <div>
-                <p className="text-2xl font-bold">18</p>
-                <p className="text-sm text-muted-foreground">Confirmed</p>
+                <p className="text-2xl font-bold">
+                  {tableStatistics?.occupiedTables ?? "—"}
+                </p>
+                <p className="text-sm text-muted-foreground">Occupied</p>
               </div>
             </div>
           </CardContent>
@@ -752,10 +811,12 @@ export default function TableBooking() {
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center space-x-2">
-              <Users className="h-8 w-8 text-purple-600" />
+              <CalendarSchedule className="h-8 w-8 text-purple-600" />
               <div>
-                <p className="text-2xl font-bold">92</p>
-                <p className="text-sm text-muted-foreground">Total Guests</p>
+                <p className="text-2xl font-bold">
+                  {tableStatistics?.reservedTables ?? "—"}
+                </p>
+                <p className="text-sm text-muted-foreground">Reserved</p>
               </div>
             </div>
           </CardContent>
@@ -763,11 +824,15 @@ export default function TableBooking() {
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center space-x-2">
-              <MapPin className="h-8 w-8 text-orange-600" />
+              <Users className="h-8 w-8 text-green-600" />
               <div>
-                <p className="text-2xl font-bold">85%</p>
+                <p className="text-2xl font-bold">
+                  {tableStatistics
+                    ? `${Math.round(tableStatistics.occupancyRate)}%`
+                    : "—"}
+                </p>
                 <p className="text-sm text-muted-foreground">
-                  Table Utilization
+                  Occupancy Rate
                 </p>
               </div>
             </div>
@@ -790,12 +855,12 @@ export default function TableBooking() {
                 />
               </div>
             </div>
-            <div>
+            <div className="flex gap-2">
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full md:w-[200px]">
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {selectedDate ? format(selectedDate, "PPP") : "Select date"}
+                    {selectedDate ? format(selectedDate, "PPP") : "All dates"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -807,6 +872,14 @@ export default function TableBooking() {
                   />
                 </PopoverContent>
               </Popover>
+              {selectedDate && (
+                <Button
+                  variant="ghost"
+                  onClick={() => setSelectedDate(undefined)}
+                >
+                  Clear
+                </Button>
+              )}
             </div>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
               <SelectTrigger className="w-full md:w-[180px]">
@@ -828,8 +901,16 @@ export default function TableBooking() {
       </Card>
 
       <Tabs defaultValue="bookings" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="bookings">All Bookings</TabsTrigger>
+          <TabsTrigger value="occupied">
+            Occupied
+            {occupiedTables.length > 0 && (
+              <Badge variant="secondary" className="ml-2">
+                {occupiedTables.length}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="tables">Table Management</TabsTrigger>
           <TabsTrigger value="calendar">Calendar View</TabsTrigger>
         </TabsList>
@@ -845,7 +926,28 @@ export default function TableBooking() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {filteredBookings.map((booking) => (
+                {isTablesLoading ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    Loading bookings...
+                  </div>
+                ) : filteredBookings.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <CalendarSchedule className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No reservations found</p>
+                    <p className="text-sm">
+                      Reservations appear when a table is reserved with booking
+                      details. See the Occupied tab for tables currently in use.
+                    </p>
+                    {occupiedTables.length > 0 && (
+                      <p className="text-sm mt-2">
+                        {occupiedTables.length} table
+                        {occupiedTables.length === 1 ? " is" : "s are"}{" "}
+                        currently occupied — view details in the Occupied tab.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  filteredBookings.map((booking) => (
                   <div
                     key={booking.id}
                     className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50"
@@ -913,7 +1015,7 @@ export default function TableBooking() {
                         <DropdownMenuContent>
                           <DropdownMenuItem
                             onClick={() =>
-                              handleStatusChange(booking.id, "confirmed")
+                              handleStatusChange(booking, "confirmed")
                             }
                           >
                             <CheckCircle2 className="h-4 w-4 mr-2" />
@@ -921,7 +1023,7 @@ export default function TableBooking() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() =>
-                              handleStatusChange(booking.id, "seated")
+                              handleStatusChange(booking, "seated")
                             }
                           >
                             <UserCheck className="h-4 w-4 mr-2" />
@@ -929,7 +1031,7 @@ export default function TableBooking() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() =>
-                              handleStatusChange(booking.id, "completed")
+                              handleStatusChange(booking, "completed")
                             }
                           >
                             <CheckCircle2 className="h-4 w-4 mr-2" />
@@ -952,7 +1054,7 @@ export default function TableBooking() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() =>
-                              handleStatusChange(booking.id, "cancelled")
+                              handleStatusChange(booking, "cancelled")
                             }
                             className="text-red-600"
                           >
@@ -963,7 +1065,168 @@ export default function TableBooking() {
                       </DropdownMenu>
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Occupied Tables */}
+        <TabsContent value="occupied" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Occupied Tables</CardTitle>
+              <CardDescription>
+                Tables currently in use with guest and table details
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {isTablesLoading ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    Loading occupied tables...
+                  </div>
+                ) : occupiedTables.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <UserCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No occupied tables</p>
+                    <p className="text-sm">
+                      All tables are available or reserved
+                    </p>
+                  </div>
+                ) : (
+                  occupiedTables.map((table) => (
+                    <div
+                      key={table.id}
+                      className="flex flex-col lg:flex-row lg:items-start gap-4 p-4 border rounded-lg hover:bg-muted/50"
+                    >
+                      {table.image && (
+                        <img
+                          src={table.image}
+                          alt={table.tableName || table.tableNumber}
+                          className="w-full lg:w-28 h-28 rounded-md object-cover border"
+                        />
+                      )}
+                      <div className="flex-1 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold text-lg">
+                            {table.tableNumber}
+                          </h3>
+                          {table.tableName && (
+                            <span className="text-muted-foreground">
+                              ({table.tableName})
+                            </span>
+                          )}
+                          <Badge>{tableStatusLabels.occupied}</Badge>
+                          <Badge variant="outline">
+                            {table.source === "reservation"
+                              ? "From reservation"
+                              : "Walk-in"}
+                          </Badge>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                          <p>
+                            <span className="text-muted-foreground">Guest: </span>
+                            <span className="font-medium">
+                              {table.customerName}
+                            </span>
+                          </p>
+                          <p>
+                            <span className="text-muted-foreground">
+                              Party size:{" "}
+                            </span>
+                            {table.partySize} / {table.capacity} capacity
+                          </p>
+                          <p>
+                            <span className="text-muted-foreground">
+                              Location:{" "}
+                            </span>
+                            {table.location || "Unspecified"}
+                          </p>
+                          {table.floor && (
+                            <p>
+                              <span className="text-muted-foreground">
+                                Floor:{" "}
+                              </span>
+                              {table.floor}
+                            </p>
+                          )}
+                          {table.section && (
+                            <p>
+                              <span className="text-muted-foreground">
+                                Section:{" "}
+                              </span>
+                              {table.section}
+                            </p>
+                          )}
+                          {table.bookingTime && (
+                            <p>
+                              <span className="text-muted-foreground">
+                                Booking time:{" "}
+                              </span>
+                              {table.bookingTime}
+                            </p>
+                          )}
+                          {table.updatedAt && (
+                            <p>
+                              <span className="text-muted-foreground">
+                                Last updated:{" "}
+                              </span>
+                              {format(table.updatedAt, "MMM dd, yyyy HH:mm")}
+                            </p>
+                          )}
+                        </div>
+
+                        {(table.customerPhone || table.customerEmail) && (
+                          <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+                            {table.customerPhone && (
+                              <span className="flex items-center">
+                                <Phone className="h-3 w-3 mr-1" />
+                                {table.customerPhone}
+                              </span>
+                            )}
+                            {table.customerEmail && (
+                              <span className="flex items-center">
+                                <Mail className="h-3 w-3 mr-1" />
+                                {table.customerEmail}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {table.occasion && (
+                          <Badge variant="secondary">{table.occasion}</Badge>
+                        )}
+
+                        {table.specialRequests && (
+                          <p className="text-sm text-muted-foreground">
+                            Special requests: {table.specialRequests}
+                          </p>
+                        )}
+
+                        {table.description && (
+                          <p className="text-sm text-muted-foreground">
+                            {table.description}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex lg:flex-col gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => releaseTableMutation.mutate(table.id)}
+                          disabled={releaseTableMutation.isPending}
+                        >
+                          <CheckCircle2 className="h-4 w-4 mr-1" />
+                          Mark Available
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1020,13 +1283,29 @@ export default function TableBooking() {
                   </SelectContent>
                 </Select>
                 <Select
+                  value={tableOperationalFilter}
+                  onValueChange={setTableOperationalFilter}
+                >
+                  <SelectTrigger className="w-44 bg-background border-border text-foreground">
+                    <SelectValue placeholder="Table Status" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border-border">
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="available">Available</SelectItem>
+                    <SelectItem value="occupied">Occupied</SelectItem>
+                    <SelectItem value="reserved">Reserved</SelectItem>
+                    <SelectItem value="cleaning">Cleaning</SelectItem>
+                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
                   value={tableStatusFilter}
                   onValueChange={(value) =>
                     setTableStatusFilter(value as "all" | "active" | "inactive")
                   }
                 >
                   <SelectTrigger className="w-40 bg-background border-border text-foreground">
-                    <SelectValue placeholder="Status" />
+                    <SelectValue placeholder="Active" />
                   </SelectTrigger>
                   <SelectContent className="bg-popover border-border">
                     <SelectItem value="all">All</SelectItem>
@@ -1177,22 +1456,59 @@ export default function TableBooking() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredTables.map((table: any) => (
+                {isTablesLoading ? (
+                  <div className="col-span-full text-center py-12 text-muted-foreground">
+                    Loading tables...
+                  </div>
+                ) : filteredTables.length === 0 ? (
+                  <div className="col-span-full text-center py-12 text-muted-foreground">
+                    <MapPin className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No tables found</p>
+                    <p className="text-sm">
+                      Add a table or adjust your filters
+                    </p>
+                  </div>
+                ) : (
+                  filteredTables.map((table: any) => (
                   <div key={table.id} className="p-4 border rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <h3 className="font-semibold">{table.tableNumber}</h3>
-                      <Badge
-                        variant={table.type === "vip" ? "default" : "secondary"}
-                      >
-                        {table.type}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        {table.status && (
+                          <Badge
+                            variant={
+                              table.status === "occupied" ||
+                              table.status === "reserved"
+                                ? "default"
+                                : "secondary"
+                            }
+                          >
+                            {tableStatusLabels[table.status] ?? table.status}
+                          </Badge>
+                        )}
+                        <Badge
+                          variant={table.type === "vip" ? "default" : "outline"}
+                        >
+                          {table.type}
+                        </Badge>
+                      </div>
                     </div>
                     <div className="space-y-1 text-sm text-muted-foreground">
+                      {table.tableName && <p>Name: {table.tableName}</p>}
                       <p>Capacity: {table.capacity} guests</p>
                       <p>Location: {table.location || "Unspecified"}</p>
-                      <p className={table.isActive ? "text-green-600" : "text-red-600"}>
-                        {table.isActive ? "Active" : "Inactive"}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-block w-2 h-2 rounded-full ${tableStatusColors[table.status] ?? "bg-gray-400"}`}
+                        />
+                        <span className="capitalize">
+                          {tableStatusLabels[table.status] ?? table.status ?? "Unknown"}
+                        </span>
+                        <span>·</span>
+                        <span className={table.isActive ? "text-green-600" : "text-red-600"}>
+                          {table.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </div>
                     </div>
                     <div className="flex space-x-2 mt-3">
                       <Button variant="outline" size="sm">
@@ -1205,7 +1521,8 @@ export default function TableBooking() {
                       </Button>
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>

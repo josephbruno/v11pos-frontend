@@ -16,7 +16,7 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  DollarSign,
+  IndianRupee,
   TrendingUp,
   Image as ImageIcon,
 } from "lucide-react";

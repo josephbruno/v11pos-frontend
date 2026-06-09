@@ -8,7 +8,7 @@ import {
   Save,
   X,
   Percent,
-  DollarSign,
+  IndianRupee,
   Settings as SettingsIcon,
   FileText,
   AlertTriangle,
@@ -498,7 +498,7 @@ function TaxCalculator() {
           <div className="space-y-3">
             <div className="flex justify-between text-pos-text">
               <span>Order Amount:</span>
-              <span>${orderAmount.toFixed(2)}</span>
+              <span>₹{orderAmount.toFixed(2)}</span>
             </div>
 
             {taxCalculations.length === 0 ? (
@@ -514,7 +514,7 @@ function TaxCalculator() {
                   <span>
                     {calc.taxName} ({calc.taxPercentage}%):
                   </span>
-                  <span>${calc.taxAmount.toFixed(2)}</span>
+                  <span>₹{calc.taxAmount.toFixed(2)}</span>
                 </div>
               ))
             )}
@@ -522,11 +522,11 @@ function TaxCalculator() {
             <Separator />
             <div className="flex justify-between text-pos-text font-bold text-lg">
               <span>Total Tax:</span>
-              <span>${totalTax.toFixed(2)}</span>
+              <span>₹{totalTax.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-pos-accent font-bold text-xl">
               <span>Final Amount:</span>
-              <span>${finalAmount.toFixed(2)}</span>
+              <span>₹{finalAmount.toFixed(2)}</span>
             </div>
           </div>
         </CardContent>
@@ -594,11 +594,11 @@ export default function TaxManagement() {
     }
 
     if (rule.minAmount) {
-      parts.push(`Min: $${rule.minAmount}`);
+      parts.push(`Min: ₹${rule.minAmount}`);
     }
 
     if (rule.maxAmount) {
-      parts.push(`Max: $${rule.maxAmount}`);
+      parts.push(`Max: ₹${rule.maxAmount}`);
     }
 
     return parts.length > 0 ? parts.join(" • ") : "All Orders";
@@ -720,7 +720,7 @@ export default function TaxManagement() {
                         <span className="text-pos-text-muted">
                           Min:{" "}
                           <span className="text-pos-text">
-                            ${rule.minAmount}
+                            ₹{rule.minAmount}
                           </span>
                         </span>
                       )}
@@ -728,7 +728,7 @@ export default function TaxManagement() {
                         <span className="text-pos-text-muted">
                           Max:{" "}
                           <span className="text-pos-text">
-                            ${rule.maxAmount}
+                            ₹{rule.maxAmount}
                           </span>
                         </span>
                       )}

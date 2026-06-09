@@ -188,7 +188,24 @@ export default function KitchenDisplay() {
       {stations.length === 0 && !loadingStations && (
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground">
-            No KDS stations configured. Create stations via the API or admin tools.
+            No KDS stations found. Refresh the page — a default Main Kitchen station is
+            created automatically on first load.
+          </CardContent>
+        </Card>
+      )}
+
+      {loadingStations && (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground">
+            Loading kitchen stations...
+          </CardContent>
+        </Card>
+      )}
+
+      {loadingDisplays && stationId && (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground">
+            Loading kitchen tickets...
           </CardContent>
         </Card>
       )}
@@ -293,10 +310,11 @@ export default function KitchenDisplay() {
         ))}
       </div>
 
-      {displays.length === 0 && stationId && !loadingDisplays && (
+      {displays.length === 0 && stationId && !loadingDisplays && stations.length > 0 && (
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground">
-            No active tickets for this station.
+            No active tickets for this station. New orders from the POS are sent here
+            automatically when placed.
           </CardContent>
         </Card>
       )}

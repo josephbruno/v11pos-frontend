@@ -9,7 +9,7 @@ import {
   Shield,
   Database,
   Globe,
-  DollarSign,
+  IndianRupee,
   Download,
   Upload,
   RefreshCw,
@@ -89,8 +89,8 @@ export default function Settings() {
     phone: "",
     email: "",
     website: "",
-    currency: "USD",
-    timezone: "America/New_York",
+    currency: "INR",
+    timezone: "Asia/Kolkata",
     taxRate: 8.5,
     serviceCharge: 10,
     openingHours: defaultOpeningHours,
@@ -324,10 +324,7 @@ export default function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-card border-border">
-                      <SelectItem value="USD">USD - US Dollar</SelectItem>
-                      <SelectItem value="EUR">EUR - Euro</SelectItem>
-                      <SelectItem value="GBP">GBP - British Pound</SelectItem>
-                      <SelectItem value="CAD">CAD - Canadian Dollar</SelectItem>
+                      <SelectItem value="INR">INR - Indian Rupee (₹)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -341,10 +338,7 @@ export default function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-card border-border">
-                      <SelectItem value="America/New_York">Eastern Time</SelectItem>
-                      <SelectItem value="America/Chicago">Central Time</SelectItem>
-                      <SelectItem value="America/Denver">Mountain Time</SelectItem>
-                      <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
+                      <SelectItem value="Asia/Kolkata">India Standard Time (IST)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -443,7 +437,7 @@ export default function Settings() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {[
-                  { key: "cashEnabled", label: "Cash Payments", icon: DollarSign },
+                  { key: "cashEnabled", label: "Cash Payments", icon: IndianRupee },
                   { key: "cardEnabled", label: "Card Payments", icon: CreditCard },
                   { key: "upiEnabled", label: "UPI Payments", icon: Globe },
                   { key: "walletEnabled", label: "Digital Wallet", icon: CreditCard },

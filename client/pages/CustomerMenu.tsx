@@ -570,24 +570,24 @@ function CartSummary({
       <div className="space-y-2">
         <div className="flex justify-between text-sm">
           <span>Subtotal:</span>
-          <span>${cart.subtotal.toFixed(2)}</span>
+          <span>₹{cart.subtotal.toFixed(2)}</span>
         </div>
         {cart.serviceCharge > 0 && (
           <div className="flex justify-between text-sm">
             <span>Service Charge:</span>
-            <span>${cart.serviceCharge.toFixed(2)}</span>
+            <span>₹{cart.serviceCharge.toFixed(2)}</span>
           </div>
         )}
         {cart.taxes.map((tax) => (
           <div key={tax.taxRuleId} className="flex justify-between text-sm">
             <span>{tax.taxName}:</span>
-            <span>${tax.taxAmount.toFixed(2)}</span>
+            <span>₹{tax.taxAmount.toFixed(2)}</span>
           </div>
         ))}
         <Separator />
         <div className="flex justify-between font-bold">
           <span>Total:</span>
-          <span>${cart.totalAmount.toFixed(2)}</span>
+          <span>₹{cart.totalAmount.toFixed(2)}</span>
         </div>
       </div>
 

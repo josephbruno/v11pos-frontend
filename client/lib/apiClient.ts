@@ -55,13 +55,150 @@ export function getTokenType(endpoint?: string): string {
   return tokenType.toLowerCase() === "bearer" ? "Bearer" : tokenType;
 }
 
+function parseJwtExpiryMs(token: string): number | null {
+  try {
+    const payloadBase64 = token.split(".")[1];
+    if (!payloadBase64) return null;
+
+    const normalized = payloadBase64.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+    const payload = JSON.parse(atob(padded)) as { exp?: number };
+
+    if (!payload.exp) return null;
+    return payload.exp * 1000;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Check if token is expired
  */
 export function isTokenExpired(): boolean {
+  const token = localStorage.getItem("restaurant-pos-token");
   const expiresAt = localStorage.getItem("restaurant-pos-token-expires");
-  if (!expiresAt) return true;
-  return Date.now() >= parseInt(expiresAt);
+
+  if (expiresAt) {
+    return Date.now() >= parseInt(expiresAt, 10);
+  }
+
+  if (token) {
+    const jwtExpiry = parseJwtExpiryMs(token);
+    if (jwtExpiry) {
+      return Date.now() >= jwtExpiry;
+    }
+  }
+
+  return true;
+}
+
+export function persistAccessToken(accessToken: string, tokenType?: string): void {
+  localStorage.setItem("restaurant-pos-token", accessToken);
+
+  if (tokenType) {
+    const normalized = tokenType.toLowerCase() === "bearer" ? "Bearer" : tokenType;
+    localStorage.setItem("restaurant-pos-token-type", normalized);
+  }
+
+  const expiryMs = parseJwtExpiryMs(accessToken);
+  if (expiryMs) {
+    localStorage.setItem("restaurant-pos-token-expires", String(expiryMs));
+  }
+}
+
+function clearAuthStorage(): void {
+  localStorage.removeItem("restaurant-pos-user");
+  localStorage.removeItem("restaurant-pos-token");
+  localStorage.removeItem("restaurant-pos-refresh-token");
+  localStorage.removeItem("restaurant-pos-token-type");
+  localStorage.removeItem("restaurant-pos-token-expires");
+}
+
+function redirectToLogin(): void {
+  if (typeof window !== "undefined" && !window.location.pathname.includes("/login")) {
+    window.location.href = "/login";
+  }
+}
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+/**
+ * Exchange stored refresh token for a new access token.
+ */
+export async function refreshSession(): Promise<boolean> {
+  const refreshToken = localStorage.getItem("restaurant-pos-refresh-token");
+  if (!refreshToken) return false;
+
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+
+        if (!response.ok) return false;
+
+        const payload = await response.json();
+        const data = payload?.data ?? payload;
+        if (!data?.access_token) return false;
+
+        persistAccessToken(data.access_token, data.token_type);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+
+  return refreshInFlight;
+}
+
+function isPublicAuthEndpoint(endpoint?: string): boolean {
+  if (!endpoint) return false;
+  return (
+    endpoint.includes("/auth/login") ||
+    endpoint.includes("/auth/refresh") ||
+    endpoint.includes("/auth/forgot-password") ||
+    endpoint.includes("/auth/verify-otp") ||
+    endpoint.includes("/auth/reset-password")
+  );
+}
+
+function buildRequestHeaders(options: RequestInit, endpoint?: string, withAuth = true): HeadersInit {
+  return {
+    ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+    ...(withAuth ? getAuthHeaders(endpoint) : {}),
+    ...options.headers,
+  };
+}
+
+async function apiRequest(url: string, options: RequestInit = {}, endpoint?: string): Promise<Response> {
+  const useAuth = !isPublicAuthEndpoint(endpoint);
+  let response = await fetch(url, {
+    ...options,
+    headers: buildRequestHeaders(options, endpoint, useAuth),
+  });
+
+  if (response.status === 401 && useAuth) {
+    const refreshed = await refreshSession();
+    if (refreshed) {
+      response = await fetch(url, {
+        ...options,
+        headers: buildRequestHeaders(options, endpoint, true),
+      });
+    }
+
+    if (response.status === 401) {
+      clearAuthStorage();
+      redirectToLogin();
+    }
+  }
+
+  return response;
 }
 
 /**
@@ -90,21 +227,6 @@ async function handleResponse<T>(response: Response): Promise<T> {
       errorData = await response.json();
     } catch {
       errorData = { message: response.statusText || "Request failed" };
-    }
-
-    // Handle 401 Unauthorized - token expired or invalid
-    if (response.status === 401) {
-      // Clear stored auth data
-      localStorage.removeItem("restaurant-pos-user");
-      localStorage.removeItem("restaurant-pos-token");
-      localStorage.removeItem("restaurant-pos-refresh-token");
-      localStorage.removeItem("restaurant-pos-token-type");
-      localStorage.removeItem("restaurant-pos-token-expires");
-
-      // Redirect to login if not already there
-      if (!window.location.pathname.includes("/login")) {
-        window.location.href = "/login";
-      }
     }
 
     throw new ApiError(
@@ -136,15 +258,11 @@ async function handleResponse<T>(response: Response): Promise<T> {
  * Make an authenticated GET request
  */
 export async function apiGet<T = any>(endpoint: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-      ...options?.headers,
-    },
-    ...options,
-  });
+  const response = await apiRequest(
+    `${API_BASE_URL}${endpoint}`,
+    { method: "GET", ...options },
+    endpoint
+  );
 
   return handleResponse<T>(response);
 }
@@ -158,16 +276,15 @@ export async function apiPostTo<T = any>(
   data?: any,
   options?: RequestInit
 ): Promise<T> {
-  const response = await fetch(joinUrl(baseUrl, endpoint), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(endpoint),
-      ...options?.headers,
+  const response = await apiRequest(
+    joinUrl(baseUrl, endpoint),
+    {
+      method: "POST",
+      body: data ? JSON.stringify(data) : undefined,
+      ...options,
     },
-    body: data ? JSON.stringify(data) : undefined,
-    ...options,
-  });
+    endpoint
+  );
 
   return handleResponse<T>(response);
 }
@@ -181,16 +298,15 @@ export async function apiPutTo<T = any>(
   data?: any,
   options?: RequestInit
 ): Promise<T> {
-  const response = await fetch(joinUrl(baseUrl, endpoint), {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(endpoint),
-      ...options?.headers,
+  const response = await apiRequest(
+    joinUrl(baseUrl, endpoint),
+    {
+      method: "PUT",
+      body: data ? JSON.stringify(data) : undefined,
+      ...options,
     },
-    body: data ? JSON.stringify(data) : undefined,
-    ...options,
-  });
+    endpoint
+  );
 
   return handleResponse<T>(response);
 }
@@ -203,16 +319,15 @@ export async function apiPost<T = any>(
   data?: any,
   options?: RequestInit
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(endpoint),
-      ...options?.headers,
+  const response = await apiRequest(
+    `${API_BASE_URL}${endpoint}`,
+    {
+      method: "POST",
+      body: data ? JSON.stringify(data) : undefined,
+      ...options,
     },
-    body: data ? JSON.stringify(data) : undefined,
-    ...options,
-  });
+    endpoint
+  );
 
   return handleResponse<T>(response);
 }
@@ -225,16 +340,15 @@ export async function apiPut<T = any>(
   data?: any,
   options?: RequestInit
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(endpoint),
-      ...options?.headers,
+  const response = await apiRequest(
+    `${API_BASE_URL}${endpoint}`,
+    {
+      method: "PUT",
+      body: data ? JSON.stringify(data) : undefined,
+      ...options,
     },
-    body: data ? JSON.stringify(data) : undefined,
-    ...options,
-  });
+    endpoint
+  );
 
   return handleResponse<T>(response);
 }
@@ -248,16 +362,15 @@ export async function apiPatchTo<T = any>(
   data?: any,
   options?: RequestInit
 ): Promise<T> {
-  const response = await fetch(joinUrl(baseUrl, endpoint), {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(endpoint),
-      ...options?.headers,
+  const response = await apiRequest(
+    joinUrl(baseUrl, endpoint),
+    {
+      method: "PATCH",
+      body: data ? JSON.stringify(data) : undefined,
+      ...options,
     },
-    body: data ? JSON.stringify(data) : undefined,
-    ...options,
-  });
+    endpoint
+  );
 
   return handleResponse<T>(response);
 }
@@ -270,16 +383,15 @@ export async function apiPatch<T = any>(
   data?: any,
   options?: RequestInit
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(endpoint),
-      ...options?.headers,
+  const response = await apiRequest(
+    `${API_BASE_URL}${endpoint}`,
+    {
+      method: "PATCH",
+      body: data ? JSON.stringify(data) : undefined,
+      ...options,
     },
-    body: data ? JSON.stringify(data) : undefined,
-    ...options,
-  });
+    endpoint
+  );
 
   return handleResponse<T>(response);
 }
@@ -288,15 +400,11 @@ export async function apiPatch<T = any>(
  * Make an authenticated DELETE request
  */
 export async function apiDelete<T = any>(endpoint: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(endpoint),
-      ...options?.headers,
-    },
-    ...options,
-  });
+  const response = await apiRequest(
+    `${API_BASE_URL}${endpoint}`,
+    { method: "DELETE", ...options },
+    endpoint
+  );
 
   return handleResponse<T>(response);
 }
@@ -309,16 +417,11 @@ export async function apiUpload<T = any>(
   formData: FormData,
   options?: RequestInit
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: "POST",
-    headers: {
-      ...getAuthHeaders(endpoint),
-      // Don't set Content-Type for FormData, browser will set it with boundary
-      ...options?.headers,
-    },
-    body: formData,
-    ...options,
-  });
+  const response = await apiRequest(
+    `${API_BASE_URL}${endpoint}`,
+    { method: "POST", body: formData, ...options },
+    endpoint
+  );
 
   return handleResponse<T>(response);
 }
@@ -332,16 +435,11 @@ export async function apiUploadTo<T = any>(
   formData: FormData,
   options?: RequestInit
 ): Promise<T> {
-  const response = await fetch(joinUrl(baseUrl, endpoint), {
-    method: "POST",
-    headers: {
-      ...getAuthHeaders(endpoint),
-      // Don't set Content-Type for FormData, browser will set it with boundary
-      ...options?.headers,
-    },
-    body: formData,
-    ...options,
-  });
+  const response = await apiRequest(
+    joinUrl(baseUrl, endpoint),
+    { method: "POST", body: formData, ...options },
+    endpoint
+  );
 
   return handleResponse<T>(response);
 }
@@ -354,15 +452,11 @@ export async function apiUploadPut<T = any>(
   formData: FormData,
   options?: RequestInit
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: "PUT",
-    headers: {
-      ...getAuthHeaders(endpoint),
-      ...options?.headers,
-    },
-    body: formData,
-    ...options,
-  });
+  const response = await apiRequest(
+    `${API_BASE_URL}${endpoint}`,
+    { method: "PUT", body: formData, ...options },
+    endpoint
+  );
 
   return handleResponse<T>(response);
 }
@@ -376,15 +470,11 @@ export async function apiUploadPutTo<T = any>(
   formData: FormData,
   options?: RequestInit
 ): Promise<T> {
-  const response = await fetch(joinUrl(baseUrl, endpoint), {
-    method: "PUT",
-    headers: {
-      ...getAuthHeaders(endpoint),
-      ...options?.headers,
-    },
-    body: formData,
-    ...options,
-  });
+  const response = await apiRequest(
+    joinUrl(baseUrl, endpoint),
+    { method: "PUT", body: formData, ...options },
+    endpoint
+  );
 
   return handleResponse<T>(response);
 }
@@ -396,14 +486,7 @@ export async function apiFetch<T = any>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(endpoint),
-      ...options?.headers,
-    },
-    ...options,
-  });
+  const response = await apiRequest(`${API_BASE_URL}${endpoint}`, options ?? {}, endpoint);
 
   return handleResponse<T>(response);
 }

@@ -63,6 +63,7 @@ import {
   deleteUser,
   getMyRestaurants,
   getUsers,
+  getUsersByRestaurant,
   updateUser,
   updateUserPassword,
 } from "@/lib/apiServices";
@@ -407,7 +408,10 @@ export default function UserManagement() {
   ];
 
   const [users, setUsers] = useState<User[]>(initialUsers);
-  const usersForView = authUser?.role === "super_admin" ? apiUsers : users;
+  const isAdminView = authUser?.role === "admin";
+  const usesApiUsers = authUser?.role === "super_admin" || isAdminView;
+  const usersForView = usesApiUsers ? apiUsers : users;
+  const adminRestaurantId = authUser?.branchId || "";
 
   const filteredUsers = usersForView.filter((user) => {
     const matchesSearch =
@@ -483,8 +487,12 @@ export default function UserManagement() {
   }, [authUser?.role]);
 
   useEffect(() => {
-    loadSuperAdminUsers();
-  }, [authUser?.role]);
+    if (authUser?.role === "super_admin") {
+      loadSuperAdminUsers();
+    } else if (isAdminView) {
+      loadRestaurantUsers();
+    }
+  }, [authUser?.role, adminRestaurantId]);
 
   // Tab-specific configurations
   const getTabConfig = (tab: string) => {
@@ -593,7 +601,7 @@ export default function UserManagement() {
     !!editingUser || isAddingUser || isAddingRole || isAddingSchedule;
 
   const handleCreateUser = async (newUser: any) => {
-    if (authUser?.role === "super_admin") {
+    if (authUser?.role === "super_admin" || isAdminView) {
       try {
         const selectedStatus = newUser.status as User["status"];
         const createdUserResponse: any = await createUser({
@@ -601,7 +609,9 @@ export default function UserManagement() {
           username: newUser.username,
           email: newUser.email,
           ...(newUser.phone ? { phone: newUser.phone } : {}),
-          restaurant_id: newUser.restaurantId || undefined,
+          restaurant_id: isAdminView
+            ? adminRestaurantId
+            : newUser.restaurantId || undefined,
           role: mapRoleForApi(newUser.role as User["role"]),
           is_active: newUser.status === "active",
           status: newUser.status,
@@ -624,7 +634,11 @@ export default function UserManagement() {
           } as any);
         }
 
-        await loadSuperAdminUsers();
+        if (authUser?.role === "super_admin") {
+          await loadSuperAdminUsers();
+        } else {
+          await loadRestaurantUsers();
+        }
         closeAddUserModal();
         addToast({
           type: "success",
@@ -721,6 +735,137 @@ export default function UserManagement() {
     return parsed.toLocaleString();
   };
 
+  const mapApiUserRecords = (
+    usersData: any[],
+    restaurantNameById: Map<string, string>,
+  ): User[] => {
+    const sortedUsersData = [...usersData].sort((a: any, b: any) => {
+      const aDate = new Date(
+        a?.created_at || a?.createdAt || a?.updated_at || a?.updatedAt || 0,
+      ).getTime();
+      const bDate = new Date(
+        b?.created_at || b?.createdAt || b?.updated_at || b?.updatedAt || 0,
+      ).getTime();
+      return bDate - aDate;
+    });
+
+    return sortedUsersData.map((user: any) => {
+      const restaurantId =
+        user.restaurant_id ||
+        user.restaurantId ||
+        user.branchId ||
+        user.restaurant?.id;
+      const restaurantNameFromUser =
+        user.restaurant_name ||
+        user.restaurantName ||
+        user.restaurant?.name ||
+        user.restaurant?.business_name;
+      return {
+        id: String(user.id || ""),
+        name:
+          user.name ||
+          user.full_name ||
+          user.username ||
+          user.email ||
+          "Unknown User",
+        username: user.username || undefined,
+        email: user.email || "N/A",
+        phone: user.phone || "N/A",
+        restaurant:
+          restaurantNameById.get(String(restaurantId || "")) ||
+          restaurantNameFromUser ||
+          "Unassigned",
+        restaurantId: restaurantId ? String(restaurantId) : undefined,
+        role: normalizeRole(user.role),
+        status: normalizeStatus(user),
+        joinDate: toDateText(user.join_date || user.created_at),
+        lastLogin: toDateTimeText(user.last_login || user.updated_at),
+        avatar: user.avatar || undefined,
+        permissions: Array.isArray(user.permissions) ? user.permissions : [],
+        shifts: [],
+        performance: {
+          ordersHandled: 0,
+          avgOrderValue: 0,
+          customerRating: 0,
+          punctualityScore: 0,
+        },
+      };
+    });
+  };
+
+  const loadRestaurantUsers = async () => {
+    if (!isAdminView || !adminRestaurantId) {
+      return;
+    }
+
+    setIsUsersLoading(true);
+    try {
+      const [usersResponse, restaurantsResponse] = await Promise.all([
+        getUsersByRestaurant(adminRestaurantId, 0, 1000),
+        getMyRestaurants(0, 500),
+      ]);
+
+      const usersSource = (usersResponse as any)?.data ?? usersResponse;
+      const usersData = Array.isArray(usersSource?.users)
+        ? usersSource.users
+        : Array.isArray(usersSource)
+          ? usersSource
+          : [];
+
+      const restaurantsSource = (restaurantsResponse as any)?.data ?? restaurantsResponse;
+      const restaurantsData = Array.isArray(restaurantsSource)
+        ? restaurantsSource
+        : Array.isArray(restaurantsSource?.items)
+          ? restaurantsSource.items
+          : Array.isArray(restaurantsSource?.restaurants)
+            ? restaurantsSource.restaurants
+            : [];
+
+      const restaurantNameById = new Map<string, string>(
+        restaurantsData
+          .filter((r: any) => r?.id && (r?.name || r?.business_name))
+          .map((r: any) => [String(r.id), String(r.name || r.business_name)]),
+      );
+
+      const adminRestaurantChoices = Array.from(
+        new Map(
+          restaurantsData
+            .filter(
+              (r: any) =>
+                String(r.id) === adminRestaurantId &&
+                (r?.name || r?.business_name),
+            )
+            .map((r: any) => [
+              String(r.id),
+              { id: String(r.id), name: String(r.name || r.business_name) },
+            ]),
+        ).values(),
+      ) as Array<{ id: string; name: string }>;
+
+      if (adminRestaurantChoices.length > 0) {
+        setRestaurantChoices(adminRestaurantChoices);
+      } else if (restaurantNameById.has(adminRestaurantId)) {
+        setRestaurantChoices([
+          {
+            id: adminRestaurantId,
+            name: restaurantNameById.get(adminRestaurantId) || "My Restaurant",
+          },
+        ]);
+      }
+
+      setApiUsers(mapApiUserRecords(usersData, restaurantNameById));
+    } catch (error: any) {
+      addToast({
+        type: "error",
+        title: "Failed to Load Users",
+        description: error?.message || "Could not fetch restaurant users.",
+      });
+      setApiUsers([]);
+    } finally {
+      setIsUsersLoading(false);
+    }
+  };
+
   const loadSuperAdminUsers = async () => {
     if (authUser?.role !== "super_admin") {
       return;
@@ -767,60 +912,7 @@ export default function UserManagement() {
         ) as Array<{ id: string; name: string }>,
       );
 
-      const sortedUsersData = [...usersData].sort((a: any, b: any) => {
-        const aDate = new Date(
-          a?.created_at || a?.createdAt || a?.updated_at || a?.updatedAt || 0,
-        ).getTime();
-        const bDate = new Date(
-          b?.created_at || b?.createdAt || b?.updated_at || b?.updatedAt || 0,
-        ).getTime();
-        return bDate - aDate;
-      });
-
-      const mappedUsers: User[] = sortedUsersData.map((user: any) => {
-        const restaurantId =
-          user.restaurant_id ||
-          user.restaurantId ||
-          user.branchId ||
-          user.restaurant?.id;
-        const restaurantNameFromUser =
-          user.restaurant_name ||
-          user.restaurantName ||
-          user.restaurant?.name ||
-          user.restaurant?.business_name;
-        return {
-          id: String(user.id || ""),
-          name:
-            user.name ||
-            user.full_name ||
-            user.username ||
-            user.email ||
-            "Unknown User",
-          username: user.username || undefined,
-          email: user.email || "N/A",
-          phone: user.phone || "N/A",
-          restaurant:
-            restaurantNameById.get(String(restaurantId || "")) ||
-            restaurantNameFromUser ||
-            "Unassigned",
-          restaurantId: restaurantId ? String(restaurantId) : undefined,
-          role: normalizeRole(user.role),
-          status: normalizeStatus(user),
-          joinDate: toDateText(user.join_date || user.created_at),
-          lastLogin: toDateTimeText(user.last_login || user.updated_at),
-          avatar: user.avatar || undefined,
-          permissions: Array.isArray(user.permissions) ? user.permissions : [],
-          shifts: [],
-          performance: {
-            ordersHandled: 0,
-            avgOrderValue: 0,
-            customerRating: 0,
-            punctualityScore: 0,
-          },
-        };
-      });
-
-      setApiUsers(mappedUsers);
+      setApiUsers(mapApiUserRecords(usersData, restaurantNameById));
     } catch (error: any) {
       addToast({
         type: "error",
@@ -836,7 +928,7 @@ export default function UserManagement() {
   const handleSaveUser = async (updatedUser: Partial<User>) => {
     if (!editingUser) return;
 
-    if (authUser?.role === "super_admin") {
+    if (authUser?.role === "super_admin" || isAdminView) {
       try {
         const nextPassword = String((updatedUser as any).password ?? "").trim();
         await updateUser(editingUser.id, {
@@ -845,7 +937,9 @@ export default function UserManagement() {
           email: updatedUser.email,
           ...(nextPassword ? { password: nextPassword } : {}),
           ...(updatedUser.phone ? { phone: updatedUser.phone } : {}),
-          restaurant_id: (updatedUser as any).restaurantId || undefined,
+          restaurant_id: isAdminView
+            ? adminRestaurantId
+            : (updatedUser as any).restaurantId || undefined,
           role: updatedUser.role ? mapRoleForApi(updatedUser.role as User["role"]) : undefined,
           is_active: updatedUser.status ? updatedUser.status === "active" : undefined,
           status: updatedUser.status,
@@ -859,7 +953,11 @@ export default function UserManagement() {
                   ...updatedUser,
                   restaurant:
                     restaurantChoices.find(
-                      (restaurant) => restaurant.id === (updatedUser as any).restaurantId,
+                      (restaurant) =>
+                        restaurant.id ===
+                        (isAdminView
+                          ? adminRestaurantId
+                          : (updatedUser as any).restaurantId),
                     )?.name || user.restaurant,
                   role: (updatedUser.role as User["role"]) || user.role,
                   status: (updatedUser.status as User["status"]) || user.status,
@@ -912,7 +1010,7 @@ export default function UserManagement() {
     if (!userToDelete) return;
     setIsDeletingUser(true);
 
-    if (authUser?.role === "super_admin") {
+    if (authUser?.role === "super_admin" || isAdminView) {
       try {
         await deleteUser(userToDelete.id);
         setApiUsers((prev) => prev.filter((user) => user.id !== userToDelete.id));
@@ -966,6 +1064,9 @@ export default function UserManagement() {
       if (authUser?.role === "super_admin") {
         await updateUserPassword(passwordResetUser.id, resetPasswordValue);
         await loadSuperAdminUsers();
+      } else if (isAdminView) {
+        await updateUserPassword(passwordResetUser.id, resetPasswordValue);
+        await loadRestaurantUsers();
       }
       addToast({
         type: "success",
@@ -1076,7 +1177,7 @@ export default function UserManagement() {
     const initialRestaurantId =
       user?.restaurantId ||
       restaurantChoices.find((restaurant) => restaurant.name === user?.restaurant)?.id ||
-      "";
+      (isAdminView ? adminRestaurantId : "");
     const [formData, setFormData] = useState({
       name: user?.name || "",
       username: user?.username || "",
@@ -1136,6 +1237,7 @@ export default function UserManagement() {
           }
           return "";
         case "restaurantId":
+          if (isAdminView) return "";
           if (!normalizedValue) return "Please select a restaurant.";
           return "";
         case "role":
@@ -1187,14 +1289,16 @@ export default function UserManagement() {
     const validateForm = () => {
       const fields: Array<
         "name" | "username" | "email" | "restaurantId" | "password" | "role"
-      > = [
-        "name",
-        "username",
-        "email",
-        "restaurantId",
-        "role",
-        "password",
-      ];
+      > = isAdminView
+        ? ["name", "username", "email", "role", "password"]
+        : [
+            "name",
+            "username",
+            "email",
+            "restaurantId",
+            "role",
+            "password",
+          ];
       const nextErrors: Record<string, string> = {};
       for (const field of fields) {
         const value = String((formData as any)[field] ?? "");
@@ -1214,6 +1318,7 @@ export default function UserManagement() {
         name: formData.name.trim(),
         username: formData.username.trim(),
         email: formData.email.trim(),
+        restaurantId: isAdminView ? adminRestaurantId : formData.restaurantId,
       });
     };
 
@@ -1262,33 +1367,35 @@ export default function UserManagement() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="restaurant" className="text-foreground">
-              Restaurant
-            </Label>
-            <Select
-              value={formData.restaurantId || "none"}
-              onValueChange={(value) =>
-                setFieldValue("restaurantId", value === "none" ? "" : value)
-              }
-            >
-              <SelectTrigger className="bg-background border-border text-foreground">
-                <SelectValue placeholder="Select restaurant" />
-              </SelectTrigger>
-              <SelectContent className="bg-background border-border">
-                <SelectItem value="none">Select Restaurant</SelectItem>
-                {restaurantChoices.map((restaurant) => (
-                  <SelectItem key={restaurant.id} value={restaurant.id}>
-                    {restaurant.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {formErrors.restaurantId && (
-              <p className="text-xs text-destructive">{formErrors.restaurantId}</p>
-            )}
-          </div>
-          <div className="space-y-2">
+          {!isAdminView && (
+            <div className="space-y-2">
+              <Label htmlFor="restaurant" className="text-foreground">
+                Restaurant
+              </Label>
+              <Select
+                value={formData.restaurantId || "none"}
+                onValueChange={(value) =>
+                  setFieldValue("restaurantId", value === "none" ? "" : value)
+                }
+              >
+                <SelectTrigger className="bg-background border-border text-foreground">
+                  <SelectValue placeholder="Select restaurant" />
+                </SelectTrigger>
+                <SelectContent className="bg-background border-border">
+                  <SelectItem value="none">Select Restaurant</SelectItem>
+                  {restaurantChoices.map((restaurant) => (
+                    <SelectItem key={restaurant.id} value={restaurant.id}>
+                      {restaurant.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {formErrors.restaurantId && (
+                <p className="text-xs text-destructive">{formErrors.restaurantId}</p>
+              )}
+            </div>
+          )}
+          <div className={`space-y-2 ${isAdminView ? "md:col-span-2" : ""}`}>
             <Label htmlFor="role" className="text-foreground">
               Role
             </Label>
@@ -1303,7 +1410,10 @@ export default function UserManagement() {
               </SelectTrigger>
               <SelectContent className="bg-background border-border">
                 <SelectItem value="none">Select Role</SelectItem>
-                {roles.map((role) => (
+                {(isAdminView
+                  ? roles.filter((role) => role.id !== "super_admin")
+                  : roles
+                ).map((role) => (
                   <SelectItem key={role.id} value={role.id}>
                     {role.name}
                   </SelectItem>
@@ -2049,416 +2159,211 @@ export default function UserManagement() {
     );
   }
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="space-y-6"
-    >
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-        <div>
-          <h1 className="text-2xl lg:text-3xl font-bold text-foreground">
-            User Management
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage staff accounts, roles, and permissions
-          </p>
-        </div>
-
-        {/* Tab-specific Add Button */}
-        <Button
-          onClick={handleAddAction}
-          className="bg-primary hover:bg-primary/90 justify-center lg:justify-start"
+  if (isAdminView) {
+    return (
+      <>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="space-y-6"
         >
-          <ButtonIcon className="mr-2 h-4 w-4" />
-          {tabConfig.buttonText}
-        </Button>
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="bg-card border-border mb-6">
-          <TabsTrigger
-            value="users"
-            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-          >
-            <Users className="mr-2 h-4 w-4" />
-            Users
-          </TabsTrigger>
-          <TabsTrigger
-            value="roles"
-            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-          >
-            <Shield className="mr-2 h-4 w-4" />
-            Roles
-          </TabsTrigger>
-          <TabsTrigger
-            value="schedules"
-            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-          >
-            <Calendar className="mr-2 h-4 w-4" />
-            Schedules
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Users Tab */}
-        <TabsContent value="users" className="space-y-6">
-          <AnimatePresence>
-            <motion.div
-              key="users-content"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.3 }}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
+            <div>
+              <h1 className="text-2xl lg:text-3xl font-bold text-foreground">
+                User Management
+              </h1>
+              <p className="text-muted-foreground mt-1">
+                Manage staff accounts for your restaurant
+              </p>
+            </div>
+            <Button
+              onClick={() => setIsAddingUser(true)}
+              className="bg-primary hover:bg-primary/90 justify-center lg:justify-start"
             >
-              {/* Filters */}
-              <Card className="bg-card border-border">
-                <CardContent className="p-4">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
-                    <div className="flex-1 relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                      <Input
-                        type="search"
-                        name="users-search"
-                        placeholder="Search users..."
-                        value={searchQuery}
-                        onChange={(e) => {
-                          if (isAnyModalOpen) return;
-                          setSearchQuery(e.target.value);
-                        }}
-                        autoComplete="off"
-                        autoCorrect="off"
-                        autoCapitalize="none"
-                        spellCheck={false}
-                        className="pl-10 bg-background border-border text-foreground"
-                      />
-                    </div>
-                    <Select
-                      value={selectedRole}
-                      onValueChange={setSelectedRole}
-                    >
-                      <SelectTrigger className="w-full sm:w-48 bg-background border-border text-foreground">
-                        <SelectValue placeholder="Role" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-background border-border">
-                        <SelectItem value="all">All Roles</SelectItem>
-                        {roles.map((role) => (
+              <UserPlus className="mr-2 h-4 w-4" />
+              Add User
+            </Button>
+          </div>
+
+          <Card className="bg-card border-border">
+            <CardContent className="p-4 space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Input
+                    type="search"
+                    name="admin-users-search"
+                    placeholder="Search users by name or email..."
+                    value={searchQuery}
+                    onChange={(e) => {
+                      if (isAnyModalOpen) return;
+                      setSearchQuery(e.target.value);
+                    }}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    className="pl-10 bg-background border-border text-foreground"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select value={selectedRole} onValueChange={setSelectedRole}>
+                    <SelectTrigger className="w-44 bg-background border-border text-foreground">
+                      <SelectValue placeholder="Role" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background border-border">
+                      <SelectItem value="all">All Roles</SelectItem>
+                      {roles
+                        .filter((role) => role.id !== "super_admin")
+                        .map((role) => (
                           <SelectItem key={role.id} value={role.id}>
                             {role.name}
                           </SelectItem>
                         ))}
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      value={selectedStatus}
-                      onValueChange={setSelectedStatus}
-                    >
-                      <SelectTrigger className="w-full sm:w-48 bg-background border-border text-foreground">
-                        <SelectValue placeholder="Status" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-background border-border">
-                        <SelectItem value="all">All Status</SelectItem>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="inactive">Inactive</SelectItem>
-                        <SelectItem value="suspended">Suspended</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Users Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {filteredUsers.map((user, index) => (
-                  <motion.div
-                    key={user.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{
-                      opacity: 1,
-                      y: 0,
-                      transition: { delay: index * 0.1 },
-                    }}
-                    whileHover={{ scale: 1.02 }}
-                  >
-                    <Card className="bg-card border-border hover:shadow-lg transition-all duration-200">
-                      <CardHeader className="pb-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center space-x-3">
-                            <Avatar className="h-12 w-12">
-                              <AvatarImage src={user.avatar} />
-                              <AvatarFallback className="bg-primary text-primary-foreground">
-                                {user.name
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <CardTitle className="text-lg text-foreground">
-                                {user.name}
-                              </CardTitle>
-                              <div className="flex items-center space-x-2 mt-1">
-                                <Badge className={getRoleColor(user.role)}>
-                                  {user.role}
-                                </Badge>
-                                {getStatusIcon(user.status)}
-                              </div>
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0"
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center space-x-2 text-sm">
-                            <Mail className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-foreground">
-                              {user.email}
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-2 text-sm">
-                            <Phone className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-foreground">
-                              {user.phone}
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-2 text-sm">
-                            <Clock className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-muted-foreground">
-                              Last login: {user.lastLogin}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4 p-3 bg-muted/50 rounded-lg">
-                          <div className="text-center">
-                            <div className="text-lg font-bold text-foreground">
-                              {user.performance.ordersHandled}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              Orders
-                            </div>
-                          </div>
-                          <div className="text-center">
-                            <div className="text-lg font-bold text-foreground">
-                              ${user.performance.avgOrderValue}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              Avg Order
-                            </div>
-                          </div>
-                          <div className="text-center">
-                            <div className="text-lg font-bold text-foreground">
-                              ★ {user.performance.customerRating}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              Rating
-                            </div>
-                          </div>
-                          <div className="text-center">
-                            <div className="text-lg font-bold text-foreground">
-                              {user.performance.punctualityScore}%
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              Punctuality
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={user.status === "inactive"}
-                            className="flex-1 border-border text-foreground hover:bg-green-600 hover:text-white hover:border-green-600 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-foreground"
-                            onClick={() => handleOpenEditUser(user)}
-                          >
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="border-border text-foreground hover:bg-accent"
-                          >
-                            <Key className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="border-border text-destructive hover:bg-destructive/10"
-                            onClick={() => setUserToDelete(user)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                    <SelectTrigger className="w-40 bg-background border-border text-foreground">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background border-border">
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="suspended">Suspended</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
+                    <SelectTrigger className="w-28 bg-background border-border text-foreground">
+                      <SelectValue placeholder="Rows" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background border-border">
+                      <SelectItem value="5">5</SelectItem>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </motion.div>
-          </AnimatePresence>
-        </TabsContent>
 
-        {/* Roles Tab */}
-        <TabsContent value="roles" className="space-y-6">
-          <AnimatePresence>
-            <motion.div
-              key="roles-content"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.3 }}
-              className="grid grid-cols-1 lg:grid-cols-2 gap-6"
-            >
-              {roles.map((role, index) => (
-                <motion.div
-                  key={role.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{
-                    opacity: 1,
-                    y: 0,
-                    transition: { delay: index * 0.1 },
-                  }}
-                  whileHover={{ scale: 1.02 }}
-                >
-                  <Card className="bg-card border-border hover:shadow-lg transition-all duration-200">
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-foreground">
-                          {role.name}
-                        </CardTitle>
-                        <Badge className="bg-primary text-primary-foreground">
-                          {role.userCount} users
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-muted-foreground mb-4">
-                        {role.description}
-                      </p>
-                      <div className="space-y-2">
-                        <Label className="text-foreground text-sm font-medium">
-                          Permissions:
-                        </Label>
-                        <div className="flex flex-wrap gap-1">
-                          {role.permissions.map((permission) => (
-                            <Badge
-                              key={permission}
-                              variant="outline"
-                              className="text-xs border-border"
-                            >
-                              {permission.replace("_", " ")}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2 mt-4">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 border-border text-foreground hover:bg-accent"
-                        >
-                          <Edit className="mr-2 h-4 w-4" />
-                          Edit Role
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-            </motion.div>
-          </AnimatePresence>
-        </TabsContent>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead className="text-right w-[160px] pr-10">Actions</TableHead>
+                      <TableHead className="w-[140px] pl-10">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {isUsersLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground">
+                          Loading users...
+                        </TableCell>
+                      </TableRow>
+                    ) : pagedUsers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground">
+                          No users found.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      pagedUsers.map((user) => (
+                        <TableRow key={user.id}>
+                          <TableCell className="font-medium">{user.name}</TableCell>
+                          <TableCell>{user.email}</TableCell>
+                          <TableCell>
+                            <Badge className={getRoleColor(user.role)}>{user.role}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right w-[160px] pr-10 whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={user.status === "inactive"}
+                                className="bg-muted text-foreground hover:bg-green-600 hover:text-white hover:border-green-600 disabled:opacity-50 disabled:hover:bg-muted disabled:hover:text-foreground"
+                                onClick={() => handleOpenEditUser(user)}
+                              >
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={user.status === "inactive"}
+                                className="bg-muted text-foreground hover:bg-blue-600 hover:text-white hover:border-blue-600 disabled:opacity-50 disabled:hover:bg-muted disabled:hover:text-foreground px-2"
+                                onClick={() => setPasswordResetUser(user)}
+                                title="Update Password"
+                              >
+                                <Key className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="bg-muted text-destructive hover:bg-destructive/10 px-2"
+                                onClick={() => setUserToDelete(user)}
+                                title="Delete User"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                          <TableCell className="w-[140px] pl-10">
+                            <Switch
+                              checked={user.status === "active"}
+                              disabled={
+                                statusUpdatingUserId === user.id || user.status === "suspended"
+                              }
+                              onCheckedChange={(checked) =>
+                                handleRequestStatusChange(user, checked)
+                              }
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
 
-        {/* Schedules Tab */}
-        <TabsContent value="schedules" className="space-y-6">
-          <AnimatePresence>
-            <motion.div
-              key="schedules-content"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Card className="bg-card border-border">
-                <CardHeader>
-                  <CardTitle className="text-foreground">
-                    Weekly Schedule
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4">
-                    {[
-                      "Monday",
-                      "Tuesday",
-                      "Wednesday",
-                      "Thursday",
-                      "Friday",
-                      "Saturday",
-                      "Sunday",
-                    ].map((day, dayIndex) => (
-                      <motion.div
-                        key={day}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{
-                          opacity: 1,
-                          y: 0,
-                          transition: { delay: dayIndex * 0.1 },
-                        }}
-                        className="space-y-2"
-                      >
-                        <h4 className="font-medium text-foreground text-center text-sm">
-                          {day}
-                        </h4>
-                        <div className="space-y-1">
-                          {users
-                            .flatMap((user) => user.shifts)
-                            .filter((shift) => shift.day === day)
-                            .map((shift) => {
-                              const user = users.find((u) =>
-                                u.shifts.some((s) => s.id === shift.id),
-                              );
-                              return (
-                                <motion.div
-                                  key={shift.id}
-                                  whileHover={{ scale: 1.02 }}
-                                  className="p-2 bg-muted/50 border border-border rounded text-xs cursor-pointer hover:bg-muted/70 transition-colors"
-                                >
-                                  <div className="font-medium text-foreground">
-                                    {user?.name}
-                                  </div>
-                                  <div className="text-muted-foreground">
-                                    {shift.startTime} - {shift.endTime}
-                                  </div>
-                                  <div className="text-primary font-medium">
-                                    {shift.position}
-                                  </div>
-                                </motion.div>
-                              );
-                            })}
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </AnimatePresence>
-        </TabsContent>
-      </Tabs>
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Showing {filteredUsers.length === 0 ? 0 : startIndex + 1}-
+                  {Math.min(startIndex + pageSize, filteredUsers.length)} of {filteredUsers.length} users
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                    disabled={currentPageSafe <= 1}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Page {currentPageSafe} of {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                    disabled={currentPageSafe >= totalPages}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
 
-      {/* Modals with Center Zoom Animation */}
-      <AnimatePresence>
-        {/* Add User Modal */}
         {isAddingUser && (
           <Dialog
             open={isAddingUser}
@@ -2476,84 +2381,18 @@ export default function UserManagement() {
               onPointerDownOutside={(event) => event.preventDefault()}
             >
               <DialogHeader>
-                <DialogTitle className="text-foreground">
-                  Add New User
-                </DialogTitle>
+                <DialogTitle className="text-foreground">Add New User</DialogTitle>
               </DialogHeader>
-              <UserForm
-                onSave={handleCreateUser}
-                onCancel={closeAddUserModal}
-              />
+              <UserForm onSave={handleCreateUser} onCancel={closeAddUserModal} />
             </DialogContent>
           </Dialog>
         )}
 
-        {/* Add Role Modal */}
-        {isAddingRole && (
-          <Dialog open={isAddingRole} onOpenChange={setIsAddingRole}>
-            <DialogContent
-              className="bg-background border-border max-w-2xl"
-              onInteractOutside={(event) => event.preventDefault()}
-              onPointerDownOutside={(event) => event.preventDefault()}
-            >
-              <DialogHeader>
-                <DialogTitle className="text-foreground">
-                  Add New Role
-                </DialogTitle>
-              </DialogHeader>
-              <RoleForm
-                onSave={(role) => {
-                  console.log("Creating new role:", role);
-                  setIsAddingRole(false);
-                  addToast({
-                    type: "success",
-                    title: "Role Created",
-                    description: "New role has been defined successfully.",
-                  });
-                }}
-                onCancel={() => setIsAddingRole(false)}
-              />
-            </DialogContent>
-          </Dialog>
-        )}
-
-        {/* Add Schedule Modal */}
-        {isAddingSchedule && (
-          <Dialog open={isAddingSchedule} onOpenChange={setIsAddingSchedule}>
-            <DialogContent
-              className="bg-background border-border max-w-2xl"
-              onInteractOutside={(event) => event.preventDefault()}
-              onPointerDownOutside={(event) => event.preventDefault()}
-            >
-              <DialogHeader>
-                <DialogTitle className="text-foreground">
-                  Add New Schedule
-                </DialogTitle>
-              </DialogHeader>
-              <ScheduleForm
-                onSave={(schedule) => {
-                  console.log("Creating new schedule:", schedule);
-                  setIsAddingSchedule(false);
-                  addToast({
-                    type: "success",
-                    title: "Schedule Created",
-                    description: "New shift schedule has been added.",
-                  });
-                }}
-                onCancel={() => setIsAddingSchedule(false)}
-              />
-            </DialogContent>
-          </Dialog>
-        )}
-
-        {/* Edit User Modal */}
         {editingUser && (
           <Dialog
             open={!!editingUser}
             onOpenChange={(open) => {
-              if (!open) {
-                setEditingUser(null);
-              }
+              if (!open) setEditingUser(null);
             }}
           >
             <DialogContent
@@ -2572,38 +2411,141 @@ export default function UserManagement() {
             </DialogContent>
           </Dialog>
         )}
-      </AnimatePresence>
-      <AlertDialog
-        open={!!userToDelete}
-        onOpenChange={(open) => {
-          if (!open) {
-            setUserToDelete(null);
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete User?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete{" "}
-              <strong>{userToDelete?.name || "this user"}</strong>? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeletingUser}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                handleDeleteUser();
-              }}
-              disabled={isDeletingUser}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              {isDeletingUser ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </motion.div>
-  );
+
+        <AlertDialog
+          open={!!userToDelete}
+          onOpenChange={(open) => {
+            if (!open) {
+              setUserToDelete(null);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete User?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete{" "}
+                <strong>{userToDelete?.name || "this user"}</strong>? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeletingUser}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleDeleteUser();
+                }}
+                disabled={isDeletingUser}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                {isDeletingUser ? "Deleting..." : "Delete"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog
+          open={!!pendingStatusChange}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPendingStatusChange(null);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Change User Status?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {pendingStatusChange
+                  ? `Are you sure you want to set ${pendingStatusChange.user.name} as ${
+                      pendingStatusChange.checked ? "Active" : "Inactive"
+                    }?`
+                  : "Confirm status change."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={async (e) => {
+                  e.preventDefault();
+                  if (!pendingStatusChange) return;
+                  const target = pendingStatusChange;
+                  setPendingStatusChange(null);
+                  await handleToggleUserStatus(target.user, target.checked);
+                }}
+              >
+                {pendingStatusChange?.checked ? "Set Active" : "Set Inactive"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <Dialog
+          open={!!passwordResetUser}
+          onOpenChange={(open) => {
+            if (!open) closeResetPasswordModal();
+          }}
+        >
+          <DialogContent className="bg-background border-border max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">Update Password</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <p className="text-sm text-muted-foreground">
+                Set a new password for <strong>{passwordResetUser?.name}</strong>.
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="admin-new-password" className="text-foreground">
+                  New Password
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="admin-new-password"
+                    type={showResetPassword ? "text" : "password"}
+                    value={resetPasswordValue}
+                    onChange={(e) => {
+                      setResetPasswordValue(e.target.value);
+                      if (resetPasswordError) setResetPasswordError("");
+                    }}
+                    className="bg-background border-border text-foreground pr-10"
+                    placeholder="Enter new password"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => setShowResetPassword(!showResetPassword)}
+                  >
+                    {showResetPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
+                {resetPasswordError && (
+                  <p className="text-xs text-destructive">{resetPasswordError}</p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-end space-x-2 border-t border-border pt-4">
+              <Button variant="outline" onClick={closeResetPasswordModal} disabled={isResettingPassword}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleResetPassword}
+                disabled={isResettingPassword || !resetPasswordValue}
+                className="bg-primary hover:bg-primary/90"
+              >
+                {isResettingPassword ? "Updating..." : "Update Password"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </>
+    );
+  }
+
+  return null;
 }

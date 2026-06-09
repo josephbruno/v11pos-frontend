@@ -195,5 +195,5 @@ export function dollarsToCents(dollars: number): number {
  * Helper function to format price for display
  */
 export function formatPrice(cents: number): string {
-  return `$${centsToDollars(cents).toFixed(2)}`;
+  return `₹${centsToDollars(cents).toFixed(2)}`;
 }
