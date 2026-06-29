@@ -19,7 +19,7 @@ export default function TableTransferApprovals() {
 
   const { data: restaurantsRes } = useQuery({
     queryKey: ["my-restaurants"],
-    queryFn: getMyRestaurants,
+    queryFn: () => getMyRestaurants(),
   });
 
   const restaurants = restaurantsRes?.data ?? [];

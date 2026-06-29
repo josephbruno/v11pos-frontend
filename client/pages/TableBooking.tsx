@@ -82,6 +82,7 @@ import {
   tableToBooking,
   tableToOccupiedDetail,
   type BookingStatus,
+  type CreateTableBookingInput,
   type OccupiedTableDetail,
   type TableBooking as TableBookingRecord,
 } from "@/lib/tableBooking";
@@ -313,7 +314,8 @@ export default function TableBooking() {
   });
 
   const createBookingMutation = useMutation({
-    mutationFn: reserveTable,
+    mutationFn: (booking: CreateTableBookingInput) =>
+      reserveTable(booking.tableId, booking),
     onSuccess: () => {
       addToast({
         type: "success",

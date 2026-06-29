@@ -35,6 +35,7 @@ import {
   getKdsStations,
   updateOrderStatus,
 } from "@/lib/apiServices";
+import { formatISTDateLong } from "@/lib/istDate";
 
 interface CartLine {
   id: string;
@@ -346,7 +347,7 @@ export default function OrderPanel() {
           <div>
             <h1 className="text-2xl font-bold text-pos-text">Order Terminal</h1>
             <p className="text-pos-text-muted text-sm mt-0.5">
-              {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+              {formatISTDateLong()}
             </p>
           </div>
         </div>

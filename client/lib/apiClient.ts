@@ -121,6 +121,45 @@ function redirectToLogin(): void {
 }
 
 let refreshInFlight: Promise<boolean> | null = null;
+let customerRefreshInFlight: Promise<boolean> | null = null;
+
+/**
+ * Exchange stored customer refresh token for a new access token.
+ */
+async function refreshCustomerSession(): Promise<boolean> {
+  const refreshToken = localStorage.getItem("pos-customer-refresh-token");
+  if (!refreshToken) return false;
+
+  if (!customerRefreshInFlight) {
+    customerRefreshInFlight = (async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/customer-auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+
+        if (!response.ok) return false;
+
+        const payload = await response.json();
+        const data = payload?.data ?? payload;
+        if (!data?.access_token) return false;
+
+        localStorage.setItem("pos-customer-token", data.access_token);
+        if (data.refresh_token) {
+          localStorage.setItem("pos-customer-refresh-token", data.refresh_token);
+        }
+        return true;
+      } catch {
+        return false;
+      } finally {
+        customerRefreshInFlight = null;
+      }
+    })();
+  }
+
+  return customerRefreshInFlight;
+}
 
 /**
  * Exchange stored refresh token for a new access token.
@@ -184,7 +223,8 @@ async function apiRequest(url: string, options: RequestInit = {}, endpoint?: str
   });
 
   if (response.status === 401 && useAuth) {
-    const refreshed = await refreshSession();
+    const isCustomer = endpoint && (endpoint.includes("/customer-auth") || endpoint.includes("/carts"));
+    const refreshed = isCustomer ? await refreshCustomerSession() : await refreshSession();
     if (refreshed) {
       response = await fetch(url, {
         ...options,
@@ -193,8 +233,14 @@ async function apiRequest(url: string, options: RequestInit = {}, endpoint?: str
     }
 
     if (response.status === 401) {
-      clearAuthStorage();
-      redirectToLogin();
+      if (isCustomer) {
+        localStorage.removeItem("pos-customer");
+        localStorage.removeItem("pos-customer-token");
+        localStorage.removeItem("pos-customer-refresh-token");
+      } else {
+        clearAuthStorage();
+        redirectToLogin();
+      }
     }
   }
 

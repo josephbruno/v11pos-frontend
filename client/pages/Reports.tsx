@@ -56,11 +56,14 @@ import {
 } from "@/lib/apiServices";
 import {
   formatISTDate,
+  formatISTDateShort,
+  formatISTDateTimeCompact,
   getISTDateRangeFromDaysAgo,
   getISTDateRangeFromMonthsAgo,
   getISTTodayRange,
   isWithinISTRange,
 } from "@/lib/istDate";
+import { downloadReportPdf } from "@/lib/exportReportPdf";
 
 const PIE_COLORS = ["#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#8dd1e1", "#a4de6c", "#d0ed57"];
 
@@ -208,7 +211,7 @@ export default function Reports() {
     return Object.values(map)
       .sort((a, b) => a.date.localeCompare(b.date))
       .map((d) => ({
-        label: new Date(d.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
+        label: formatISTDateShort(d.date),
         revenue: Math.round(d.revenue),
         orders: d.orders,
       }));
@@ -292,23 +295,22 @@ export default function Reports() {
   };
 
   const handleExport = () => {
-    const payload = {
-      generated_at: new Date().toISOString(),
-      period: { start, end },
-      stats,
-      daily_trend: dailyData,
-      top_products: topProductsData,
-      order_types: orderTypeData,
-      payment_methods: paymentData,
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `report-${start}-to-${end}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    addToast({ title: "Report exported", type: "success" });
+    try {
+      downloadReportPdf({
+        title: "Reports & Analytics",
+        restaurantName: (user as { restaurantName?: string; branchName?: string } | undefined)
+          ?.restaurantName ?? (user as { branchName?: string } | undefined)?.branchName,
+        period: { start, end },
+        stats,
+        dailyTrend: dailyData,
+        topProducts: topProductsData,
+        orderTypes: orderTypeData.map(({ name, value }) => ({ name, value })),
+        paymentMethods: paymentData.map(({ name, value }) => ({ name, value })),
+      });
+      addToast({ title: "Report downloaded as PDF", type: "success" });
+    } catch {
+      addToast({ title: "Failed to export report", type: "error" });
+    }
   };
 
   return (
@@ -346,7 +348,7 @@ export default function Reports() {
           </Button>
           <Button onClick={handleExport} className="bg-primary hover:bg-primary/90">
             <Download className="h-4 w-4 mr-2" />
-            Export
+            Export PDF
           </Button>
         </div>
       </div>
@@ -680,11 +682,7 @@ export default function Reports() {
                           {formatInr(Number(o.total_amount ?? 0))}
                         </td>
                         <td className="py-2 text-right text-muted-foreground text-xs">
-                          {o.created_at
-                            ? new Date(o.created_at).toLocaleString("en-IN", {
-                                day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
-                              })
-                            : "—"}
+                          {o.created_at ? formatISTDateTimeCompact(o.created_at) : "—"}
                         </td>
                       </tr>
                     ))}

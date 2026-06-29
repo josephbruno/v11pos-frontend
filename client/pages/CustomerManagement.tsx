@@ -52,6 +52,7 @@ import {
   updateAdminCustomer,
   deleteAdminCustomer,
 } from "@/lib/apiServices";
+import { formatISTDateOnly } from "@/lib/istDate";
 import { useToast } from "@/contexts/ToastContext";
 
 const mockCustomerTags: CustomerTag[] = [
@@ -308,7 +309,7 @@ export default function CustomerManagement() {
 
   const { data: customersData, isLoading } = useQuery({
     queryKey: ["adminCustomers", restaurantId, searchQuery],
-    queryFn: () => getAdminCustomers(restaurantId, { search: searchQuery || undefined, limit: 200 }),
+    queryFn: () => getAdminCustomers(restaurantId, { search: searchQuery || undefined, limit: 100 }),
     enabled: !!restaurantId,
     select: (r: any) => {
       const src = r?.data ?? r;
@@ -360,6 +361,14 @@ export default function CustomerManagement() {
   }, [customers, selectedTag]);
 
   const handleSaveCustomer = (data: any) => {
+    if (!restaurantId) {
+      addToast({
+        type: "error",
+        title: "Restaurant not found",
+        description: "Your account is not linked to a restaurant. Please contact support.",
+      });
+      return;
+    }
     if (editingCustomer) {
       updateMutation.mutate({ id: editingCustomer.id, data });
     } else {
@@ -389,7 +398,7 @@ export default function CustomerManagement() {
 
   const formatDate = (dateStr: string | Date | undefined) => {
     if (!dateStr) return "Never";
-    return new Date(dateStr as string).toLocaleDateString();
+    return formatISTDateOnly(dateStr as string);
   };
 
   const totalCustomers = customers.length;

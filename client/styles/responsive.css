@@ -1,0 +1,133 @@
+/* Responsive utilities for mobile, tablet, and desktop */
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Better touch targets for mobile */
+@media (max-width: 768px) {
+  button,
+  a,
+  [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  input,
+  textarea,
+  select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
+
+/* Tablet-specific optimizations */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .container {
+    max-width: 90%;
+  }
+}
+
+/* Text scaling for different screens */
+@media (max-width: 640px) {
+  h1 {
+    @apply text-lg;
+  }
+
+  h2 {
+    @apply text-base;
+  }
+
+  h3 {
+    @apply text-sm;
+  }
+}
+
+/* Better form layout on mobile */
+.form-responsive {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .form-responsive {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .form-responsive {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Responsive card grid */
+.cards-responsive {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 640px) {
+  .cards-responsive {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+}
+
+/* Mobile-first menu toggle */
+.menu-toggle {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .menu-toggle {
+    display: block;
+  }
+}
+
+/* Smooth transitions for responsive changes */
+* {
+  transition-property: width, height, margin, padding;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Prevent layout shift during resize */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Better responsive font sizing */
+@supports (font-size: clamp(1rem, 2.5vw, 2rem)) {
+  h1 {
+    font-size: clamp(1.5rem, 4vw, 3rem);
+  }
+
+  h2 {
+    font-size: clamp(1.25rem, 3vw, 2rem);
+  }
+
+  h3 {
+    font-size: clamp(1rem, 2.5vw, 1.5rem);
+  }
+
+  body {
+    font-size: clamp(0.875rem, 1vw, 1rem);
+  }
+}
+
+/* Prevent iOS zoom on input focus */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

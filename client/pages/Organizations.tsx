@@ -63,114 +63,19 @@ import {
 } from "@/lib/apiServices";
 import { Restaurant, SubscriptionPlan } from "@shared/api";
 import { useToast } from "@/contexts/ToastContext";
-
-function toSlug(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-");
-}
-
-function isValidEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-function sanitizeDigits(value: string) {
-  return value.replace(/\D/g, "");
-}
-
-function sanitizeAlphaSpaces(value: string) {
-  return value.replace(/[^a-zA-Z\s]/g, "");
-}
-
-function sanitizeAddress(value: string) {
-  return value.replace(/[^a-zA-Z0-9\s/,]/g, "");
-}
-
-function normalizeRestaurantStatus(raw: any): "active" | "inactive" {
-  const status = String(raw?.status || "").toLowerCase();
-  if (status === "active" || status === "inactive") {
-    return status;
-  }
-  if (raw?.is_active === true || raw?.active === true) return "active";
-  if (raw?.is_active === false || raw?.active === false) return "inactive";
-  return "inactive";
-}
-
-function extractRestaurants(payload: any): Restaurant[] {
-  const source = payload?.data ?? payload;
-  const list = Array.isArray(source)
-    ? source
-    : Array.isArray(source?.items)
-      ? source.items
-      : Array.isArray(source?.restaurants)
-        ? source.restaurants
-        : [];
-
-  return list.map((restaurant: any) => ({
-    ...restaurant,
-    status: normalizeRestaurantStatus(restaurant),
-  })) as Restaurant[];
-}
-
-type OrganizationForm = {
-  name: string;
-  email: string;
-  phone: string;
-  address: string;
-  city: string;
-  state: string;
-  postal_code: string;
-  country: string;
-  status: "active" | "inactive";
-  website_url: string;
-};
-
-type OrganizationEditForm = OrganizationForm & {
-  business_name: string;
-  description: string;
-  logo: string | File;
-  banner_image: string | File;
-  primary_color: string;
-  accent_color: string;
-  gstin: string;
-  fssai_license: string;
-  enable_gst: boolean;
-  cgst_rate: string;
-  sgst_rate: string;
-  service_charge_percentage: string;
-  opening_time: string;
-  closing_time: string;
-  is_24_hours: boolean;
-  holiday_mode: boolean;
-  timezone: string;
-  currency: string;
-  cash_enabled: boolean;
-  card_enabled: boolean;
-  upi_enabled: boolean;
-  wallet_enabled: boolean;
-  online_payment_enabled: boolean;
-  payment_gateway: string;
-  enable_online_ordering: boolean;
-  enable_table_booking: boolean;
-  enable_dine_in: boolean;
-  enable_takeaway: boolean;
-  enable_delivery: boolean;
-  delivery_radius: string;
-  delivery_charge: string;
-  minimum_order_value: string;
-  free_delivery_above: string;
-  enable_kot: boolean;
-  enable_kds: boolean;
-  auto_accept_orders: boolean;
-  preparation_time_buffer: string;
-  receipt_header: string;
-  receipt_footer: string;
-  alternate_phone: string;
-  invoice_prefix: string;
-};
+import { formatISTDateOnly, formatISTDateTime } from "@/lib/istDate";
+import {
+  extractRestaurants,
+  isValidEmail,
+  isValidGstin,
+  isValidPan,
+  normalizeRestaurantStatus,
+  sanitizeAddress,
+  sanitizeAlphaSpaces,
+  sanitizeDigits,
+  toSlug,
+} from "./organizations/utils";
+import type { OrganizationEditForm, OrganizationForm } from "./organizations/types";
 
 export default function Organizations() {
   const [organizations, setOrganizations] = useState<Restaurant[]>([]);
@@ -542,7 +447,9 @@ export default function Organizations() {
     }
 
     if (field === "timezone") {
-      if (!isValidIanaTimezone(trimmed)) return "Timezone should look like Asia/Kolkata.";
+      if (trimmed && trimmed !== "Asia/Kolkata") {
+        return "Only India Standard Time (Asia/Kolkata) is supported.";
+      }
       return "";
     }
 
@@ -965,7 +872,7 @@ export default function Organizations() {
     const raw = String(value);
     const parsed = new Date(raw);
     if (Number.isNaN(parsed.getTime())) return raw;
-    return parsed.toLocaleString();
+    return formatISTDateTime(parsed);
   };
 
   const formatViewValue = (value: any): string => {
@@ -2778,7 +2685,7 @@ export default function Organizations() {
                             </Badge>
                             {org.trial_ends_at && (
                               <div className="text-xs text-muted-foreground mt-1">
-                                Trial: {new Date(org.trial_ends_at).toLocaleDateString()}
+                                Trial: {formatISTDateOnly(org.trial_ends_at)}
                               </div>
                             )}
                           </TableCell>
@@ -2794,7 +2701,7 @@ export default function Organizations() {
                               .join(", ") || "N/A"}
                           </TableCell>
                           <TableCell>
-                            {org.created_at ? new Date(org.created_at).toLocaleDateString() : "N/A"}
+                            {org.created_at ? formatISTDateOnly(org.created_at) : "N/A"}
                           </TableCell>
                           <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-2">

@@ -45,6 +45,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { cn } from "@/lib/utils";
+import { formatISTDateOnly } from "@/lib/istDate";
 import {
   cancelSubscription,
   createSubscriptionCheckout,
@@ -81,11 +82,7 @@ function daysUntil(iso?: string | null) {
 
 function formatDate(iso?: string | null) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatISTDateOnly(iso, { day: "numeric", month: "short", year: "numeric" });
 }
 
 function statusBadgeVariant(status?: string) {

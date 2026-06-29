@@ -46,23 +46,20 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getMyRestaurants } from "@/lib/apiServices";
 import { useCreateHomebanner, useDeleteHomebanner, useHomebanners, useUpdateHomebanner } from "@/hooks/useHomebanners";
 import type { Homebanner } from "@shared/api";
+import {
+  formatISTDateTime,
+  istDatetimeLocalToNaiveIso,
+  toISTDatetimeLocalValue,
+} from "@/lib/istDate";
 
 type RestaurantOption = { id: string; name: string };
 
 function toDatetimeLocalValue(value?: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return format(date, "yyyy-MM-dd'T'HH:mm");
+  return toISTDatetimeLocalValue(value);
 }
 
 function datetimeLocalToLocalIso(value?: string) {
-  const trimmed = String(value || "").trim();
-  if (!trimmed) return undefined;
-  const date = new Date(trimmed);
-  if (Number.isNaN(date.getTime())) return undefined;
-  // Send a "local" ISO string (no timezone suffix) to avoid unexpected UTC shifts.
-  return format(date, "yyyy-MM-dd'T'HH:mm:ss");
+  return istDatetimeLocalToNaiveIso(value);
 }
 
 function getBannerImageValue(banner: Homebanner | null | undefined, kind: "mobile" | "desktop") {
@@ -85,8 +82,8 @@ function getFileSizeLabel(file: File | null) {
 function formatSchedule(startAt?: string | null, endAt?: string | null) {
   const start = startAt ? new Date(startAt) : null;
   const end = endAt ? new Date(endAt) : null;
-  const startText = start && !Number.isNaN(start.getTime()) ? start.toLocaleString() : "";
-  const endText = end && !Number.isNaN(end.getTime()) ? end.toLocaleString() : "";
+  const startText = start && !Number.isNaN(start.getTime()) ? formatISTDateTime(start) : "";
+  const endText = end && !Number.isNaN(end.getTime()) ? formatISTDateTime(end) : "";
   if (startText && endText) return `${startText} → ${endText}`;
   if (startText) return `From ${startText}`;
   if (endText) return `Until ${endText}`;

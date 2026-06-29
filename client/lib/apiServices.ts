@@ -22,6 +22,7 @@ import {
   CategoryListResponse, ProductListResponse, OrderListResponse, Homebanner, RowManagement, RowType,
   Customer, QRCart, OrderStatistics, BackendCustomer, BackendCustomerListResponse,
   StaffMember, SalesReport, ItemWiseReport, CategoryWiseReport,
+  ApiResponse,
 } from "@shared/api";
 import { validateUserPayload } from "./userValidation";
 import { encodeBookingNotes } from "./tableBooking";
@@ -220,8 +221,8 @@ export async function updateUserPassword(userId: string, newPassword: string) {
  * Get list of restaurants for current user
  * GET /api/v1/restaurants/my-restaurants
  */
-export async function getMyRestaurants(skip = 0, limit = 100) {
-  return apiGet<Restaurant[]>(`/restaurants/my-restaurants?skip=${skip}&limit=${limit}`);
+export async function getMyRestaurants(skip = 0, limit = 100): Promise<ApiResponse<Restaurant[]>> {
+  return apiGet<ApiResponse<Restaurant[]>>(`/restaurants/my-restaurants?skip=${skip}&limit=${limit}`);
 }
 
 /** Superadmin: list ALL restaurants in the system */
@@ -1640,7 +1641,7 @@ export async function reserveTable(
 ) {
   return updateTable(tableId, {
     status: "reserved",
-    notes: encodeBookingNotes(bookingData),
+    notes: encodeBookingNotes({ tableId, ...bookingData }),
   });
 }
 
@@ -1910,16 +1911,16 @@ export async function refreshCustomerToken(refreshToken: string) {
  * Get current customer profile
  * GET /api/v1/customer-auth/me
  */
-export async function getCustomerProfile() {
-  return apiGet<Customer>("/customer-auth/me");
+export async function getCustomerProfile(): Promise<ApiResponse<BackendCustomer>> {
+  return apiGet<ApiResponse<BackendCustomer>>("/customer-auth/me");
 }
 
 /**
  * Update customer profile
  * PATCH /api/v1/customer-auth/me
  */
-export async function updateCustomerProfile(data: Partial<Customer>) {
-  return apiPatch<Customer>("/customer-auth/me", data);
+export async function updateCustomerProfile(data: Partial<BackendCustomer>) {
+  return apiPatch<ApiResponse<BackendCustomer>>("/customer-auth/me", data);
 }
 
 // ==================== Customer Addresses ====================
@@ -2116,6 +2117,16 @@ export async function deleteTable(tableId: string) {
 
 // ==================== Admin Customer CRUD ====================
 
+function sanitizeAdminCustomerPayload<T extends Record<string, unknown>>(data: T): T {
+  const payload = { ...data } as Record<string, unknown>;
+  for (const key of ["email", "phone", "address", "notes"]) {
+    if (typeof payload[key] === "string" && !String(payload[key]).trim()) {
+      delete payload[key];
+    }
+  }
+  return payload as T;
+}
+
 /**
  * List customers for a restaurant (admin)
  * GET /api/v1/customers/?restaurant_id=&search=&skip=&limit=
@@ -2154,7 +2165,7 @@ export async function createAdminCustomer(data: {
   notes?: string;
   is_active?: boolean;
 }) {
-  return apiPost<BackendCustomer>("/customers/", data);
+  return apiPost<BackendCustomer>("/customers/", sanitizeAdminCustomerPayload(data));
 }
 
 /**
@@ -2172,7 +2183,7 @@ export async function updateAdminCustomer(
     is_active: boolean;
   }>,
 ) {
-  return apiPut<BackendCustomer>(`/customers/${customerId}`, data);
+  return apiPut<BackendCustomer>(`/customers/${customerId}`, sanitizeAdminCustomerPayload(data));
 }
 
 /**
@@ -2407,13 +2418,22 @@ export type TableTransferRequest = {
   created_at: string;
 };
 
-export async function getPendingTableTransfers(restaurantId: string, skip = 0, limit = 50) {
-  return apiGet<{
+export async function getPendingTableTransfers(restaurantId: string, skip = 0, limit = 50): Promise<
+  ApiResponse<{
     transfers: TableTransferRequest[];
     total: number;
     skip: number;
     limit: number;
-  }>(`/table-transfers/restaurant/${restaurantId}/pending?skip=${skip}&limit=${limit}`);
+  }>
+> {
+  return apiGet<
+    ApiResponse<{
+      transfers: TableTransferRequest[];
+      total: number;
+      skip: number;
+      limit: number;
+    }>
+  >(`/table-transfers/restaurant/${restaurantId}/pending?skip=${skip}&limit=${limit}`);
 }
 
 export async function approveTableTransfer(transferId: string) {
@@ -2444,13 +2464,22 @@ export type QrTableOrderApproval = {
   created_at: string;
 };
 
-export async function getPendingQrTableOrders(restaurantId: string, skip = 0, limit = 50) {
-  return apiGet<{
+export async function getPendingQrTableOrders(restaurantId: string, skip = 0, limit = 50): Promise<
+  ApiResponse<{
     orders: QrTableOrderApproval[];
     total: number;
     skip: number;
     limit: number;
-  }>(`/qr-table-orders/restaurant/${restaurantId}/pending?skip=${skip}&limit=${limit}`);
+  }>
+> {
+  return apiGet<
+    ApiResponse<{
+      orders: QrTableOrderApproval[];
+      total: number;
+      skip: number;
+      limit: number;
+    }>
+  >(`/qr-table-orders/restaurant/${restaurantId}/pending?skip=${skip}&limit=${limit}`);
 }
 
 export async function approveQrTableOrder(orderId: string) {

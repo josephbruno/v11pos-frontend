@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 	import {
 	  Plus,
 	  Search,
@@ -2550,32 +2550,32 @@ export default function ProductManagement() {
             </div>
           ) : isSuperAdmin ? (
             <Card className="bg-card border-border">
-              <CardContent className="p-0">
-                <div className="rounded-md border border-border">
+              <CardContent className="p-0 overflow-x-auto -mx-4 sm:mx-0">
+                <div className="rounded-none sm:rounded-md border-t sm:border border-border">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="min-w-[260px]">Name</TableHead>
-                        <TableHead className="min-w-[200px]">Category</TableHead>
-                        <TableHead className="w-[110px] text-right">Price</TableHead>
-                        <TableHead className="w-[80px] text-center">Image</TableHead>
-                        <TableHead className="w-[150px] text-center">Active</TableHead>
-                        <TableHead className="w-[160px] text-center">Available</TableHead>
-                        <TableHead className="w-[180px] text-right">Actions</TableHead>
+                        <TableHead className="min-w-[180px] sm:min-w-[260px] px-2 sm:px-4">Name</TableHead>
+                        <TableHead className="min-w-[150px] sm:min-w-[200px] px-2 sm:px-4 hidden sm:table-cell">Category</TableHead>
+                        <TableHead className="w-[100px] text-right px-2 sm:px-4">Price</TableHead>
+                        <TableHead className="w-[70px] text-center px-2 sm:px-4 hidden md:table-cell">Image</TableHead>
+                        <TableHead className="w-[100px] text-center px-2 sm:px-4 hidden lg:table-cell">Active</TableHead>
+                        <TableHead className="w-[100px] text-center px-2 sm:px-4 hidden xl:table-cell">Available</TableHead>
+                        <TableHead className="w-[80px] sm:w-[150px] text-right px-2 sm:px-4">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredProducts.map((product) => (
-                        <TableRow key={product.id}>
-                          <TableCell className="font-medium text-foreground">{product.name}</TableCell>
-                          <TableCell className="text-muted-foreground">
+                        <TableRow key={product.id} className="hover:bg-muted/50 transition-colors text-xs sm:text-sm">
+                          <TableCell className="font-medium text-foreground px-2 sm:px-4 py-3">{product.name}</TableCell>
+                          <TableCell className="text-muted-foreground px-2 sm:px-4 py-3 hidden sm:table-cell">
                             {categories.find((c) => c.id === product.category)?.name || "-"}
                           </TableCell>
-                          <TableCell className="text-foreground text-right tabular-nums">
+                          <TableCell className="text-foreground text-right tabular-nums px-2 sm:px-4 py-3">
                             {formatINR(product.price)}
                           </TableCell>
-                          <TableCell className="text-center">
-                            <div className="inline-flex w-10 h-10 rounded-md overflow-hidden bg-muted items-center justify-center">
+                          <TableCell className="text-center px-2 sm:px-4 py-3 hidden md:table-cell">
+                            <div className="inline-flex w-8 sm:w-10 h-8 sm:h-10 rounded-md overflow-hidden bg-muted items-center justify-center">
                               {product.image ? (
                                 <img
                                   src={product.image.startsWith("http") ? product.image : `${BACKEND_URL}${product.image}`}
@@ -2591,12 +2591,12 @@ export default function ProductManagement() {
                               ) : null}
                               <ImageIcon
                                 data-fallback
-                                className={`h-5 w-5 text-muted-foreground ${product.image ? "hidden" : ""}`}
+                                className={`h-4 w-4 text-muted-foreground ${product.image ? "hidden" : ""}`}
                               />
                             </div>
                           </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-center gap-2 whitespace-nowrap">
+                          <TableCell className="px-2 sm:px-4 py-3 hidden lg:table-cell">
+                            <div className="flex items-center justify-center gap-1.5 sm:gap-2">
                               <Switch
                                 checked={product.is_published}
                                 onCheckedChange={(checked) => {
@@ -2609,13 +2609,13 @@ export default function ProductManagement() {
                                 }}
                                 disabled={updateMutation.isPending}
                               />
-                              <span className="text-xs text-muted-foreground">
+                              <span className="text-xs text-muted-foreground hidden sm:inline">
                                 {product.is_published ? "Active" : "Inactive"}
                               </span>
                             </div>
                           </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-center gap-2 whitespace-nowrap">
+                          <TableCell className="px-2 sm:px-4 py-3 hidden xl:table-cell">
+                            <div className="flex items-center justify-center gap-1.5 sm:gap-2">
                               <Switch
                                 checked={product.available}
                                 onCheckedChange={(checked) => {
@@ -2628,12 +2628,12 @@ export default function ProductManagement() {
                                 }}
                                 disabled={updateMutation.isPending}
                               />
-                              <span className="text-xs text-muted-foreground">
+                              <span className="text-xs text-muted-foreground hidden sm:inline">
                                 {product.available ? "Available" : "Unavailable"}
                               </span>
                             </div>
                           </TableCell>
-                          <TableCell className="text-right whitespace-nowrap">
+                          <TableCell className="text-right whitespace-nowrap px-2 sm:px-4 py-3">
                             <div className="flex items-center justify-end gap-2">
                               <Dialog
                                 open={editingProduct?.id === product.id}
@@ -2656,13 +2656,13 @@ export default function ProductManagement() {
                                     size="sm"
                                     disabled={!product.is_published}
                                     title={!product.is_published ? "Inactive products can't be edited" : undefined}
-                                    className="border-pos-secondary text-pos-text-muted hover:text-pos-text disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="border-pos-secondary text-pos-text-muted hover:text-pos-text disabled:cursor-not-allowed disabled:opacity-50 h-8 text-xs"
                                   >
-                                    <Edit className="mr-2 h-4 w-4" />
-                                    Edit
+                                    <Edit className="h-3 w-3 mr-1" />
+                                    <span className="hidden sm:inline">Edit</span>
                                   </Button>
                                 </DialogTrigger>
-                              <DialogContent className="bg-pos-surface border-pos-secondary w-[95vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+                              <DialogContent className="bg-pos-surface border-pos-secondary w-full sm:w-[95vw] max-w-4xl max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col p-4 sm:p-6">
                                 <DialogHeader>
                                   <DialogTitle className="text-pos-text">
                                     Edit Product

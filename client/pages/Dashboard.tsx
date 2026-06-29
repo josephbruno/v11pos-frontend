@@ -272,15 +272,15 @@ export default function Dashboard() {
     <motion.div variants={container} initial="hidden" animate="visible" className="space-y-6 pb-6">
 
       {/* ── Header ───────────────────────────────────────────────── */}
-      <motion.div variants={fade} className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <motion.div variants={fade} className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 sm:gap-4">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Welcome back! Here's what's happening today.</p>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground">Dashboard</h1>
+          <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">Welcome back! Here's what's happening today.</p>
         </div>
       </motion.div>
 
       {/* ── KPI Cards ────────────────────────────────────────────── */}
-      <motion.div variants={fade} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <motion.div variants={fade} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
         {[
           {
             label: "Today's Sales",
@@ -317,15 +317,15 @@ export default function Dashboard() {
         ].map((card) => (
           <motion.div key={card.label} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="h-full">
             <Card className={`bg-gradient-to-br ${card.from} ${card.to} border-0 text-white overflow-hidden h-full`}>
-              <CardContent className="p-5 h-full flex flex-col justify-between">
-                <div className="flex items-start justify-between gap-3">
-                  <p className={`${card.muted} text-xs font-medium`}>{card.label}</p>
-                  <div className="h-10 w-10 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+              <CardContent className="p-3 sm:p-5 h-full flex flex-col justify-between">
+                <div className="flex items-start justify-between gap-2 sm:gap-3">
+                  <p className={`${card.muted} text-xs font-medium leading-tight`}>{card.label}</p>
+                  <div className="h-9 sm:h-10 w-9 sm:w-10 bg-white/20 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 text-sm sm:text-base">
                     {card.icon}
                   </div>
                 </div>
                 <div>
-                  <p className="text-3xl font-black tracking-tight">{card.value}</p>
+                  <p className="text-2xl sm:text-3xl font-black tracking-tight">{card.value}</p>
                   {/* Always render this row so all cards stay the same height */}
                   <div className="mt-1.5 h-5 flex items-center">
                     {card.growth != null ? (
@@ -365,8 +365,8 @@ export default function Dashboard() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pt-4">
-            <ResponsiveContainer width="100%" height={220}>
+          <CardContent className="pt-4 overflow-x-auto">
+            <ResponsiveContainer width="100%" height={200} minWidth={300}>
               <AreaChart data={revenueTrendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="dashRevGrad" x1="0" y1="0" x2="0" y2="1">
@@ -421,7 +421,7 @@ export default function Dashboard() {
       </motion.div>
 
       {/* ── Order Status Donut + Top Products Bar ─────────────────── */}
-      <motion.div variants={fade} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <motion.div variants={fade} className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6">
 
         {/* Order Status Donut */}
         <Card className="bg-card border-border">
@@ -437,7 +437,7 @@ export default function Dashboard() {
             ) : (
               <div className="flex items-center gap-2">
                 <div className="relative flex-shrink-0">
-                  <ResponsiveContainer width={180} height={180}>
+                  <ResponsiveContainer width={160} height={160} minWidth={160}>
                     <PieChart>
                       <Pie
                         data={orderStatusData}
@@ -484,14 +484,14 @@ export default function Dashboard() {
           <CardHeader className="pb-0">
             <CardTitle className="text-foreground text-base">Top Products — Today</CardTitle>
           </CardHeader>
-          <CardContent className="pt-4">
+          <CardContent className="pt-4 overflow-x-auto">
             {topProductsData.length === 0 ? (
-              <div className="h-52 flex flex-col items-center justify-center text-muted-foreground gap-2">
+              <div className="h-40 sm:h-52 flex flex-col items-center justify-center text-muted-foreground gap-2">
                 <ShoppingBag className="h-8 w-8 opacity-30" />
                 <span className="text-sm">No product data yet</span>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height={200}>
+              <ResponsiveContainer width="100%" height={180} minWidth={280}>
                 <BarChart
                   data={topProductsData}
                   layout="vertical"
@@ -524,7 +524,7 @@ export default function Dashboard() {
       </motion.div>
 
       {/* ── Recent Orders + Quick Insights ────────────────────────── */}
-      <motion.div variants={fade} className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <motion.div variants={fade} className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-6">
 
         {/* Recent Orders */}
         <Card className="bg-card border-border">

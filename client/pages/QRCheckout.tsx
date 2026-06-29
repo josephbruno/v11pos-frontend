@@ -41,7 +41,9 @@ import {
 } from "@/components/ui/select";
 import type { QRCart, QRTable, QRSettings } from "@/shared/api";
 
-// Mock data
+const useQrDevMocks = import.meta.env.DEV;
+
+// Mock data (development preview only)
 const mockTable: QRTable = {
   id: "table-1",
   tableNumber: "T-05",
@@ -204,7 +206,7 @@ export default function QRCheckout() {
 
   const { customer } = useCustomerAuth();
   const queryClient = useQueryClient();
-  const restaurantId = customer?.restaurant_id || mockTable.id;
+  const restaurantId = customer?.restaurant_id || (useQrDevMocks ? mockTable.id : "");
 
   const { data: cartData, isLoading: isLoadingCart } = useQuery({
     queryKey: ["cart", restaurantId, customer?.id],
@@ -212,7 +214,15 @@ export default function QRCheckout() {
     enabled: !!customer,
   });
 
-  const cart = (cartData as any)?.data || cartData || mockCart;
+  const cart = (cartData as any)?.data || cartData || (useQrDevMocks ? mockCart : null);
+
+  if (!cart) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 text-center text-muted-foreground">
+        <p>Sign in and add items to your cart to checkout.</p>
+      </div>
+    );
+  }
 
   const updateQuantityMutation = useMutation({
     mutationFn: ({ itemId, quantity }: { itemId: string; quantity: number }) => updateCartItemQuantity(itemId, quantity),

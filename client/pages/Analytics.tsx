@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/contexts/ToastContext";
 import {
   getOrderStatistics,
   listItemReports,
@@ -55,6 +56,9 @@ import {
   isWithinISTRange,
 } from "@/lib/istDate";
 import type { OrderStatistics, ItemWiseReport, CategoryWiseReport } from "@/shared/api";
+import { downloadReportPdf } from "@/lib/exportReportPdf";
+import { downloadReportCsv } from "@/lib/exportReportCsv";
+import { buildAnalyticsExportPayload } from "@/lib/buildAnalyticsExport";
 
 // ── colour palette ──────────────────────────────────────────────────────────
 const C = {
@@ -162,6 +166,7 @@ function getPrevRange(range: string): { start: string; end: string } {
 // ── component ────────────────────────────────────────────────────────────────
 export default function Analytics() {
   const { user } = useAuth();
+  const { addToast } = useToast();
   const restaurantId = user?.branchId ?? "";
   const [dateRange, setDateRange] = useState("7d");
   const [activeTab, setActiveTab] = useState("overview");
@@ -377,7 +382,35 @@ export default function Analytics() {
   const growth = currStats && prevStats ? computeGrowth(currStats.total_revenue, prevStats.total_revenue) : 0;
 
   const handleExport = (format: "csv" | "pdf") => {
-    console.log(`Exporting ${activeTab} as ${format.toUpperCase()}`);
+    try {
+      const restaurantName =
+        (user as { restaurantName?: string; branchName?: string } | undefined)?.restaurantName ??
+        (user as { branchName?: string } | undefined)?.branchName;
+
+      const payload = buildAnalyticsExportPayload({
+        restaurantName,
+        start,
+        end,
+        currStats,
+        orders: ordersRaw ?? [],
+        revenueTrend: revenueTrendChart,
+        topProducts: topProductsChart,
+        paymentPie,
+        statusDonut,
+        peakHours: peakHoursChart,
+        categories: categoryPie,
+      });
+
+      if (format === "pdf") {
+        downloadReportPdf(payload);
+        addToast({ title: "Analytics report downloaded as PDF", type: "success" });
+      } else {
+        downloadReportCsv(payload);
+        addToast({ title: "Analytics report downloaded as CSV", type: "success" });
+      }
+    } catch {
+      addToast({ title: "Failed to export analytics report", type: "error" });
+    }
   };
 
   // ── KPI stat card helper ─────────────────────────────────────────────────

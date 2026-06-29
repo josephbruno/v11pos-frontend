@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
-import { getISTDateRangeFromDaysAgo } from "@/lib/istDate";
+import { getISTDateRangeFromDaysAgo, formatISTDateTimeCompact } from "@/lib/istDate";
 import {
   getFilteredOrders,
   getOrderById,
@@ -288,14 +288,14 @@ export default function Orders() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-3 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <ClipboardList className="h-7 w-7 text-pos-accent" />
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground flex items-center gap-2">
+            <ClipboardList className="h-6 sm:h-7 w-6 sm:w-7 text-pos-accent" />
             Orders
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">
+          <p className="text-muted-foreground text-xs sm:text-sm mt-1">
             View and track all restaurant orders from the last 30 days.
           </p>
         </div>
@@ -303,9 +303,10 @@ export default function Orders() {
           variant="outline"
           onClick={() => refetch()}
           disabled={isFetching}
+          size="sm"
           className="self-start"
         >
-          <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+          <RefreshCw className={`mr-2 h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
@@ -315,9 +316,9 @@ export default function Orders() {
           <CardTitle>Order list</CardTitle>
           <CardDescription>Filter by status, type, or search by order number.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col lg:flex-row gap-3">
-            <div className="relative flex-1">
+        <CardContent className="space-y-3 sm:space-y-4">
+          <div className="flex flex-col sm:grid sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+            <div className="relative sm:col-span-2 md:col-span-1 lg:col-span-2">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search orders..."
@@ -326,7 +327,7 @@ export default function Orders() {
                   setSearchQuery(e.target.value);
                   setPage(1);
                 }}
-                className="pl-10"
+                className="pl-10 text-sm"
               />
             </div>
             <Select
@@ -336,7 +337,7 @@ export default function Orders() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-full lg:w-44">
+              <SelectTrigger className="w-full text-sm">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -357,7 +358,7 @@ export default function Orders() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-full lg:w-44">
+              <SelectTrigger className="w-full text-sm">
                 <SelectValue placeholder="Order type" />
               </SelectTrigger>
               <SelectContent>
@@ -368,18 +369,18 @@ export default function Orders() {
             </Select>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto -mx-4 sm:mx-0 rounded-none sm:rounded-lg">
+            <table className="w-full text-xs sm:text-sm">
               <thead>
-                <tr className="border-b border-border text-muted-foreground">
-                  <th className="text-left py-2 pr-4">Order #</th>
-                  <th className="text-left py-2 pr-4">Source</th>
-                  <th className="text-left py-2 pr-4">Type</th>
-                  <th className="text-left py-2 pr-4">Status</th>
-                  <th className="text-left py-2 pr-4">Payment</th>
-                  <th className="text-right py-2 pr-4">Amount</th>
-                  <th className="text-right py-2 pr-4">Date</th>
-                  <th className="text-right py-2">Actions</th>
+                <tr className="border-b border-border text-muted-foreground bg-muted/50">
+                  <th className="text-left py-2 px-2 sm:px-4 font-semibold">Order #</th>
+                  <th className="text-left py-2 px-2 sm:px-4 font-semibold hidden sm:table-cell">Source</th>
+                  <th className="text-left py-2 px-2 sm:px-4 font-semibold hidden md:table-cell">Type</th>
+                  <th className="text-left py-2 px-2 sm:px-4 font-semibold">Status</th>
+                  <th className="text-left py-2 px-2 sm:px-4 font-semibold hidden lg:table-cell">Payment</th>
+                  <th className="text-right py-2 px-2 sm:px-4 font-semibold">Amount</th>
+                  <th className="text-right py-2 px-2 sm:px-4 font-semibold hidden md:table-cell">Date</th>
+                  <th className="text-right py-2 px-2 sm:px-4 font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -397,11 +398,11 @@ export default function Orders() {
                   </tr>
                 ) : (
                   orders.map((order: any) => (
-                    <tr key={order.id} className="border-b border-border/50">
-                      <td className="py-3 pr-4 font-mono text-xs text-foreground">
+                    <tr key={order.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                      <td className="py-3 px-2 sm:px-4 font-mono text-xs text-foreground">
                         #{order.order_number ?? order.id?.slice(-6) ?? "—"}
                       </td>
-                      <td className="py-3 pr-4">
+                      <td className="py-3 px-2 sm:px-4 hidden sm:table-cell">
                         <Badge
                           variant="outline"
                           className={`text-xs ${
@@ -415,44 +416,38 @@ export default function Orders() {
                           {formatOrderSourceLabel(order)}
                         </Badge>
                       </td>
-                      <td className="py-3 pr-4">
+                      <td className="py-3 px-2 sm:px-4 hidden md:table-cell">
                         <Badge variant="outline" className="text-xs">
                           {formatOrderType(order.order_type)}
                         </Badge>
                       </td>
-                      <td className="py-3 pr-4">
+                      <td className="py-3 px-2 sm:px-4">
                         <Badge className={`text-xs ${statusBadgeClass(order.status)}`}>
                           {order.status?.replace(/_/g, " ") ?? "—"}
                         </Badge>
                       </td>
-                      <td className="py-3 pr-4 text-muted-foreground text-xs capitalize">
+                      <td className="py-3 px-2 sm:px-4 text-muted-foreground text-xs capitalize hidden lg:table-cell">
                         {order.payment_status ?? order.payment?.status ?? "—"}
                         {order.payment_method || order.payment?.method
                           ? ` · ${order.payment_method ?? order.payment?.method}`
                           : ""}
                       </td>
-                      <td className="py-3 pr-4 text-right font-medium text-pos-accent">
+                      <td className="py-3 px-2 sm:px-4 text-right font-medium text-pos-accent text-xs sm:text-sm">
                         {formatInr(Number(order.total_amount ?? 0))}
                       </td>
-                      <td className="py-3 pr-4 text-right text-muted-foreground text-xs">
-                        {order.created_at
-                          ? new Date(order.created_at).toLocaleString("en-IN", {
-                              day: "numeric",
-                              month: "short",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "—"}
+                      <td className="py-3 px-2 sm:px-4 text-right text-muted-foreground text-xs hidden md:table-cell">
+                        {order.created_at ? formatISTDateTimeCompact(order.created_at) : "—"}
                       </td>
-                      <td className="py-3 text-right">
+                      <td className="py-3 px-2 sm:px-4 text-right">
                         {order.status === "pending" ? (
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => openEditDialog(order)}
+                            className="text-xs h-7"
                           >
-                            <Pencil className="h-3.5 w-3.5 mr-1.5" />
-                            Edit
+                            <Pencil className="h-3 w-3 mr-1" />
+                            <span className="hidden sm:inline">Edit</span>
                           </Button>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
@@ -465,8 +460,8 @@ export default function Orders() {
             </table>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">
-            <p className="text-sm text-muted-foreground">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 pt-4">
+            <p className="text-xs sm:text-sm text-muted-foreground">
               Page {page} of {totalPages}
             </p>
             <div className="flex items-center gap-2">
@@ -475,6 +470,7 @@ export default function Orders() {
                 size="sm"
                 onClick={() => setPage((current) => Math.max(1, current - 1))}
                 disabled={page <= 1 || isLoading}
+                className="text-xs"
               >
                 Previous
               </Button>
@@ -483,6 +479,7 @@ export default function Orders() {
                 size="sm"
                 onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
                 disabled={page >= totalPages || isLoading || orders.length < pageSize}
+                className="text-xs"
               >
                 Next
               </Button>
@@ -503,16 +500,16 @@ export default function Orders() {
           }
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit order</DialogTitle>
+        <DialogContent className="w-full max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader className="mb-2">
+            <DialogTitle className="text-lg sm:text-xl">Edit order</DialogTitle>
           </DialogHeader>
 
           {orderDetailLoading && editForm.items.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">Loading order...</p>
+            <p className="py-8 text-center text-muted-foreground text-sm">Loading order...</p>
           ) : (
-            <div className="grid gap-4 py-2">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid gap-3 sm:gap-4 py-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label>Status</Label>
                   <Select
@@ -558,9 +555,9 @@ export default function Orders() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-2">
-                  <Label>Payment method</Label>
+                  <Label className="text-sm">Payment method</Label>
                   <Select
                     value={editForm.payment_method}
                     onValueChange={(value) =>

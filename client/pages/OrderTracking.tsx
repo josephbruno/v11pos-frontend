@@ -22,7 +22,9 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import type { QROrderStatus, QROrderWithDetails } from "@/shared/api";
 
-// Mock order data
+const useQrDevMocks = import.meta.env.DEV;
+
+// Mock order data (development preview only)
 const mockOrder: QROrderWithDetails = {
   id: "qr-order-001",
   orderId: "qr-order-001",
@@ -393,8 +395,16 @@ function KOTGroupStatus({
 }
 
 export default function OrderTracking() {
-  const [order, setOrder] = useState<QROrderWithDetails>(mockOrder);
+  const [order, setOrder] = useState<QROrderWithDetails | null>(useQrDevMocks ? mockOrder : null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
+
+  if (!order) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 text-center text-muted-foreground">
+        <p>Order tracking requires a live order ID. This preview is available in development only.</p>
+      </div>
+    );
+  }
 
   // Simulate real-time updates
   useEffect(() => {

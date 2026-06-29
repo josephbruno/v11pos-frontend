@@ -58,6 +58,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/contexts/ToastContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { validateFullName, validatePassword, validateUsername } from "@/lib/userValidation";
+import { formatISTDateOnly, formatISTDateTime } from "@/lib/istDate";
 import {
   createUser,
   deleteUser,
@@ -677,7 +678,7 @@ export default function UserManagement() {
       restaurantId: newUser.restaurantId || undefined,
       role: newUser.role as User["role"],
       status: newUser.status as User["status"],
-      joinDate: new Date().toLocaleDateString(),
+      joinDate: formatISTDateOnly(new Date()),
       lastLogin: "N/A",
       permissions: [],
       shifts: [],
@@ -725,14 +726,14 @@ export default function UserManagement() {
     if (!dateValue) return "N/A";
     const parsed = new Date(dateValue);
     if (Number.isNaN(parsed.getTime())) return "N/A";
-    return parsed.toLocaleDateString();
+    return formatISTDateOnly(parsed);
   };
 
   const toDateTimeText = (dateValue?: string) => {
     if (!dateValue) return "N/A";
     const parsed = new Date(dateValue);
     if (Number.isNaN(parsed.getTime())) return "N/A";
-    return parsed.toLocaleString();
+    return formatISTDateTime(parsed);
   };
 
   const mapApiUserRecords = (

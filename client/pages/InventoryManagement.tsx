@@ -25,6 +25,7 @@ import {
   recordStockTransaction,
   resolveLowStockAlert,
 } from "@/lib/apiServices";
+import { formatISTDateTime } from "@/lib/istDate";
 
 function unwrapList(res: unknown): any[] {
   const r = res as { data?: unknown };
@@ -131,27 +132,28 @@ export default function InventoryManagement() {
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-3 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Package className="h-7 w-7" />
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+            <Package className="h-6 sm:h-7 w-6 sm:w-7" />
             Inventory
           </h1>
-          <p className="text-muted-foreground text-sm">Ingredients, alerts, and stock history</p>
+          <p className="text-muted-foreground text-xs sm:text-sm">Ingredients, alerts, and stock history</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button size="sm">
               <Plus className="h-4 w-4 mr-2" />
-              Add ingredient
+              <span className="hidden sm:inline">Add ingredient</span>
+              <span className="inline sm:hidden">Add</span>
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="w-full max-w-lg p-4 sm:p-6">
             <DialogHeader>
-              <DialogTitle>New ingredient</DialogTitle>
+              <DialogTitle className="text-lg sm:text-xl">New ingredient</DialogTitle>
             </DialogHeader>
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               <div>
                 <Label>Name</Label>
                 <Input value={ingredientForm.name} onChange={(e) => setIngredientForm({ ...ingredientForm, name: e.target.value })} />
@@ -160,7 +162,7 @@ export default function InventoryManagement() {
                 <Label>Unit</Label>
                 <Input value={ingredientForm.unit} onChange={(e) => setIngredientForm({ ...ingredientForm, unit: e.target.value })} />
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                 <div>
                   <Label>Current stock</Label>
                   <Input type="number" value={ingredientForm.current_stock} onChange={(e) => setIngredientForm({ ...ingredientForm, current_stock: e.target.value })} />
@@ -188,7 +190,7 @@ export default function InventoryManagement() {
           <TabsTrigger value="suppliers">Suppliers ({suppliers.length})</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="ingredients" className="mt-4 grid gap-3 md:grid-cols-2">
+        <TabsContent value="ingredients" className="mt-3 sm:mt-4 grid gap-2 sm:gap-3 md:grid-cols-2">
           {isLoading && <p className="text-muted-foreground">Loading...</p>}
           {ingredients.map((ing: any) => {
             const current = ing.current_stock ?? ing.quantity ?? 0;
@@ -246,7 +248,7 @@ export default function InventoryManagement() {
                   {tx.quantity} {tx.unit ?? ""}
                 </span>
                 <span className="text-muted-foreground">
-                  {tx.created_at ? new Date(tx.created_at).toLocaleString() : ""}
+                  {tx.created_at ? formatISTDateTime(tx.created_at) : ""}
                 </span>
               </CardContent>
             </Card>
@@ -256,7 +258,7 @@ export default function InventoryManagement() {
           )}
         </TabsContent>
 
-        <TabsContent value="suppliers" className="mt-4 grid gap-3 md:grid-cols-2">
+        <TabsContent value="suppliers" className="mt-3 sm:mt-4 grid gap-2 sm:gap-3 md:grid-cols-2">
           {suppliers.map((s: any) => (
             <Card key={s.id}>
               <CardHeader className="py-3">

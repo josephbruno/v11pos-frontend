@@ -33,6 +33,7 @@ import {
   getStaffShifts,
 } from "@/lib/apiServices";
 import type { StaffMember } from "@/shared/api";
+import { formatISTDateTime } from "@/lib/istDate";
 
 function unwrapList(res: unknown): any[] {
   const r = res as { data?: unknown };
@@ -270,8 +271,8 @@ export default function StaffManagement() {
                   Staff {a.staff_id?.slice(-6)}
                 </span>
                 <span>
-                  {a.check_in_time ? new Date(a.check_in_time).toLocaleString() : "–"}
-                  {a.check_out_time ? ` → ${new Date(a.check_out_time).toLocaleString()}` : " (open)"}
+                  {a.check_in_time ? formatISTDateTime(a.check_in_time) : "–"}
+                  {a.check_out_time ? ` → ${formatISTDateTime(a.check_out_time)}` : " (open)"}
                 </span>
                 <Badge>{a.status ?? "present"}</Badge>
               </CardContent>

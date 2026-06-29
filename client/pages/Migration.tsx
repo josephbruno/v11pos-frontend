@@ -33,6 +33,7 @@ import {
   type DataCopyCreatePayload,
 } from "@/lib/apiServices";
 import type { Restaurant } from "@/shared/api";
+import { formatISTDateTime } from "@/lib/istDate";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -57,7 +58,7 @@ const STATUS_CONFIG: Record<string, { label: string; icon: any; color: string; b
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
-  return new Date(d).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  return formatISTDateTime(d);
 }
 
 function fmtDuration(s: number | null) {

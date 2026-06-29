@@ -1,10 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { Customer } from "@shared/api";
+import { BackendCustomer } from "@shared/api";
 import { requestCustomerOTP, verifyCustomerOTP, refreshCustomerToken, getCustomerProfile } from "../lib/apiServices";
-import { API_BASE_URL } from "../lib/apiClient";
 
 interface CustomerAuthContextType {
-  customer: Customer | null;
+  customer: BackendCustomer | null;
   requestOTP: (email: string, restaurantId: string) => Promise<boolean>;
   verifyOTP: (email: string, restaurantId: string, otp: string) => Promise<boolean>;
   logout: () => void;
@@ -15,7 +14,7 @@ interface CustomerAuthContextType {
 const CustomerAuthContext = createContext<CustomerAuthContextType | undefined>(undefined);
 
 export function CustomerAuthProvider({ children }: { children: React.ReactNode }) {
-  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [customer, setCustomer] = useState<BackendCustomer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -41,14 +40,37 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
         if (meResponse?.data) {
           setCustomer(meResponse.data);
           localStorage.setItem("pos-customer", JSON.stringify(meResponse.data));
-        } else if (meResponse && !('data' in meResponse) && ('id' in (meResponse as any))) {
-          // Fallback if data wrapper is missing
-          setCustomer(meResponse as unknown as Customer);
-          localStorage.setItem("pos-customer", JSON.stringify(meResponse));
         }
-      } catch (error) {
-        console.error("Failed to fetch customer profile:", error);
-        // We might want to try refreshing the token here in a real app
+      } catch (error: any) {
+        if (error?.status === 401) {
+          const storedRefreshToken = localStorage.getItem("pos-customer-refresh-token");
+          if (storedRefreshToken) {
+            try {
+              const refreshResponse = await refreshCustomerToken(storedRefreshToken);
+              const refreshData = (refreshResponse as any)?.data ?? refreshResponse;
+              if (refreshData?.access_token) {
+                localStorage.setItem("pos-customer-token", refreshData.access_token);
+                if (refreshData.refresh_token) {
+                  localStorage.setItem("pos-customer-refresh-token", refreshData.refresh_token);
+                }
+                const meRetry = await getCustomerProfile();
+                if (meRetry?.data) {
+                  setCustomer(meRetry.data);
+                  localStorage.setItem("pos-customer", JSON.stringify(meRetry.data));
+                }
+              }
+            } catch {
+              localStorage.removeItem("pos-customer");
+              localStorage.removeItem("pos-customer-token");
+              localStorage.removeItem("pos-customer-refresh-token");
+            }
+          } else {
+            localStorage.removeItem("pos-customer");
+            localStorage.removeItem("pos-customer-token");
+          }
+        } else {
+          console.error("Failed to fetch customer profile:", error);
+        }
       }
       setIsLoading(false);
     };

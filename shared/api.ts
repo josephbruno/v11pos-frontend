@@ -733,6 +733,7 @@ export interface OrderStatistics {
   ready_orders: number;
   delivered_orders: number;
   cancelled_orders: number;
+  completed_orders?: number;
 }
 
 // ==================== Backend Customer (API response) ====================

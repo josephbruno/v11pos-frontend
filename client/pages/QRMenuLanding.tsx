@@ -24,6 +24,7 @@ import { Separator } from "@/components/ui/separator";
 import { CustomerLoginModal } from "@/components/CustomerLoginModal";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import type { QRTable, QRSettings } from "@/shared/api";
+import { getISTTimeString, getISTWeekday } from "@/lib/istDate";
 
 // Mock data - in real app, this would be fetched based on table token
 const mockTable: QRTable = {
@@ -143,15 +144,12 @@ export default function QRMenuLanding() {
   const isRestaurantOpen = () => {
     if (!settings) return false;
 
-    const now = new Date();
-    const dayName = now
-      .toLocaleDateString("en-US", { weekday: "long" })
-      .toLowerCase();
+    const dayName = getISTWeekday();
     const businessHour = settings.businessHours[dayName];
 
     if (!businessHour?.isOpen) return false;
 
-    const currentTime = now.toTimeString().slice(0, 5);
+    const currentTime = getISTTimeString();
     return (
       currentTime >= businessHour.openTime! &&
       currentTime <= businessHour.closeTime!

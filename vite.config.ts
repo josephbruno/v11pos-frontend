@@ -38,10 +38,11 @@ export default defineConfig(({ mode }) => ({
     sourcemap: false, // Disable sourcemaps for production to reduce build size
   },
   plugins: [react(), expressPlugin()],
-  resolve: {
+    resolve: {
     alias: {
       "@": path.resolve(__dirname, "./client"),
       "@shared": path.resolve(__dirname, "./shared"),
+      "@v11pos/common": path.resolve(__dirname, "../packages/v11pos-common/src"),
     },
   },
 }));

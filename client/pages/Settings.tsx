@@ -330,17 +330,13 @@ export default function Settings() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="timezone" className="text-foreground">Timezone</Label>
-                  <Select
-                    value={storeSettings.timezone}
-                    onValueChange={(value) => setStoreSettings({ ...storeSettings, timezone: value })}
-                  >
-                    <SelectTrigger className="bg-card border-border text-foreground">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-card border-border">
-                      <SelectItem value="Asia/Kolkata">India Standard Time (IST)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Input
+                    id="timezone"
+                    readOnly
+                    disabled
+                    value="India Standard Time (IST) — Asia/Kolkata"
+                    className="bg-muted border-border text-foreground"
+                  />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -378,9 +374,9 @@ export default function Settings() {
             <CardContent>
               <div className="space-y-4">
                 {Object.entries(storeSettings.openingHours).map(([day, hours]) => (
-                  <div key={day} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                    <div className="flex items-center space-x-4">
-                      <div className="w-20">
+                  <div key={day} className="flex flex-wrap items-center justify-between gap-3 p-3 bg-muted rounded-lg">
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 shrink-0">
                         <span className="font-medium text-foreground">{day}</span>
                       </div>
                       <Switch
@@ -395,7 +391,7 @@ export default function Settings() {
                       <span className="text-foreground-muted text-sm">{hours.closed ? "Closed" : "Open"}</span>
                     </div>
                     {!hours.closed && (
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-2">
                         <Input
                           type="time"
                           value={hours.open}
@@ -405,9 +401,9 @@ export default function Settings() {
                               openingHours: { ...storeSettings.openingHours, [day]: { ...hours, open: e.target.value } },
                             });
                           }}
-                          className="w-24 bg-card border-border text-foreground"
+                          className="w-auto bg-card border-border text-foreground"
                         />
-                        <span className="text-foreground-muted">to</span>
+                        <span className="flex h-10 items-center text-sm text-foreground-muted">to</span>
                         <Input
                           type="time"
                           value={hours.close}
@@ -417,7 +413,7 @@ export default function Settings() {
                               openingHours: { ...storeSettings.openingHours, [day]: { ...hours, close: e.target.value } },
                             });
                           }}
-                          className="w-24 bg-card border-border text-foreground"
+                          className="w-auto bg-card border-border text-foreground"
                         />
                       </div>
                     )}

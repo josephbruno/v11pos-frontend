@@ -37,6 +37,12 @@
       ],
       "@/shared/*": [
         "./shared/*"
+      ],
+      "@v11pos/common": [
+        "../packages/v11pos-common/src/index.ts"
+      ],
+      "@v11pos/common/*": [
+        "../packages/v11pos-common/src/*"
       ]
     }
   },

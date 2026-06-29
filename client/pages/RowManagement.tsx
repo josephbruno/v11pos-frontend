@@ -54,6 +54,11 @@ import {
   useRowManagementList,
   useUpdateRowManagement,
 } from "@/hooks/useRowManagement";
+import {
+  formatISTDateTime,
+  istDatetimeLocalToNaiveIso,
+  toISTDatetimeLocalValue,
+} from "@/lib/istDate";
 import type { RowManagement, RowType } from "@shared/api";
 
 type RestaurantOption = { id: string; name: string };
@@ -70,27 +75,18 @@ const ROW_TYPES: { value: RowType; label: string }[] = [
 ];
 
 function toDatetimeLocalValue(value?: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return toISTDatetimeLocalValue(value);
 }
 
 function datetimeLocalToLocalIso(value?: string) {
-  const trimmed = String(value || "").trim();
-  if (!trimmed) return undefined;
-  const date = new Date(trimmed);
-  if (Number.isNaN(date.getTime())) return undefined;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
+  return istDatetimeLocalToNaiveIso(value);
 }
 
 function formatSchedule(startAt?: string | null, endAt?: string | null) {
   const start = startAt ? new Date(startAt) : null;
   const end = endAt ? new Date(endAt) : null;
-  const startText = start && !Number.isNaN(start.getTime()) ? start.toLocaleString() : "";
-  const endText = end && !Number.isNaN(end.getTime()) ? end.toLocaleString() : "";
+  const startText = start && !Number.isNaN(start.getTime()) ? formatISTDateTime(start) : "";
+  const endText = end && !Number.isNaN(end.getTime()) ? formatISTDateTime(end) : "";
   if (startText && endText) return `${startText} → ${endText}`;
   if (startText) return `From ${startText}`;
   if (endText) return `Until ${endText}`;

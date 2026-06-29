@@ -69,13 +69,19 @@ export default function Layout({ children }: LayoutProps) {
       }
     };
 
-    // Initial check
     checkScreenSize();
 
-    // Add resize listener
     if (typeof window !== "undefined") {
-      window.addEventListener("resize", checkScreenSize);
-      return () => window.removeEventListener("resize", checkScreenSize);
+      const mediaQuery = window.matchMedia("(min-width: 1024px)");
+      const handleChange = () => setIsDesktop(mediaQuery.matches);
+
+      if (mediaQuery.addEventListener) {
+        mediaQuery.addEventListener("change", handleChange);
+        return () => mediaQuery.removeEventListener("change", handleChange);
+      } else {
+        window.addEventListener("resize", checkScreenSize);
+        return () => window.removeEventListener("resize", checkScreenSize);
+      }
     }
   }, []);
 
@@ -149,7 +155,7 @@ export default function Layout({ children }: LayoutProps) {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 bg-sidebar border-r border-sidebar-border transition-transform duration-300 ease-in-out",
+          "fixed inset-y-0 left-0 z-50 w-56 sm:w-64 bg-sidebar border-r border-sidebar-border transition-transform duration-300 ease-in-out",
           isDesktop
             ? "translate-x-0"
             : sidebarOpen
@@ -281,7 +287,7 @@ export default function Layout({ children }: LayoutProps) {
       </aside>
 
       {/* Main content area */}
-      <div className={cn("transition-all duration-300", isDesktop && "ml-64")}>
+      <div className={cn("transition-all duration-300", isDesktop && "ml-56 sm:ml-64")}>
         {/* Mobile Header */}
         {!isDesktop && (
           <div className="sticky top-0 z-30 flex items-center justify-between h-16 px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border">
@@ -311,7 +317,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         )}
 
-        <main className="p-4 lg:p-6">
+        <main className="p-3 sm:p-4 lg:p-6">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
