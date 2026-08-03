@@ -2858,15 +2858,15 @@ export default function ProductManagement() {
 	                return (
 	                  <Card
 	                    key={product.id}
-	                    className="bg-pos-surface border-pos-secondary"
+	                    className="bg-pos-surface border-pos-secondary flex flex-col h-full overflow-hidden"
 	                  >
 	                    <CardHeader className="pb-1">
 	                      <div className="flex items-start justify-between">
-	                        <div className="flex-1">
+	                        <div className="flex-1 min-w-0">
 	                          <CardTitle className="text-base text-pos-text flex items-center">
-	                            {product.name}
+	                            <span className="truncate">{product.name}</span>
 	                            {product.featured && (
-	                              <Star className="ml-2 h-4 w-4 text-pos-warning fill-current" />
+	                              <Star className="ml-2 h-4 w-4 text-pos-warning fill-current shrink-0" />
 	                            )}
 	                          </CardTitle>
 	                          {null}
@@ -2874,23 +2874,26 @@ export default function ProductManagement() {
 	                        <div />
 	                      </div>
 	                    </CardHeader>
-	                    <CardContent className="space-y-3 pt-0">
-	                      <div className="h-28 bg-pos-secondary rounded-md flex items-center justify-center overflow-hidden">
+	                    <CardContent className="space-y-3 pt-0 flex flex-col flex-1">
+	                      <div
+	                        className="relative w-full shrink-0 overflow-hidden rounded-md bg-pos-secondary"
+	                        style={getImageAspectRatioStyle("product")}
+	                      >
 	                        {product.image ? (
 	                          <img
 	                            src={product.image.startsWith("http") ? product.image : `${BACKEND_URL}${product.image}`}
 	                            alt={product.name}
-	                            className="w-full h-full object-cover"
+	                            className="absolute inset-0 h-full w-full object-cover"
                             onError={(e) => {
                               e.currentTarget.style.display = 'none';
                               e.currentTarget.nextElementSibling?.classList.remove('hidden');
                             }}
                           />
                         ) : null}
-                        <ImageIcon className={`h-8 w-8 text-pos-text-muted ${product.image ? 'hidden' : ''}`} />
+                        <ImageIcon className={`absolute inset-0 m-auto h-8 w-8 text-pos-text-muted ${product.image ? 'hidden' : ''}`} />
                       </div>
 
-	                        <div className="space-y-3">
+	                        <div className="space-y-3 flex flex-col flex-1">
 	                        <div className="grid grid-cols-2 gap-3">
 	                          <div className="flex items-center justify-between gap-2">
 	                            <span className="text-pos-text-muted text-sm">Active</span>
@@ -2957,7 +2960,7 @@ export default function ProductManagement() {
                         ))}
                       </div>
 
-                      <div className="flex items-center justify-end space-x-2 pt-2">
+                      <div className="flex items-center justify-end space-x-2 pt-2 mt-auto">
                         <Dialog
                           open={editingProduct?.id === product.id}
                           onOpenChange={(open) => {
