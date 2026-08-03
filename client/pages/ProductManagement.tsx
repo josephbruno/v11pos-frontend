@@ -75,7 +75,13 @@ import {
 } from "@/hooks/useModifiers";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { getImageCropConfig, validateImageFile } from "@/lib/imageCropConfig";
+import {
+  croppedBlobToFile,
+  getImageAspectRatioStyle,
+  getImageCropConfig,
+  validateImageFile,
+} from "@/lib/imageCropConfig";
+import ImageCropDialog from "@/components/ImageCropDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { getMyRestaurants, getProducts } from "@/lib/apiServices";
 
@@ -324,7 +330,10 @@ function ProductForm({
 
   // Get crop dimensions from config
   const imageCropConfig = getImageCropConfig("product");
-  const { width: cropWidth, height: cropHeight } = imageCropConfig;
+  const { width: cropWidth, height: cropHeight, aspectRatio: cropAspectRatio } = imageCropConfig;
+  const productPreviewStyle = getImageAspectRatioStyle("product");
+  const [cropOpen, setCropOpen] = useState(false);
+  const [cropSrc, setCropSrc] = useState("");
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -389,9 +398,9 @@ function ProductForm({
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
 
     if (file) {
-      // Validate file using config
       const validation = validateImageFile(file, "product");
 
       if (!validation.valid) {
@@ -405,12 +414,29 @@ function ProductForm({
         return next;
       });
 
-      // Store the original file for cropping during submit
-      setImageFile(file);
+      if (cropSrc) URL.revokeObjectURL(cropSrc);
+      setCropSrc(URL.createObjectURL(file));
+      setCropOpen(true);
+    }
+  };
 
-      // Create preview
-      const objectUrl = URL.createObjectURL(file);
-      setImagePreview(objectUrl);
+  const handleProductCropComplete = (blob: Blob) => {
+    const cropped = croppedBlobToFile(blob, imageFile?.name || "product.jpg");
+    setImageFile(cropped);
+    if (imagePreview?.startsWith("blob:")) URL.revokeObjectURL(imagePreview);
+    setImagePreview(URL.createObjectURL(cropped));
+    setCropOpen(false);
+    if (cropSrc) {
+      URL.revokeObjectURL(cropSrc);
+      setCropSrc("");
+    }
+  };
+
+  const handleProductCropClose = () => {
+    setCropOpen(false);
+    if (cropSrc) {
+      URL.revokeObjectURL(cropSrc);
+      setCropSrc("");
     }
   };
 
@@ -780,8 +806,11 @@ function ProductForm({
           Product Image
         </Label>
         <div className="flex items-start gap-4">
-          {/* Image Preview */}
-          <div className="w-32 h-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted">
+          {/* Image Preview — matches crop aspect (product default 1:1) */}
+          <div
+            className="w-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted shrink-0"
+            style={productPreviewStyle}
+          >
             {imagePreview ? (
               <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
             ) : (
@@ -1180,7 +1209,10 @@ function ProductForm({
             Product Image
           </Label>
           <div className="flex items-start gap-4 mt-2">
-            <div className="w-32 h-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted">
+            <div
+              className="w-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted shrink-0"
+              style={productPreviewStyle}
+            >
               {imagePreview ? (
                 <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
               ) : (
@@ -1218,6 +1250,16 @@ function ProductForm({
           </div>
         </div>
       )}
+
+      <ImageCropDialog
+        open={cropOpen}
+        imageUrl={cropSrc}
+        aspectRatio={cropAspectRatio}
+        cropWidth={cropWidth}
+        cropHeight={cropHeight}
+        onCropComplete={handleProductCropComplete}
+        onClose={handleProductCropClose}
+      />
 
       <div className="flex items-center justify-end space-x-2 pt-4 border-t border-pos-secondary">
         <Button
@@ -1284,7 +1326,10 @@ function CategoryForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const imageCropConfig = getImageCropConfig("category");
-  const { width: cropWidth, height: cropHeight } = imageCropConfig;
+  const { width: cropWidth, height: cropHeight, aspectRatio: cropAspectRatio } = imageCropConfig;
+  const categoryPreviewStyle = getImageAspectRatioStyle("category");
+  const [cropOpen, setCropOpen] = useState(false);
+  const [cropSrc, setCropSrc] = useState("");
 
   useEffect(() => {
     if (!category && formData.name) {
@@ -1311,6 +1356,7 @@ function CategoryForm({
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (file) {
       const validation = validateImageFile(file, "category");
       if (!validation.valid) {
@@ -1323,8 +1369,29 @@ function CategoryForm({
         delete next.image;
         return next;
       });
-      setCategoryImageFile(file);
-      setCategoryImagePreview(URL.createObjectURL(file));
+      if (cropSrc) URL.revokeObjectURL(cropSrc);
+      setCropSrc(URL.createObjectURL(file));
+      setCropOpen(true);
+    }
+  };
+
+  const handleCategoryCropComplete = (blob: Blob) => {
+    const cropped = croppedBlobToFile(blob, categoryImageFile?.name || "category.jpg");
+    setCategoryImageFile(cropped);
+    if (categoryImagePreview?.startsWith("blob:")) URL.revokeObjectURL(categoryImagePreview);
+    setCategoryImagePreview(URL.createObjectURL(cropped));
+    setCropOpen(false);
+    if (cropSrc) {
+      URL.revokeObjectURL(cropSrc);
+      setCropSrc("");
+    }
+  };
+
+  const handleCategoryCropClose = () => {
+    setCropOpen(false);
+    if (cropSrc) {
+      URL.revokeObjectURL(cropSrc);
+      setCropSrc("");
     }
   };
 
@@ -1343,7 +1410,10 @@ function CategoryForm({
       <div className="space-y-2">
         <Label>Category Image</Label>
         <div className="flex items-start gap-4">
-          <div className="w-32 h-32 border-2 border-dashed rounded-md flex items-center justify-center overflow-hidden bg-muted">
+          <div
+            className="w-40 border-2 border-dashed rounded-md flex items-center justify-center overflow-hidden bg-muted shrink-0"
+            style={categoryPreviewStyle}
+          >
             {categoryImagePreview ? (
               <img
                 src={
@@ -1385,6 +1455,17 @@ function CategoryForm({
           </div>
         </div>
       </div>
+
+      <ImageCropDialog
+        open={cropOpen}
+        imageUrl={cropSrc}
+        aspectRatio={cropAspectRatio}
+        cropWidth={cropWidth}
+        cropHeight={cropHeight}
+        onCropComplete={handleCategoryCropComplete}
+        onClose={handleCategoryCropClose}
+      />
+
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>Name *</Label>

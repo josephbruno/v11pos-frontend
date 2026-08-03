@@ -29,10 +29,10 @@ export const IMAGE_CROP_CONFIG = {
     maxFileSize: 5 * 1024 * 1024, // 5MB
   },
   table: {
-    width: 800,
-    height: 800,
+    width: parseInt(import.meta.env.VITE_TABLE_IMAGE_WIDTH || "800"),
+    height: parseInt(import.meta.env.VITE_TABLE_IMAGE_HEIGHT || "800"),
     get aspectRatio() {
-      return 1;
+      return this.width / this.height;
     },
     maxFileSize: 2 * 1024 * 1024, // 2MB
   },
@@ -81,4 +81,23 @@ export function validateImageFile(
   }
 
   return { valid: true };
+}
+
+/**
+ * CSS aspect-ratio for previews / display containers matching crop config.
+ */
+export function getImageAspectRatioStyle(type: ImageCropType): { aspectRatio: string } {
+  const { width, height } = getImageCropConfig(type);
+  return { aspectRatio: `${width} / ${height}` };
+}
+
+/**
+ * Turn a cropped blob into a File ready for upload.
+ */
+export function croppedBlobToFile(blob: Blob, baseName = "image"): File {
+  const ext = blob.type === "image/png" ? "png" : "jpg";
+  const safeBase = baseName.replace(/\.[^.]+$/, "") || "image";
+  return new File([blob], `${safeBase}.${ext}`, {
+    type: blob.type || "image/jpeg",
+  });
 }

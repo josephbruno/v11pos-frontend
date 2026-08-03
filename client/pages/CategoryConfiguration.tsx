@@ -63,7 +63,13 @@ import {
   useUpdateCategory,
   generateSlug,
 } from "@/hooks/useCategories";
-import { getImageCropConfig, validateImageFile } from "@/lib/imageCropConfig";
+import {
+  croppedBlobToFile,
+  getImageAspectRatioStyle,
+  getImageCropConfig,
+  validateImageFile,
+} from "@/lib/imageCropConfig";
+import ImageCropDialog from "@/components/ImageCropDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { getMyRestaurants } from "@/lib/apiServices";
 
@@ -363,7 +369,10 @@ export default function CategoryConfiguration() {
     );
 
     const imageCropConfig = getImageCropConfig('category');
-    const { width: cropWidth, height: cropHeight } = imageCropConfig;
+    const { width: cropWidth, height: cropHeight, aspectRatio: cropAspectRatio } = imageCropConfig;
+    const categoryPreviewStyle = getImageAspectRatioStyle("category");
+    const [cropOpen, setCropOpen] = useState(false);
+    const [cropSrc, setCropSrc] = useState("");
 
     useEffect(() => {
       setFormData(getInitialCategoryFormData(category, defaultRestaurantId));
@@ -478,11 +487,12 @@ export default function CategoryConfiguration() {
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      
+      e.target.value = "";
+
       if (file) {
         setTouched((prev) => ({ ...prev, image: true }));
         const validation = validateImageFile(file, 'category');
-        
+
         if (!validation.valid) {
           setErrors((prevErrors) => ({
             ...prevErrors,
@@ -498,10 +508,29 @@ export default function CategoryConfiguration() {
           return nextErrors;
         });
         setTouched((prev) => ({ ...prev, image: true }));
-        setLocalImageFile(file);
+        if (cropSrc) URL.revokeObjectURL(cropSrc);
+        setCropSrc(URL.createObjectURL(file));
+        setCropOpen(true);
+      }
+    };
 
-        const objectUrl = URL.createObjectURL(file);
-        setLocalImagePreview(objectUrl);
+    const handleCategoryCropComplete = (blob: Blob) => {
+      const cropped = croppedBlobToFile(blob, localImageFile?.name || "category.jpg");
+      setLocalImageFile(cropped);
+      if (localImagePreview?.startsWith("blob:")) URL.revokeObjectURL(localImagePreview);
+      setLocalImagePreview(URL.createObjectURL(cropped));
+      setCropOpen(false);
+      if (cropSrc) {
+        URL.revokeObjectURL(cropSrc);
+        setCropSrc("");
+      }
+    };
+
+    const handleCategoryCropClose = () => {
+      setCropOpen(false);
+      if (cropSrc) {
+        URL.revokeObjectURL(cropSrc);
+        setCropSrc("");
       }
     };
 
@@ -762,7 +791,10 @@ export default function CategoryConfiguration() {
             <div className="space-y-2">
               <Label htmlFor="image" className="text-foreground">Category Image</Label>
             <div className="flex items-start gap-4">
-              <div className="w-32 h-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted">
+              <div
+                className="w-40 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted shrink-0"
+                style={categoryPreviewStyle}
+              >
                 {localImagePreview ? (
                   <img
                     src={resolveImageSrc(localImagePreview)}
@@ -879,6 +911,16 @@ export default function CategoryConfiguration() {
               )}
             </Button>
           </div>
+
+          <ImageCropDialog
+            open={cropOpen}
+            imageUrl={cropSrc}
+            aspectRatio={cropAspectRatio}
+            cropWidth={cropWidth}
+            cropHeight={cropHeight}
+            onCropComplete={handleCategoryCropComplete}
+            onClose={handleCategoryCropClose}
+          />
         </div>
       );
     }
@@ -1204,7 +1246,10 @@ export default function CategoryConfiguration() {
           <div className="space-y-2">
             <Label htmlFor="image" className="text-foreground">Category Image</Label>
             <div className="flex items-start gap-4">
-              <div className="w-32 h-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted">
+              <div
+                className="w-40 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted shrink-0"
+                style={categoryPreviewStyle}
+              >
                 {localImagePreview ? (
                   <img
                     src={getPreviewSrc(localImagePreview)}
@@ -1252,6 +1297,16 @@ export default function CategoryConfiguration() {
 
                     </CardContent>
                   </Card>
+
+                  <ImageCropDialog
+                    open={cropOpen}
+                    imageUrl={cropSrc}
+                    aspectRatio={cropAspectRatio}
+                    cropWidth={cropWidth}
+                    cropHeight={cropHeight}
+                    onCropComplete={handleCategoryCropComplete}
+                    onClose={handleCategoryCropClose}
+                  />
 
 <Card className="md:col-span-2">
                     <CardHeader className="p-4">

@@ -9,7 +9,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { validateImageFile } from "@/lib/imageCropConfig";
+import {
+  croppedBlobToFile,
+  getImageAspectRatioStyle,
+  getImageCropConfig,
+  validateImageFile,
+} from "@/lib/imageCropConfig";
+import ImageCropDialog from "@/components/ImageCropDialog";
 
 import { Image as ImageIcon } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
@@ -20,6 +26,8 @@ interface CreateTableFormProps {
 }
 
 export function CreateTableForm({ onSave, onCancel }: CreateTableFormProps) {
+  const tableCrop = getImageCropConfig("table");
+  const tablePreviewStyle = getImageAspectRatioStyle("table");
   const [formData, setFormData] = useState({
     table_number: "",
     table_name: "",
@@ -30,10 +38,13 @@ export function CreateTableForm({ onSave, onCancel }: CreateTableFormProps) {
   const [imagePreview, setImagePreview] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [error, setError] = useState("");
+  const [cropOpen, setCropOpen] = useState(false);
+  const [cropSrc, setCropSrc] = useState("");
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (file) {
       const validation = validateImageFile(file, "table");
       if (!validation.valid) {
@@ -41,8 +52,29 @@ export function CreateTableForm({ onSave, onCancel }: CreateTableFormProps) {
         return;
       }
       setError("");
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file));
+      if (cropSrc) URL.revokeObjectURL(cropSrc);
+      setCropSrc(URL.createObjectURL(file));
+      setCropOpen(true);
+    }
+  };
+
+  const handleCropComplete = (blob: Blob) => {
+    const cropped = croppedBlobToFile(blob, imageFile?.name || "table.jpg");
+    setImageFile(cropped);
+    if (imagePreview.startsWith("blob:")) URL.revokeObjectURL(imagePreview);
+    setImagePreview(URL.createObjectURL(cropped));
+    setCropOpen(false);
+    if (cropSrc) {
+      URL.revokeObjectURL(cropSrc);
+      setCropSrc("");
+    }
+  };
+
+  const handleCropClose = () => {
+    setCropOpen(false);
+    if (cropSrc) {
+      URL.revokeObjectURL(cropSrc);
+      setCropSrc("");
     }
   };
 
@@ -128,7 +160,10 @@ export function CreateTableForm({ onSave, onCancel }: CreateTableFormProps) {
       <div className="space-y-2">
         <Label className="text-foreground">Table Image</Label>
         <div className="flex items-start gap-4">
-          <div className="w-32 h-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted">
+          <div
+            className="w-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted shrink-0"
+            style={tablePreviewStyle}
+          >
             {imagePreview ? (
               <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
             ) : (
@@ -152,7 +187,7 @@ export function CreateTableForm({ onSave, onCancel }: CreateTableFormProps) {
               Choose Image
             </Button>
             <p className="text-xs text-muted-foreground">
-              Recommended: Square image, max 2MB.
+              Square image, max 2MB. Cropped to {tableCrop.width}x{tableCrop.height}px.
             </p>
           </div>
         </div>
@@ -174,6 +209,16 @@ export function CreateTableForm({ onSave, onCancel }: CreateTableFormProps) {
           </p>
         </div>
       </div>
+
+      <ImageCropDialog
+        open={cropOpen}
+        imageUrl={cropSrc}
+        aspectRatio={tableCrop.aspectRatio}
+        cropWidth={tableCrop.width}
+        cropHeight={tableCrop.height}
+        onCropComplete={handleCropComplete}
+        onClose={handleCropClose}
+      />
 
       <div className="flex items-center justify-end space-x-2 pt-4 border-t border-border">
         <Button

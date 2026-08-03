@@ -23,6 +23,7 @@ import {
   rejectQrTableOrder,
   type QrTableOrderApproval,
 } from "@/lib/apiServices";
+import { formatISTDateTimeCompact } from "@/lib/istDate";
 
 function formatMoney(paise: number) {
   return `₹${(paise / 100).toFixed(2)}`;
@@ -34,7 +35,8 @@ function formatRelativeTime(iso: string) {
   if (mins < 1) return "Just now";
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
-  return `${hrs}h ago`;
+  if (hrs < 24) return `${hrs}h ago`;
+  return formatISTDateTimeCompact(iso);
 }
 
 export default function TableOrderApprovals() {
@@ -182,10 +184,17 @@ export default function TableOrderApprovals() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <CardTitle className="text-lg">Order #{order.order_number}</CardTitle>
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="gap-1">
-                        <Clock className="h-3 w-3" />
-                        {formatRelativeTime(order.created_at)}
-                      </Badge>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <Badge variant="outline" className="gap-1">
+                          <Clock className="h-3 w-3" />
+                          {formatRelativeTime(order.created_at)}
+                        </Badge>
+                        {order.created_at ? (
+                          <span className="text-[10px] text-muted-foreground">
+                            {formatISTDateTimeCompact(order.created_at)}
+                          </span>
+                        ) : null}
+                      </div>
                       <Badge className="bg-amber-500 hover:bg-amber-500">pending approval</Badge>
                     </div>
                   </div>

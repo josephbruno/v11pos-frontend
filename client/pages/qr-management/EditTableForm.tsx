@@ -12,7 +12,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { validateImageFile } from "@/lib/imageCropConfig";
+import {
+  croppedBlobToFile,
+  getImageAspectRatioStyle,
+  getImageCropConfig,
+  validateImageFile,
+} from "@/lib/imageCropConfig";
+import ImageCropDialog from "@/components/ImageCropDialog";
 import type { QRTable } from "@/shared/api";
 import { resolveTableImageSrc } from "./qrUtils";
 import type { EditTableFormValues } from "./constants";
@@ -25,6 +31,8 @@ interface EditTableFormProps {
 }
 
 export function EditTableForm({ restaurantId, table, onSave, onCancel }: EditTableFormProps) {
+  const tableCrop = getImageCropConfig("table");
+  const tablePreviewStyle = getImageAspectRatioStyle("table");
   const [formData, setFormData] = useState<EditTableFormValues>({
     restaurant_id: String((table as any)?.restaurant_id ?? restaurantId ?? ""),
     table_number: String((table as any)?.table_number ?? table?.tableNumber ?? ""),
@@ -52,6 +60,8 @@ export function EditTableForm({ restaurantId, table, onSave, onCancel }: EditTab
   );
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageError, setImageError] = useState("");
+  const [cropOpen, setCropOpen] = useState(false);
+  const [cropSrc, setCropSrc] = useState("");
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -67,6 +77,7 @@ export function EditTableForm({ restaurantId, table, onSave, onCancel }: EditTab
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (file) {
       const validation = validateImageFile(file, "table");
       if (!validation.valid) {
@@ -74,8 +85,29 @@ export function EditTableForm({ restaurantId, table, onSave, onCancel }: EditTab
         return;
       }
       setImageError("");
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file));
+      if (cropSrc) URL.revokeObjectURL(cropSrc);
+      setCropSrc(URL.createObjectURL(file));
+      setCropOpen(true);
+    }
+  };
+
+  const handleCropComplete = (blob: Blob) => {
+    const cropped = croppedBlobToFile(blob, imageFile?.name || "table.jpg");
+    setImageFile(cropped);
+    if (imagePreview.startsWith("blob:")) URL.revokeObjectURL(imagePreview);
+    setImagePreview(URL.createObjectURL(cropped));
+    setCropOpen(false);
+    if (cropSrc) {
+      URL.revokeObjectURL(cropSrc);
+      setCropSrc("");
+    }
+  };
+
+  const handleCropClose = () => {
+    setCropOpen(false);
+    if (cropSrc) {
+      URL.revokeObjectURL(cropSrc);
+      setCropSrc("");
     }
   };
 
@@ -230,7 +262,10 @@ export function EditTableForm({ restaurantId, table, onSave, onCancel }: EditTab
       <div className="space-y-2">
         <Label className="text-foreground">Table Image</Label>
         <div className="flex items-start gap-4">
-          <div className="w-32 h-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted">
+          <div
+            className="w-32 border-2 border-dashed border-border rounded-md flex items-center justify-center overflow-hidden bg-muted shrink-0"
+            style={tablePreviewStyle}
+          >
             {imagePreview ? (
               <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
             ) : (
@@ -254,12 +289,22 @@ export function EditTableForm({ restaurantId, table, onSave, onCancel }: EditTab
               Choose Image
             </Button>
             <p className="text-xs text-muted-foreground">
-              Recommended: Square image, max 2MB.
+              Square image, max 2MB. Cropped to {tableCrop.width}x{tableCrop.height}px.
             </p>
           </div>
         </div>
         {imageError && <p className="text-xs text-destructive mt-1">{imageError}</p>}
       </div>
+
+      <ImageCropDialog
+        open={cropOpen}
+        imageUrl={cropSrc}
+        aspectRatio={tableCrop.aspectRatio}
+        cropWidth={tableCrop.width}
+        cropHeight={tableCrop.height}
+        onCropComplete={handleCropComplete}
+        onClose={handleCropClose}
+      />
 
       <div className="space-y-2">
         <Label htmlFor="qr-code" className="text-foreground">

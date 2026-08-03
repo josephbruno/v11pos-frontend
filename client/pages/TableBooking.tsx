@@ -42,7 +42,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { format } from "date-fns";
+import { formatISTDateOnly, formatISTDateTime } from "@/lib/istDate";
 import {
   CalendarIcon,
   Plus,
@@ -652,7 +652,11 @@ export default function TableBooking() {
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {newBooking.bookingDate
-                          ? format(newBooking.bookingDate, "PPP")
+                          ? formatISTDateOnly(newBooking.bookingDate, {
+                              day: "numeric",
+                              month: "long",
+                              year: "numeric",
+                            })
                           : "Pick a date"}
                       </Button>
                     </PopoverTrigger>
@@ -862,7 +866,13 @@ export default function TableBooking() {
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full md:w-[200px]">
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {selectedDate ? format(selectedDate, "PPP") : "All dates"}
+                    {selectedDate
+                      ? formatISTDateOnly(selectedDate, {
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                        })
+                      : "All dates"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -972,7 +982,11 @@ export default function TableBooking() {
                         </div>
                         <p className="text-sm text-muted-foreground">
                           {booking.tableName} • {booking.partySize} guests •{" "}
-                          {format(booking.bookingDate, "MMM dd")} at{" "}
+                          {formatISTDateOnly(booking.bookingDate, {
+                            day: "numeric",
+                            month: "short",
+                          })}{" "}
+                          at{" "}
                           {booking.bookingTime}
                         </p>
                         <div className="flex items-center space-x-4 mt-1">
@@ -1176,7 +1190,7 @@ export default function TableBooking() {
                               <span className="text-muted-foreground">
                                 Last updated:{" "}
                               </span>
-                              {format(table.updatedAt, "MMM dd, yyyy HH:mm")}
+                          {formatISTDateTime(table.updatedAt)}
                             </p>
                           )}
                         </div>

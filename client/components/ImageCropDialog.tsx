@@ -198,10 +198,17 @@ export default function ImageCropDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Crop Image</DialogTitle>
+          <DialogTitle>
+            Crop Image
+            {cropWidth && cropHeight ? (
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                ({cropWidth}×{cropHeight}px)
+              </span>
+            ) : null}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">

@@ -42,6 +42,7 @@ import {
   Database,
 } from "lucide-react";
 import { getMyLoginLogs } from "@/lib/apiServices";
+import { formatISTDateTimeCompact } from "@/lib/istDate";
 
 const securityAlerts = [
   {
@@ -176,7 +177,7 @@ function formatTimeAgo(dateStr: string) {
   const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
   if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
-  return `${Math.round(diff / 86400)}d ago`;
+  return formatISTDateTimeCompact(dateStr);
 }
 
 export default function Security() {

@@ -26,7 +26,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
-import { format } from "date-fns";
+import { formatISTDateOnly } from "@/lib/istDate";
 import {
   CalendarIcon,
   Clock,
@@ -298,7 +298,12 @@ export default function CustomerBooking() {
                 <div className="space-y-6">
                   <div className="text-center">
                     <p className="text-muted-foreground">
-                      {format(selectedDate!, "EEEE, MMMM do")} at {selectedTime} for {partySize} guests
+                      {formatISTDateOnly(selectedDate!, {
+                        weekday: "long",
+                        day: "numeric",
+                        month: "long",
+                      })}{" "}
+                      at {selectedTime} for {partySize} guests
                     </p>
                   </div>
 
@@ -446,7 +451,14 @@ export default function CustomerBooking() {
                     <div className="space-y-4">
                       <div className="flex justify-between">
                         <span className="font-medium">Date & Time:</span>
-                        <span>{format(selectedDate!, "EEEE, MMMM do")} at {selectedTime}</span>
+                        <span>
+                          {formatISTDateOnly(selectedDate!, {
+                            weekday: "long",
+                            day: "numeric",
+                            month: "long",
+                          })}{" "}
+                          at {selectedTime}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="font-medium">Party Size:</span>
@@ -523,7 +535,13 @@ export default function CustomerBooking() {
                       </div>
                       <div className="flex justify-between">
                         <span>Date:</span>
-                        <span>{format(selectedDate!, "MMM dd, yyyy")}</span>
+                        <span>
+                          {formatISTDateOnly(selectedDate!, {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Time:</span>
