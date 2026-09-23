@@ -56,7 +56,9 @@ export function buildSampleReceipt(info: SampleReceiptInfo): string {
   lines.push("=".repeat(RECEIPT_LINE_WIDTH));
 
   lines.push("Order #: SAMPLE-0001");
-  lines.push(`Date: ${new Date().toLocaleString("en-IN")}`);
+  lines.push(
+    `Date: ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}`,
+  );
   lines.push("-".repeat(RECEIPT_LINE_WIDTH));
 
   const items = [
@@ -65,7 +67,9 @@ export function buildSampleReceipt(info: SampleReceiptInfo): string {
   ];
   const nameWidth = LABEL_WIDTH - ITEM_INDENT.length;
   for (const item of items) {
-    const name = `${item.qty}x ${item.name}`.slice(0, nameWidth);
+    // Truncate the item name only, so the " xN" quantity suffix is never cut off.
+    const qtySuffix = ` x${item.qty}`;
+    const name = item.name.slice(0, nameWidth - qtySuffix.length) + qtySuffix;
     lines.push(ITEM_INDENT + padRight(name, nameWidth) + padLeft(inr(item.amount), AMOUNT_WIDTH));
   }
   lines.push("-".repeat(RECEIPT_LINE_WIDTH));
