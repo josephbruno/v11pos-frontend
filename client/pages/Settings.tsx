@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Save,
@@ -40,6 +40,7 @@ import {
   type ReceiptPrinterActiveConfig,
 } from "@/lib/apiServices";
 import { fetchBridgePrinters, sendTestPrint } from "@/lib/printBridge";
+import { buildSampleReceipt, RECEIPT_LINE_WIDTH } from "@/lib/receiptPreview";
 import { useToast } from "@/contexts/ToastContext";
 
 interface PaymentSettings {
@@ -193,6 +194,20 @@ export default function Settings() {
       }));
     }
   }, [activeBillPrinter]);
+
+  // On-screen sample of the exact 42-char column layout the ESC/POS bridge
+  // prints (receipt_printer.py's generate_receipt_escpos), so alignment can
+  // be checked without a physical test print.
+  const sampleReceiptText = useMemo(
+    () =>
+      buildSampleReceipt({
+        name: storeSettings.name,
+        address: storeSettings.address,
+        phone: storeSettings.phone,
+        gstin: restaurant?.gstin,
+      }),
+    [storeSettings.name, storeSettings.address, storeSettings.phone, restaurant?.gstin],
+  );
 
   const updateMutation = useMutation({
     mutationFn: (data: any) => updateRestaurant(branchId, data),
@@ -714,6 +729,24 @@ export default function Settings() {
                   value="ESC/POS"
                 />
                 <p className="text-xs text-foreground-muted">Only ESC/POS receipt printers are supported right now.</p>
+              </div>
+
+              <Separator className="bg-muted" />
+
+              <div className="space-y-2">
+                <Label className="text-foreground">Sample Receipt Preview (78mm)</Label>
+                <p className="text-sm text-foreground-muted">
+                  Exact column layout the printer will use ({RECEIPT_LINE_WIDTH} characters wide) - check
+                  alignment here before sending a physical test print.
+                </p>
+                <div className="flex justify-center bg-muted rounded-lg p-4 overflow-x-auto">
+                  <pre
+                    className="bg-white text-black text-xs leading-tight p-3 shadow-md"
+                    style={{ width: `${RECEIPT_LINE_WIDTH}ch`, fontFamily: "'Courier New', monospace" }}
+                  >
+                    {sampleReceiptText}
+                  </pre>
+                </div>
               </div>
 
               <Separator className="bg-muted" />
