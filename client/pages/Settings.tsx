@@ -635,7 +635,7 @@ export default function Settings() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2 max-w-sm">
-                <Label className="text-foreground">KOT Printer</Label>
+                <Label className="text-foreground">Printer Name</Label>
                 <Select value={printerSettings.kotPrinter}>
                   <SelectTrigger className="bg-card border-border text-foreground">
                     <SelectValue />
@@ -723,11 +723,10 @@ export default function Settings() {
 
               <div className="space-y-2 max-w-xs">
                 <Label className="text-foreground">Printer Type</Label>
-                <Input
-                  disabled
-                  className="bg-muted border-border text-foreground-muted"
-                  value="ESC/POS"
-                />
+                <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-pos-secondary bg-pos-accent/10">
+                  <span className="h-2 w-2 rounded-full bg-primary" />
+                  <span className="font-medium text-foreground">ESC/POS</span>
+                </div>
                 <p className="text-xs text-foreground-muted">Only ESC/POS receipt printers are supported right now.</p>
               </div>
 
@@ -739,13 +738,38 @@ export default function Settings() {
                   Exact column layout the printer will use ({RECEIPT_LINE_WIDTH} characters wide) - check
                   alignment here before sending a physical test print.
                 </p>
-                <div className="flex justify-center bg-muted rounded-lg p-4 overflow-x-auto">
-                  <pre
-                    className="bg-white text-black text-xs leading-tight p-3 shadow-md"
-                    style={{ width: `${RECEIPT_LINE_WIDTH}ch`, fontFamily: "'Courier New', monospace" }}
-                  >
-                    {sampleReceiptText}
-                  </pre>
+                <div className="flex justify-center bg-muted rounded-lg py-6">
+                  <div style={{ width: `${RECEIPT_LINE_WIDTH}ch` }}>
+                    <div
+                      aria-hidden
+                      style={{
+                        height: 10,
+                        backgroundImage:
+                          "linear-gradient(135deg, transparent 6px, white 6px), linear-gradient(-135deg, transparent 6px, white 6px)",
+                        backgroundSize: "12px 20px",
+                        backgroundRepeat: "repeat-x",
+                        backgroundPosition: "left top",
+                        transform: "scaleY(-1)",
+                      }}
+                    />
+                    <pre
+                      className="bg-white text-black text-xs leading-tight px-3 py-2 shadow-lg overflow-x-auto"
+                      style={{ fontFamily: "'Courier New', monospace" }}
+                    >
+                      {sampleReceiptText}
+                    </pre>
+                    <div
+                      aria-hidden
+                      style={{
+                        height: 10,
+                        backgroundImage:
+                          "linear-gradient(135deg, transparent 6px, white 6px), linear-gradient(-135deg, transparent 6px, white 6px)",
+                        backgroundSize: "12px 20px",
+                        backgroundRepeat: "repeat-x",
+                        backgroundPosition: "left top",
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
 
