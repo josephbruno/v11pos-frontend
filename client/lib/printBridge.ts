@@ -14,16 +14,22 @@ import {
   type ReceiptPrinterActiveConfig,
 } from "./apiServices";
 
-function joinPrintUrl(base: string): string {
-  return base.endsWith("/") ? `${base}print` : `${base}/print`;
+/** Minimum shape needed to talk to a local print-bridge */
+export interface BridgeTarget {
+  printer_url: string;
+  printer_token: string;
+  printer_name: string;
+  printer_type: string;
+}
+
+function joinBridgeUrl(base: string, path: string): string {
+  const trimmed = base.endsWith("/") ? base.slice(0, -1) : base;
+  return `${trimmed}/${path}`;
 }
 
 /** POST a print job straight to the local bridge. Throws on any non-2xx or network failure. */
-export async function printToBridge(
-  printer: ReceiptPrinterActiveConfig,
-  data: string,
-): Promise<void> {
-  const response = await fetch(joinPrintUrl(printer.printer_url), {
+export async function printToBridge(printer: BridgeTarget, data: string): Promise<void> {
+  const response = await fetch(joinBridgeUrl(printer.printer_url, "print"), {
     method: "POST",
     headers: {
       "x-print-token": printer.printer_token,
@@ -39,6 +45,50 @@ export async function printToBridge(
   if (!response.ok) {
     throw new Error(`Print bridge returned ${response.status}`);
   }
+}
+
+/** Ask the local bridge which OS printers it can see (GET /printers). */
+export async function fetchBridgePrinters(
+  printerUrl: string,
+  printerToken: string,
+): Promise<string[]> {
+  const response = await fetch(joinBridgeUrl(printerUrl, "printers"), {
+    method: "GET",
+    headers: { "x-print-token": printerToken },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Print bridge returned ${response.status}`);
+  }
+
+  const body = await response.json();
+  const list = body?.printers ?? [];
+  return list.map((p: any) => (typeof p === "string" ? p : p?.name ?? p?.Name ?? String(p)));
+}
+
+/** Build a minimal ESC/POS test ticket, base64-encoded for the bridge's JSON "data" field. */
+function buildTestEscPos(): string {
+  const ESC = "\x1b";
+  const GS = "\x1d";
+  const INIT = `${ESC}@`;
+  const ALIGN_CENTER = `${ESC}a\x01`;
+  const CUT = `${GS}V\x42\x00`;
+
+  const raw =
+    INIT +
+    ALIGN_CENTER +
+    "TEST PRINT\n" +
+    "POS Receipt Printer\n" +
+    new Date().toLocaleString() +
+    "\n\n\n" +
+    CUT;
+
+  return btoa(raw);
+}
+
+/** Send a sample ticket to a printer config, without touching any order data. */
+export async function sendTestPrint(printer: BridgeTarget): Promise<void> {
+  await printToBridge(printer, buildTestEscPos());
 }
 
 /** Open an HTML receipt in a new window and trigger the browser print dialog. */
