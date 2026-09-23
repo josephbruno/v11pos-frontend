@@ -34,7 +34,9 @@ import {
   getKdsDisplaysByStation,
   getKdsStations,
   updateOrderStatus,
+  getActivePrinter,
 } from "@/lib/apiServices";
+import { printReceiptForOrder } from "@/lib/printBridge";
 import { formatISTDateLong } from "@/lib/istDate";
 
 interface CartLine {
@@ -252,12 +254,26 @@ export default function OrderPanel() {
       await updateOrderStatus(orderId, "completed");
       return order;
     },
-    onSuccess: () => {
+    onSuccess: (order: any) => {
       setCart([]);
       addToast({ title: "Order created and payment recorded", type: "success" });
       queryClient.invalidateQueries({ queryKey: ["activeOrders", restaurantId] });
       queryClient.invalidateQueries({ queryKey: ["orderStatistics", restaurantId] });
       queryClient.invalidateQueries({ queryKey: ["adminOrders", restaurantId] });
+
+      const orderId = order?.id;
+      if (orderId && restaurantId) {
+        getActivePrinter(restaurantId, "bill")
+          .then((res: any) => {
+            const printer = res?.data ?? res;
+            if (printer?.auto_print) {
+              return printReceiptForOrder(orderId, restaurantId);
+            }
+          })
+          .catch(() => {
+            // No active bill printer configured - auto-print is opt-in, so stay silent.
+          });
+      }
     },
     onError: (err: Error) => {
       addToast({ title: err.message || "Failed to process order", type: "error" });
@@ -326,6 +342,26 @@ export default function OrderPanel() {
       addToast({ title: "KOT sent to kitchen printer", type: "success" });
     } catch (err: any) {
       addToast({ title: err.message || "Failed to print KOT", type: "error" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handlePrintReceipt = async () => {
+    if (!lastOrderId) {
+      addToast({ title: "No recent order to print", type: "error" });
+      return;
+    }
+    if (!restaurantId) return;
+    setIsSubmitting(true);
+    try {
+      const { method } = await printReceiptForOrder(lastOrderId, restaurantId);
+      addToast({
+        title: method === "bridge" ? "Bill sent to printer" : "Opened bill for printing",
+        type: "success",
+      });
+    } catch (err: any) {
+      addToast({ title: err.message || "Failed to print bill", type: "error" });
     } finally {
       setIsSubmitting(false);
     }
@@ -597,7 +633,7 @@ export default function OrderPanel() {
                 <CreditCard className="mr-2 h-4 w-4" />
                 {isSubmitting ? "Processing..." : "Process Payment"}
               </Button>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <Button
                   variant="outline"
                   className="border-pos-secondary"
@@ -615,6 +651,15 @@ export default function OrderPanel() {
                 >
                   <Printer className="mr-2 h-4 w-4" />
                   Print KOT
+                </Button>
+                <Button
+                  variant="outline"
+                  className="border-pos-secondary"
+                  disabled={isSubmitting || !lastOrderId}
+                  onClick={handlePrintReceipt}
+                >
+                  <Printer className="mr-2 h-4 w-4" />
+                  Print Bill
                 </Button>
               </div>
               <Button

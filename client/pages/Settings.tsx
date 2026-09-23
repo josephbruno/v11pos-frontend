@@ -32,7 +32,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
-import { getRestaurantById, updateRestaurant } from "@/lib/apiServices";
+import {
+  getRestaurantById,
+  updateRestaurant,
+  getActivePrinter,
+  saveReceiptPrinter,
+  type ReceiptPrinterActiveConfig,
+} from "@/lib/apiServices";
 import { useToast } from "@/contexts/ToastContext";
 
 interface PaymentSettings {
@@ -117,6 +123,19 @@ export default function Settings() {
     logoOnReceipt: true,
   });
 
+  // Bill printer connects to a local print-bridge running near the till.
+  // Persisted via the /printers API (unlike the rest of printerSettings above).
+  const [billPrinter, setBillPrinter] = useState({
+    printer_name: "",
+    printer_url: "",
+    printer_token: "",
+    printer_type: "ZEBRA",
+    data_format: "text" as "text" | "html" | "escpos",
+    paper_size: "80mm",
+    auto_print: false,
+    print_copies: 1,
+  });
+
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
     orderNotifications: true,
     lowStockAlerts: true,
@@ -147,6 +166,37 @@ export default function Settings() {
     }
   }, [restaurant]);
 
+  // Loaded via the "active" endpoint (not the masked list) since editing the
+  // form needs the real printer_token, not just a has_token flag.
+  const { data: activeBillPrinter } = useQuery({
+    queryKey: ["printers", branchId, "active", "bill"],
+    queryFn: () => getActivePrinter(branchId, "bill"),
+    enabled: !!branchId,
+    retry: false,
+    select: (r: any) => (r?.data ?? r) as ReceiptPrinterActiveConfig,
+  });
+
+  useEffect(() => {
+    if (activeBillPrinter) {
+      setBillPrinter({
+        printer_name: activeBillPrinter.printer_name,
+        printer_url: activeBillPrinter.printer_url,
+        printer_token: activeBillPrinter.printer_token,
+        printer_type: activeBillPrinter.printer_type,
+        data_format: activeBillPrinter.data_format,
+        paper_size: activeBillPrinter.paper_size,
+        auto_print: activeBillPrinter.auto_print,
+        print_copies: activeBillPrinter.print_copies,
+      });
+      setPrinterSettings((prev) => ({
+        ...prev,
+        billPrinter: activeBillPrinter.printer_name,
+        autoPrintBill: activeBillPrinter.auto_print,
+        paperSize: activeBillPrinter.paper_size,
+      }));
+    }
+  }, [activeBillPrinter]);
+
   const updateMutation = useMutation({
     mutationFn: (data: any) => updateRestaurant(branchId, data),
     onSuccess: () => {
@@ -155,6 +205,36 @@ export default function Settings() {
     },
     onError: (e: any) => addToast({ type: "error", title: e?.message ?? "Failed to save settings" }),
   });
+
+  const savePrinterMutation = useMutation({
+    mutationFn: () =>
+      saveReceiptPrinter({
+        restaurant_id: branchId,
+        purpose: "bill",
+        printer_name: billPrinter.printer_name,
+        printer_url: billPrinter.printer_url,
+        printer_token: billPrinter.printer_token,
+        printer_type: billPrinter.printer_type,
+        data_format: billPrinter.data_format,
+        paper_size: billPrinter.paper_size,
+        auto_print: billPrinter.auto_print,
+        print_copies: billPrinter.print_copies,
+        logo_on_receipt: printerSettings.logoOnReceipt,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["printers", branchId] });
+      addToast({ type: "success", title: "Bill printer settings saved" });
+    },
+    onError: (e: any) => addToast({ type: "error", title: e?.message ?? "Failed to save printer settings" }),
+  });
+
+  const handleSaveBillPrinter = () => {
+    if (!billPrinter.printer_name || !billPrinter.printer_url || !billPrinter.printer_token) {
+      addToast({ type: "error", title: "Printer name, URL, and token are required" });
+      return;
+    }
+    savePrinterMutation.mutate();
+  };
 
   const handleSaveStore = () => {
     updateMutation.mutate({
@@ -520,20 +600,20 @@ export default function Settings() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-foreground">Bill Printer</Label>
-                  <Select value={printerSettings.billPrinter}>
-                    <SelectTrigger className="bg-card border-border text-foreground">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-card border-border">
-                      <SelectItem value="Epson TM-T88V">Epson TM-T88V</SelectItem>
-                      <SelectItem value="Star TSP143III">Star TSP143III</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-foreground">Bill Printer Name</Label>
+                  <Input
+                    className="bg-card border-border text-foreground"
+                    placeholder="e.g. Epson TM-T88V"
+                    value={billPrinter.printer_name}
+                    onChange={(e) => setBillPrinter({ ...billPrinter, printer_name: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-foreground">Paper Size</Label>
-                  <Select value={printerSettings.paperSize}>
+                  <Select
+                    value={billPrinter.paper_size}
+                    onValueChange={(value) => setBillPrinter({ ...billPrinter, paper_size: value })}
+                  >
                     <SelectTrigger className="bg-card border-border text-foreground">
                       <SelectValue />
                     </SelectTrigger>
@@ -542,6 +622,76 @@ export default function Settings() {
                       <SelectItem value="58mm">58mm</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              <Separator className="bg-muted" />
+
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-foreground text-lg font-medium">Bill Printer Connection</Label>
+                  <p className="text-sm text-foreground-muted">
+                    Connects directly from this browser to your local print-bridge (e.g. printer-service
+                    running near the till) - the backend only stores these values.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Print-Bridge URL</Label>
+                    <Input
+                      className="bg-card border-border text-foreground"
+                      placeholder="http://127.0.0.1:9100"
+                      value={billPrinter.printer_url}
+                      onChange={(e) => setBillPrinter({ ...billPrinter, printer_url: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Print-Bridge Token</Label>
+                    <Input
+                      type="password"
+                      className="bg-card border-border text-foreground"
+                      placeholder="x-print-token value"
+                      value={billPrinter.printer_token}
+                      onChange={(e) => setBillPrinter({ ...billPrinter, printer_token: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Printer Type</Label>
+                    <Input
+                      className="bg-card border-border text-foreground"
+                      placeholder="e.g. ZEBRA, TSC, ESCPOS"
+                      value={billPrinter.printer_type}
+                      onChange={(e) => setBillPrinter({ ...billPrinter, printer_type: e.target.value })}
+                    />
+                    <p className="text-xs text-foreground-muted">Must match a type your print-bridge accepts.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Receipt Data Format</Label>
+                    <Select
+                      value={billPrinter.data_format}
+                      onValueChange={(value) => setBillPrinter({ ...billPrinter, data_format: value as "text" | "html" | "escpos" })}
+                    >
+                      <SelectTrigger className="bg-card border-border text-foreground">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-card border-border">
+                        <SelectItem value="text">Plain text</SelectItem>
+                        <SelectItem value="html">HTML</SelectItem>
+                        <SelectItem value="escpos">ESC/POS (base64)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Print Copies</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={10}
+                      className="bg-card border-border text-foreground"
+                      value={billPrinter.print_copies}
+                      onChange={(e) => setBillPrinter({ ...billPrinter, print_copies: Number(e.target.value) || 1 })}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -560,8 +710,8 @@ export default function Settings() {
                   <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
                     <span className="text-foreground">Auto Print Bill</span>
                     <Switch
-                      checked={printerSettings.autoPrintBill}
-                      onCheckedChange={(checked) => setPrinterSettings({ ...printerSettings, autoPrintBill: checked })}
+                      checked={billPrinter.auto_print}
+                      onCheckedChange={(checked) => setBillPrinter({ ...billPrinter, auto_print: checked })}
                     />
                   </div>
                   <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
@@ -575,7 +725,8 @@ export default function Settings() {
               </div>
 
               <Button
-                onClick={() => handleSaveSettings("printers")}
+                onClick={handleSaveBillPrinter}
+                disabled={savePrinterMutation.isPending}
                 className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
               >
                 <Save className="mr-2 h-4 w-4" />

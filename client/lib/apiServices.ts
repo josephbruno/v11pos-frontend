@@ -1772,6 +1772,75 @@ export async function printKot(displayId: string, format: "text" | "html" | "jso
   return apiPost(`/kds/displays/${displayId}/kot/print?format=${format}`, {});
 }
 
+// ==================== Receipt Printers ====================
+
+export interface ReceiptPrinterConfig {
+  id: string;
+  restaurant_id: string;
+  purpose: "bill" | "kot";
+  printer_name: string;
+  printer_url: string;
+  has_token: boolean;
+  printer_type: string;
+  data_format: "text" | "html" | "escpos";
+  paper_size: string;
+  auto_print: boolean;
+  print_copies: number;
+  logo_on_receipt: boolean;
+  is_active: boolean;
+}
+
+export interface ReceiptPrinterActiveConfig extends Omit<ReceiptPrinterConfig, "has_token"> {
+  printer_token: string;
+}
+
+export async function listPrinters(restaurantId: string) {
+  return apiGet<{ data: ReceiptPrinterConfig[] }>(`/printers/restaurant/${restaurantId}`);
+}
+
+export async function getActivePrinter(restaurantId: string, purpose: "bill" | "kot" = "bill") {
+  return apiGet<{ data: ReceiptPrinterActiveConfig }>(
+    `/printers/restaurant/${restaurantId}/active/${purpose}`,
+  );
+}
+
+export async function saveReceiptPrinter(data: {
+  restaurant_id: string;
+  purpose?: "bill" | "kot";
+  printer_name: string;
+  printer_url: string;
+  printer_token: string;
+  printer_type?: string;
+  data_format?: "text" | "html" | "escpos";
+  paper_size?: string;
+  auto_print?: boolean;
+  print_copies?: number;
+  logo_on_receipt?: boolean;
+  is_active?: boolean;
+}) {
+  return apiPost(`/printers`, data);
+}
+
+export async function deleteReceiptPrinter(printerId: string) {
+  return apiDelete(`/printers/${printerId}`);
+}
+
+// ==================== Billing Receipt ====================
+
+export async function getReceiptContent(
+  orderId: string,
+  format: "text" | "html" | "json" = "html",
+) {
+  return apiGet(`/orders/${orderId}/receipt/${format}`);
+}
+
+export async function printReceipt(
+  orderId: string,
+  format: "text" | "html" | "escpos" = "html",
+) {
+  return apiPost(`/orders/${orderId}/receipt/print?format=${format}`, {});
+}
+
 // ==================== Inventory Management ====================
 
 /** Low-stock alerts for dashboard/inventory overview */
